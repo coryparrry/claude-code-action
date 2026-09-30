@@ -94,6 +94,15 @@ export function redactSecrets(content: string): string {
     "[REDACTED_ANTHROPIC_KEY]",
   );
 
+  content = content.replace(
+    /sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}/g,
+    "[REDACTED_OPENAI_KEY]",
+  );
+  for (const name of ["OPENAI_API_KEY", "CODEX_API_KEY"]) {
+    const key = process.env[name];
+    if (key) content = content.split(key).join("[REDACTED_OPENAI_KEY]");
+  }
+
   // AWS access key ids: AKIA/ASIA followed by 16 uppercase alphanumerics. All
   // uppercase alphanumeric, so keep a leading boundary to avoid matching inside
   // larger blobs; also treat a JSON escape or ANSI color code as a boundary.

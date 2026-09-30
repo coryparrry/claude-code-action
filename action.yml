@@ -1,28 +1,55 @@
-name: "Claude Code Action v1.0"
-description: "Flexible GitHub automation platform with Claude. Auto-detects mode based on event type: PR reviews, @claude mentions, or custom automation."
+name: "Codex GitHub Action (Claude Action fork)"
+description: "Claude Action's GitHub automation powered by Codex. Supports mentions, PR reviews, and custom prompts; fork PRs are disabled."
 branding:
   icon: "at-sign"
   color: "orange"
 
 inputs:
+  engine:
+    description: "Execution engine: codex (default) or claude for upstream compatibility"
+    required: false
+    default: "codex"
+  openai_api_key:
+    description: "OpenAI API key for the Codex engine"
+    required: false
+  codex_model:
+    description: "Optional OpenAI model; empty uses the Codex CLI default"
+    required: false
+    default: ""
+  codex_effort:
+    description: "Optional Codex reasoning effort"
+    required: false
+    default: ""
+  codex_sandbox:
+    description: "Codex sandbox: read-only or workspace-write"
+    required: false
+    default: "workspace-write"
+  codex_version:
+    description: "Exact Codex CLI npm version"
+    required: false
+    default: "0.159.2"
+  path_to_codex_executable:
+    description: "Optional preinstalled Codex executable (skips npm installation)"
+    required: false
+    default: ""
   trigger_phrase:
     description: "The trigger phrase to look for in comments or issue body"
     required: false
-    default: "@claude"
+    default: "@codex"
   assignee_trigger:
     description: "The assignee username that triggers the action (e.g. @claude)"
     required: false
   label_trigger:
     description: "The label that triggers the action (e.g. claude)"
     required: false
-    default: "claude"
+    default: "codex"
   base_branch:
     description: "The branch to use as the base/source when creating new branches (defaults to repository default branch)"
     required: false
   branch_prefix:
     description: "The prefix to use for Claude branches (defaults to 'claude/', use 'claude-' for dash format)"
     required: false
-    default: "claude/"
+    default: "codex/"
   branch_name_template:
     description: "Template for branch naming. Available variables: {{prefix}}, {{entityType}}, {{entityNumber}}, {{timestamp}}, {{sha}}, {{label}}, {{description}}. {{label}} will be first label from the issue/PR, or {{entityType}} as a fallback. {{description}} will be the first 5 words of the issue/PR title in kebab-case. Default: '{{prefix}}{{entityType}}-{{entityNumber}}-{{timestamp}}'"
     required: false
@@ -130,9 +157,9 @@ inputs:
     required: false
     default: "41898282" # Claude's bot ID - see src/github/constants.ts
   bot_name:
-    description: "GitHub username to use for git operations (defaults to Claude's bot name)"
+    description: "GitHub username for git operations and sticky comments with a custom token"
     required: false
-    default: "claude[bot]"
+    default: ""
   track_progress:
     description: "Force tag mode with tracking comments for pull_request and issue events. Only applicable to pull_request (opened, synchronize, ready_for_review, reopened, labeled) and issue (opened, edited, labeled, assigned) events."
     required: false
@@ -140,7 +167,7 @@ inputs:
   include_fix_links:
     description: "Include 'Fix this' links in PR code review feedback that open Claude Code with context to fix the identified issue"
     required: false
-    default: "true"
+    default: "false"
   path_to_claude_code_executable:
     description: "Optional path to a custom Claude Code executable. If provided, skips automatic installation and uses this executable instead. WARNING: Using an older version may cause problems if the action begins taking advantage of new Claude Code features. This input is typically not needed unless you're debugging something specific or have unique needs in your environment."
     required: false
@@ -167,6 +194,9 @@ inputs:
     default: ""
 
 outputs:
+  skipped_due_to_fork:
+    description: "True when execution was skipped because the request targets a fork PR"
+    value: ${{ steps.run.outputs.skipped_due_to_fork }}
   conclusion:
     description: "Execution status of Claude Code ('success' or 'failure')"
     value: ${{ steps.run.outputs.conclusion }}
@@ -295,7 +325,7 @@ runs:
         BASE_BRANCH: ${{ inputs.base_branch }}
         BRANCH_PREFIX: ${{ inputs.branch_prefix }}
         BRANCH_NAME_TEMPLATE: ${{ inputs.branch_name_template }}
-        OVERRIDE_GITHUB_TOKEN: ${{ inputs.github_token }}
+        OVERRIDE_GITHUB_TOKEN: ${{ inputs.github_token || (inputs.engine == 'codex' && github.token) }}
         ALLOWED_BOTS: ${{ inputs.allowed_bots }}
         ALLOWED_NON_WRITE_USERS: ${{ inputs.allowed_non_write_users }}
         CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: ${{ env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB || (inputs.allowed_non_write_users != '' && '1') || '' }}
@@ -309,12 +339,19 @@ runs:
         USE_COMMIT_SIGNING: ${{ inputs.use_commit_signing }}
         SSH_SIGNING_KEY: ${{ inputs.ssh_signing_key }}
         BOT_ID: ${{ inputs.bot_id }}
-        BOT_NAME: ${{ inputs.bot_name }}
+        BOT_NAME: ${{ inputs.bot_name || (inputs.engine == 'codex' && 'github-actions[bot]') || 'claude[bot]' }}
         TRACK_PROGRESS: ${{ inputs.track_progress }}
         INCLUDE_FIX_LINKS: ${{ inputs.include_fix_links }}
         ADDITIONAL_PERMISSIONS: ${{ inputs.additional_permissions }}
         CLAUDE_ARGS: ${{ inputs.claude_args }}
         ALL_INPUTS: ${{ toJson(inputs) }}
+        ACTION_ENGINE: ${{ inputs.engine }}
+        OPENAI_API_KEY: ${{ inputs.openai_api_key || env.OPENAI_API_KEY }}
+        CODEX_MODEL: ${{ inputs.codex_model }}
+        CODEX_EFFORT: ${{ inputs.codex_effort }}
+        CODEX_SANDBOX: ${{ inputs.codex_sandbox }}
+        CODEX_VERSION: ${{ inputs.codex_version }}
+        PATH_TO_CODEX_EXECUTABLE: ${{ inputs.path_to_codex_executable }}
 
         # Base-action inputs
         INPUT_PROMPT_FILE: ${{ runner.temp }}/claude-prompts/claude-prompt.txt
@@ -429,14 +466,14 @@ runs:
           run ${GITHUB_ACTION_PATH}/src/entrypoints/cleanup-ssh-signing.ts
 
     - name: Post buffered inline comments
-      if: always() && inputs.classify_inline_comments != 'false'
+      if: always() && inputs.classify_inline_comments != 'false' && steps.run.outputs.conclusion != '' && steps.run.outputs.skipped_due_to_fork != 'true'
       shell: bash
       env:
         GITHUB_TOKEN: ${{ steps.run.outputs.github_token || inputs.github_token || github.token }}
         REPO_OWNER: ${{ github.event.repository.owner.login }}
         REPO_NAME: ${{ github.event.repository.name }}
         PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
-        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+        ANTHROPIC_API_KEY: ${{ inputs.engine == 'claude' && inputs.anthropic_api_key || '' }}
       run: |
         BUN_BIN="${GITHUB_ACTION_PATH}/bin/bun"
         [ -x "$BUN_BIN" ] || BUN_BIN="bun"
@@ -446,7 +483,7 @@ runs:
           run ${GITHUB_ACTION_PATH}/src/entrypoints/post-buffered-inline-comments.ts
 
     - name: Revoke app token
-      if: always() && inputs.github_token == '' && steps.run.outputs.github_token != '' && steps.run.outputs.skipped_due_to_workflow_validation_mismatch != 'true'
+      if: always() && inputs.engine == 'claude' && inputs.github_token == '' && steps.run.outputs.github_token != '' && steps.run.outputs.skipped_due_to_workflow_validation_mismatch != 'true'
       shell: bash
       run: |
         curl -L \

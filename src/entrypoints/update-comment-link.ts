@@ -154,11 +154,17 @@ export async function updateCommentLink(
           (comparison.files && comparison.files.length > 0)
         ) {
           const entityType = context.isPR ? "PR" : "Issue";
+          const label =
+            process.env.ACTION_ENGINE === "codex" ? "Codex" : "Claude";
+          const attribution =
+            process.env.ACTION_ENGINE === "codex"
+              ? "Generated with [Codex](https://developers.openai.com/codex/)"
+              : "Generated with [Claude Code](https://claude.ai/code)";
           const prTitle = encodeURIComponent(
-            `${entityType} #${context.entityNumber}: Changes from Claude`,
+            `${entityType} #${context.entityNumber}: Changes from ${label}`,
           );
           const prBody = encodeURIComponent(
-            `This PR addresses ${entityType.toLowerCase()} #${context.entityNumber}\n\nGenerated with [Claude Code](https://claude.ai/code)`,
+            `This PR addresses ${entityType.toLowerCase()} #${context.entityNumber}\n\n${attribution}`,
           );
           const prUrl = `${serverUrl}/${owner}/${repo}/compare/${encodeBranchNameForUrl(baseBranch)}...${encodeBranchNameForUrl(claudeBranch)}?quick_pull=1&title=${prTitle}&body=${prBody}`;
           prLink = `\n[Create a PR](${prUrl})`;

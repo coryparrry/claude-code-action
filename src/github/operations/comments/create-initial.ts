@@ -6,7 +6,11 @@
  */
 
 import { appendFileSync } from "fs";
-import { createJobRunLink, createCommentBody } from "./common";
+import {
+  createJobRunLink,
+  createCommentBody,
+  CODEX_COMMENT_MARKER,
+} from "./common";
 import {
   isPullRequestReviewCommentEvent,
   isPullRequestEvent,
@@ -39,6 +43,14 @@ export async function createInitialComment(
         issue_number: context.entityNumber,
       });
       const existingComment = comments.data.find((comment) => {
+        if (process.env.ACTION_ENGINE === "codex") {
+          const expectedAuthor = process.env.BOT_NAME || "github-actions[bot]";
+          return (
+            comment.user?.login.toLowerCase() ===
+              expectedAuthor.toLowerCase() &&
+            !!comment.body?.includes(CODEX_COMMENT_MARKER)
+          );
+        }
         const idMatch = comment.user?.id === CLAUDE_APP_BOT_ID;
         const botNameMatch =
           comment.user?.type === "Bot" &&

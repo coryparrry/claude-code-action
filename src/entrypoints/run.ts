@@ -9,10 +9,16 @@
 import * as core from "@actions/core";
 import { dirname } from "path";
 import { spawn } from "child_process";
-import { appendFile } from "fs/promises";
+import { appendFile, rm } from "fs/promises";
 import { existsSync, readFileSync } from "fs";
 import { setupGitHubToken, WorkflowValidationSkipError } from "../github/token";
 import { checkWritePermissions } from "../github/validation/permissions";
+import {
+  assertNoForkPullRequests,
+  ForkPullRequestError,
+} from "../github/validation/forks";
+import { installCodex, validateCodexInputs } from "../codex-install";
+import { runCodex } from "../../base-action/src/run-codex";
 import { createOctokit } from "../github/api/client";
 import type { Octokits } from "../github/api/client";
 import {
@@ -44,7 +50,10 @@ import { installPlugins } from "../../base-action/src/install-plugins";
 import { preparePrompt } from "../../base-action/src/prepare-prompt";
 import { runClaude } from "../../base-action/src/run-claude";
 import type { ClaudeRunResult } from "../../base-action/src/run-claude-sdk";
-import { setExecutionFileOutputIfPresent } from "../../base-action/src/execution-file";
+import {
+  getExecutionFilePath,
+  setExecutionFileOutputIfPresent,
+} from "../../base-action/src/execution-file";
 
 // Exported for unit testing. `set -o pipefail` makes curl's non-zero exit
 // propagate through the pipe so the install retry logic actually triggers
@@ -127,14 +136,20 @@ async function writeStepSummary(executionFile: string): Promise<void> {
   try {
     const fileContent = readFileSync(executionFile, "utf-8");
     const data: Turn[] = JSON.parse(fileContent);
-    const markdown = formatTurnsFromData(data);
+    let markdown = formatTurnsFromData(data);
+    if (process.env.ACTION_ENGINE === "codex") {
+      markdown = markdown.replace(/Claude Code Report/g, "Codex Report");
+    }
     await appendFile(summaryFile, markdown);
     console.log("Successfully formatted Claude Code report");
   } catch (error) {
     console.error(`Failed to format output: ${error}`);
     // Fall back to raw JSON
     try {
-      let fallback = "## Claude Code Report (Raw Output)\n\n";
+      let fallback =
+        process.env.ACTION_ENGINE === "codex"
+          ? "## Codex Report (Raw Output)\n\n"
+          : "## Claude Code Report (Raw Output)\n\n";
       fallback +=
         "Failed to format output (please report). Here's the raw JSON:\n\n";
       fallback += "```json\n";
@@ -148,6 +163,7 @@ async function writeStepSummary(executionFile: string): Promise<void> {
 }
 
 async function run() {
+  const engine = process.env.ACTION_ENGINE || "codex";
   let githubToken: string | undefined;
   let commentId: number | undefined;
   let claudeBranch: string | undefined;
@@ -165,6 +181,14 @@ async function run() {
   // Track whether we've completed prepare phase, so we can attribute errors correctly
   let prepareCompleted = false;
   try {
+    const previousExecutionFile = getExecutionFilePath();
+    if (previousExecutionFile) await rm(previousExecutionFile, { force: true });
+    if (engine !== "codex" && engine !== "claude") {
+      throw new Error("engine must be codex or claude");
+    }
+    if (engine === "codex" && process.env.OPENAI_API_KEY) {
+      core.setSecret(process.env.OPENAI_API_KEY);
+    }
     // Phase 1: Prepare
     const actionInputsPresent = collectActionInputsPresence();
     context = parseGitHubContext();
@@ -185,6 +209,15 @@ async function run() {
     }
 
     octokit = createOctokit(githubToken);
+
+    try {
+      await assertNoForkPullRequests(context, octokit.rest);
+    } catch (error) {
+      if (!(error instanceof ForkPullRequestError)) throw error;
+      core.setOutput("skipped_due_to_fork", "true");
+      console.log("Fork pull requests are disabled; skipping execution");
+      return;
+    }
 
     // Set GITHUB_TOKEN and GH_TOKEN in process env for downstream usage
     process.env.GITHUB_TOKEN = githubToken;
@@ -222,6 +255,8 @@ async function run() {
       return;
     }
 
+    if (engine === "codex") validateCodexInputs();
+
     // Run prepare
     console.log(
       `Preparing with mode: ${modeName} for event: ${context.eventName}`,
@@ -236,8 +271,9 @@ async function run() {
     baseBranch = prepareResult.branchInfo.baseBranch;
     prepareCompleted = true;
 
-    // Phase 2: Install Claude Code CLI
-    const claudeExecutable = await installClaudeCode();
+    // Phase 2: Install the selected engine.
+    const executable =
+      engine === "codex" ? await installCodex() : await installClaudeCode();
 
     // Phase 3: Run Claude (import base-action directly)
     // Set env vars needed by the base-action code
@@ -247,9 +283,10 @@ async function run() {
 
     // When workload identity federation is configured, fetch the GitHub OIDC
     // identity token and expose it to the CLI before validating auth env vars.
-    workloadIdentity = await setupWorkloadIdentity();
-
-    validateEnvironmentVariables();
+    if (engine === "claude") {
+      workloadIdentity = await setupWorkloadIdentity();
+      validateEnvironmentVariables();
+    }
 
     // On PRs, .claude/ and .mcp.json in the checkout are attacker-controlled.
     // Restore them from the base branch before the CLI reads them.
@@ -275,13 +312,14 @@ async function run() {
       }
     }
 
-    await setupClaudeCodeSettings(process.env.INPUT_SETTINGS);
-
-    await installPlugins(
-      process.env.INPUT_PLUGIN_MARKETPLACES,
-      process.env.INPUT_PLUGINS,
-      claudeExecutable,
-    );
+    if (engine === "claude") {
+      await setupClaudeCodeSettings(process.env.INPUT_SETTINGS);
+      await installPlugins(
+        process.env.INPUT_PLUGIN_MARKETPLACES,
+        process.env.INPUT_PLUGINS,
+        executable,
+      );
+    }
 
     const promptFile =
       process.env.INPUT_PROMPT_FILE ||
@@ -291,13 +329,24 @@ async function run() {
       promptFile,
     });
 
-    const claudeResult: ClaudeRunResult = await runClaude(promptConfig.path, {
-      claudeArgs: prepareResult.claudeArgs,
-      appendSystemPrompt: process.env.APPEND_SYSTEM_PROMPT,
-      model: process.env.ANTHROPIC_MODEL,
-      pathToClaudeCodeExecutable: claudeExecutable,
-      showFullOutput: process.env.INPUT_SHOW_FULL_OUTPUT,
-    });
+    const claudeResult: ClaudeRunResult =
+      engine === "codex"
+        ? await runCodex(promptConfig.path, {
+            mcpConfig: prepareResult.mcpConfig,
+            executable,
+            model: process.env.CODEX_MODEL,
+            effort: process.env.CODEX_EFFORT,
+            sandbox: process.env.CODEX_SANDBOX,
+            appendSystemPrompt: process.env.APPEND_SYSTEM_PROMPT,
+            showFullOutput: process.env.INPUT_SHOW_FULL_OUTPUT,
+          })
+        : await runClaude(promptConfig.path, {
+            claudeArgs: prepareResult.claudeArgs,
+            appendSystemPrompt: process.env.APPEND_SYSTEM_PROMPT,
+            model: process.env.ANTHROPIC_MODEL,
+            pathToClaudeCodeExecutable: executable,
+            showFullOutput: process.env.INPUT_SHOW_FULL_OUTPUT,
+          });
 
     claudeSuccess = claudeResult.conclusion === "success";
     executionFile = claudeResult.executionFile;
