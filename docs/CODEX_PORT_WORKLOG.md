@@ -48,3 +48,16 @@ PRs. Keep the Intents checkout untouched until the adapted action is verified.
   supplies Anthropic classification credentials for the explicit Claude engine.
 - The user chose offline verification. Live OpenAI and GitHub task execution
   remain unverified; the adapted action is prepared for review in its own fork.
+
+## Fork CI reconciliation
+
+The inherited CI pinned Bun 1.2.12, whose TOML parser decoded an escaped tab as
+form feed in the new round-trip regression. Local tests passed under Bun 1.4.2;
+the action and CI now pin that same runtime. The full 1,033-case suite already
+includes the adapter tests; the separate 21-case command is an additional
+focused run, not an additional set of unique cases.
+
+Inherited live-Claude tests, review/triage bots, and upstream artifact publishing
+workflows are preserved under `examples/upstream-workflows` so they no longer
+execute in this fork. Fork CI retains offline tests, formatting, type checking,
+and workflow security checks. In-flight inherited live-test runs were cancelled.

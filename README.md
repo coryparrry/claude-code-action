@@ -94,4 +94,6 @@ API authentication uses a temporary Codex home and ephemeral API credentials. Sh
 
 This port is verified offline with fake-CLI integration tests, configuration parsing, and relevant upstream regression suites. Live OpenAI calls and GitHub task execution are **not yet verified**. See [the port worklog](docs/CODEX_PORT_WORKLOG.md) for the completed checks.
 
+Fork CI runs offline tests, formatting, and type checking with Bun `1.4.2`. Upstream workflows that invoke Claude or publish upstream artifacts are preserved as inactive examples in `examples/upstream-workflows`.
+
 For the original engine's configuration and limitations, see the [upstream documentation](https://github.com/anthropics/claude-code-action/tree/main/docs).
