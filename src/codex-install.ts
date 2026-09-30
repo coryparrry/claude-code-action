@@ -61,16 +61,4 @@ export function validateCodexInputs(): void {
   if (!process.env.OPENAI_API_KEY?.trim()) {
     throw new Error("Codex requires openai_api_key or OPENAI_API_KEY");
   }
-  const unsupported: Record<string, string | undefined> = {
-    claude_args: process.env.CLAUDE_ARGS,
-    settings: process.env.INPUT_SETTINGS,
-    plugins: process.env.INPUT_PLUGINS,
-    plugin_marketplaces: process.env.INPUT_PLUGIN_MARKETPLACES,
-    allowed_non_write_users: process.env.ALLOWED_NON_WRITE_USERS,
-  };
-  for (const [input, value] of Object.entries(unsupported)) {
-    if (value?.trim()) {
-      throw new Error(`${input} is unsupported in this Codex-only action`);
-    }
-  }
 }

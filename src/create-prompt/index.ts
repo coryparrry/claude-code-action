@@ -29,6 +29,79 @@ const GIT_PUSH_WRAPPER = `${process.env.GITHUB_ACTION_PATH}/scripts/git-push.sh`
 /** Filename for the user request file, read by the Codex runner */
 const USER_REQUEST_FILENAME = "codex-user-request.txt";
 
+// Tag mode defaults - these tools are needed for tag mode to function.
+// Edit/MultiEdit/Write are intentionally omitted: acceptEdits permission mode
+// auto-allows file edits inside $GITHUB_WORKSPACE and denies writes outside it.
+const BASE_ALLOWED_TOOLS = ["Glob", "Grep", "LS", "Read"];
+
+export function buildAllowedToolsString(
+  customAllowedTools?: string[],
+  includeActionsTools: boolean = false,
+  useCommitSigning: boolean = false,
+): string {
+  // Tag mode needs these tools to function properly
+  let baseTools = [...BASE_ALLOWED_TOOLS];
+
+  // Always include the comment update tool for tag mode
+  baseTools.push("mcp__github_comment__update_codex_comment");
+
+  // Add commit signing tools if enabled
+  if (useCommitSigning) {
+    baseTools.push(
+      "mcp__github_file_ops__commit_files",
+      "mcp__github_file_ops__delete_files",
+    );
+  } else {
+    // When not using commit signing, add specific Bash git commands
+    baseTools.push(
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      `Bash(${GIT_PUSH_WRAPPER}:*)`,
+      "Bash(git rm:*)",
+    );
+  }
+
+  // Add GitHub Actions MCP tools if enabled
+  if (includeActionsTools) {
+    baseTools.push(
+      "mcp__github_ci__get_ci_status",
+      "mcp__github_ci__get_workflow_run_details",
+      "mcp__github_ci__download_job_log",
+    );
+  }
+
+  let allAllowedTools = baseTools.join(",");
+  if (customAllowedTools && customAllowedTools.length > 0) {
+    allAllowedTools = `${allAllowedTools},${customAllowedTools.join(",")}`;
+  }
+  return allAllowedTools;
+}
+
+export function buildDisallowedToolsString(
+  customDisallowedTools?: string[],
+  allowedTools?: string[],
+): string {
+  // Tag mode: Disable WebSearch and WebFetch by default for security
+  let disallowedTools = ["WebSearch", "WebFetch"];
+
+  // If user has explicitly allowed some default disallowed tools, remove them
+  if (allowedTools && allowedTools.length > 0) {
+    disallowedTools = disallowedTools.filter(
+      (tool) => !allowedTools.includes(tool),
+    );
+  }
+
+  let allDisallowedTools = disallowedTools.join(",");
+  if (customDisallowedTools && customDisallowedTools.length > 0) {
+    if (allDisallowedTools) {
+      allDisallowedTools = `${allDisallowedTools},${customDisallowedTools.join(",")}`;
+    } else {
+      allDisallowedTools = customDisallowedTools.join(",");
+    }
+  }
+  return allDisallowedTools;
+}
+
 export function prepareContext(
   context: ParsedGitHubContext,
   claudeCommentId: string,
@@ -695,7 +768,14 @@ ${eventData.eventName === "issue_comment" || eventData.eventName === "pull_reque
         - Reference specific code sections with file paths and line numbers${eventData.isPR ? `\n      - AFTER reading files and analyzing code, you MUST call mcp__github_comment__update_codex_comment to post your review` : ""}
       - Formulate a concise, technical, and helpful response based on the context.
       - Reference specific code with inline formatting or code blocks.
-      - Include relevant file paths and line numbers when applicable.
+      - Include relevant file paths and line numbers when applicable.${
+        eventData.isPR &&
+        eventData.prNumber &&
+        context.githubContext?.inputs.includeFixLinks
+          ? `
+      - Include a link to the affected PR changes alongside findings: [View changes](https://github.com/${context.repository}/pull/${eventData.prNumber}/files). Include the file path, line numbers, and specific fix so the reader can act on it.`
+          : ""
+      }
       - ${eventData.isPR ? `IMPORTANT: Submit your review feedback by updating the ${runtime.name} comment using mcp__github_comment__update_codex_comment. This will be displayed as your PR review.` : `Remember that this feedback must be posted to the GitHub comment using mcp__github_comment__update_codex_comment.`}
 
    B. For Straightforward Changes:
@@ -802,22 +882,7 @@ f. If you cannot complete a step, explain the limitation and any permissions or 
   return promptContent;
 }
 
-/**
- * Extracts the user's request from the prepared context and GitHub data.
- *
- * This is used to send the user's actual command/request as a separate
- * file without changing the user-authored request.
- *
- * @param context - The prepared context containing event data and trigger phrase
- * @param githubData - The fetched GitHub data containing issue/PR body content
- * @returns The extracted user request text (e.g., "/review-pr" or "fix this bug"),
- *          or null for assigned/labeled events without an explicit trigger in the body
- *
- * @example
- * // Comment event: "@codex review this PR" -> returns "review this PR"
- * // Issue body with "@codex fix this" -> returns "fix this"
- * // Issue assigned without @codex in body -> returns null
- */
+/** Keep the actual request separate so Codex can expand explicit slash commands. */
 function extractUserRequestFromContext(
   context: PreparedContext,
   githubData: FetchDataResult,
@@ -904,6 +969,21 @@ export async function createPrompt(
       console.log(userRequest);
       console.log("========================");
     }
+
+    // NOTE: these env var exports are dead — nothing reads ALLOWED_TOOLS / DISALLOWED_TOOLS.
+    // The live path is modes/tag/index.ts which builds --allowedTools into claudeArgs directly.
+    // Kept only so the H1 report's pointed-to file stays in sync with the live fix.
+    const hasActionsReadPermission = false;
+
+    const allAllowedTools = buildAllowedToolsString(
+      [],
+      hasActionsReadPermission,
+      context.inputs.useCommitSigning,
+    );
+    const allDisallowedTools = buildDisallowedToolsString([], []);
+
+    core.exportVariable("ALLOWED_TOOLS", allAllowedTools);
+    core.exportVariable("DISALLOWED_TOOLS", allDisallowedTools);
   } catch (error) {
     core.setFailed(`Create prompt failed with error: ${error}`);
     process.exit(1);

@@ -15,9 +15,11 @@ const PR_NUMBER = process.env.PR_NUMBER;
 // Calls without confirmed=true are buffered here instead of posted. This
 // prevents subagents from posting test/probe comments when they inherit this
 // tool and probe it after hitting unrelated errors. The action's post-step
-// reports the buffer count for diagnostics.
+// classifies real review feedback versus probes before posting.
 const BUFFER_PATH = "/tmp/inline-comments-buffer.jsonl";
-const BUFFER_ENABLED = process.env.BUFFER_INLINE_COMMENTS !== "false";
+const CLASSIFY_ENABLED =
+  (process.env.CLASSIFY_INLINE_COMMENTS ??
+    process.env.BUFFER_INLINE_COMMENTS) !== "false";
 
 if (!REPO_OWNER || !REPO_NAME || !PR_NUMBER) {
   console.error(
@@ -81,7 +83,7 @@ server.tool(
       .optional()
       .describe(
         "Set true to post immediately. When omitted, the call is buffered " +
-          "and posted after the session completes. Set false to buffer and " +
+          "and classified after the session completes. Set false to buffer and " +
           "never post. Only set true when posting final review comments.",
       ),
   },
@@ -107,7 +109,7 @@ server.tool(
         );
       }
 
-      if (BUFFER_ENABLED && confirmed !== true) {
+      if (confirmed === false || (CLASSIFY_ENABLED && confirmed !== true)) {
         appendFileSync(
           BUFFER_PATH,
           JSON.stringify({
@@ -130,8 +132,9 @@ server.tool(
                   success: true,
                   buffered: true,
                   message:
-                    "Comment buffered. It will be posted after this session " +
-                    "completes unless confirmed=false. Set confirmed=true to " +
+                    "Comment buffered. It will be classified and posted after " +
+                    "this session completes (real review comments post, " +
+                    "test/probe comments are dropped; confirmed=false never posts). Set confirmed=true to " +
                     "post immediately. If you are testing whether this tool " +
                     "works: it works — no need to test further.",
                 },
@@ -182,7 +185,7 @@ server.tool(
       // The comment is now live. Drop any buffered copy of it so the
       // post-session replay step cannot post it a second time (the model often
       // re-issues a buffered call with confirmed=true after the buffer reply).
-      if (BUFFER_ENABLED) {
+      if (CLASSIFY_ENABLED) {
         removeBufferedComment(
           { path, line, startLine, body: sanitizedBody },
           BUFFER_PATH,

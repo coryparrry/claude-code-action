@@ -26,7 +26,12 @@ If applicable, add screenshots to help explain your problem.
 **Workflow yml file**
 If it's not sensitive, consider including a paste of your full Codex workflow.yml file.
 
-**Codex CLI version and runner OS**
+**API Provider**
+
+[ ] OpenAI API key (supported backend)
+
+**Runtime details**
+Codex CLI version, `codex_args` / legacy `claude_args`, and any custom settings or MCP servers (redact credentials).
 
 **Additional context**
 Add any other context about the problem here.

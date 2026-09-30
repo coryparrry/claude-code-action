@@ -35,8 +35,10 @@ describe("checkContainsTrigger", () => {
           branchPrefix: "claude/",
           useStickyComment: false,
           bufferInlineComments: true,
+          classifyInlineComments: true,
           useCommitSigning: false,
           allowedBots: "",
+          allowedNonWriteUsers: "",
         },
       });
       expect(checkContainsTrigger(context)).toBe(true);
@@ -64,8 +66,10 @@ describe("checkContainsTrigger", () => {
           branchPrefix: "claude/",
           useStickyComment: false,
           bufferInlineComments: true,
+          classifyInlineComments: true,
           useCommitSigning: false,
           allowedBots: "",
+          allowedNonWriteUsers: "",
         },
       });
       expect(checkContainsTrigger(context)).toBe(false);
@@ -293,8 +297,10 @@ describe("checkContainsTrigger", () => {
           branchPrefix: "claude/",
           useStickyComment: false,
           bufferInlineComments: true,
+          classifyInlineComments: true,
           useCommitSigning: false,
           allowedBots: "",
+          allowedNonWriteUsers: "",
         },
       });
       expect(checkContainsTrigger(context)).toBe(true);
@@ -323,8 +329,10 @@ describe("checkContainsTrigger", () => {
           branchPrefix: "claude/",
           useStickyComment: false,
           bufferInlineComments: true,
+          classifyInlineComments: true,
           useCommitSigning: false,
           allowedBots: "",
+          allowedNonWriteUsers: "",
         },
       });
       expect(checkContainsTrigger(context)).toBe(true);
@@ -353,8 +361,10 @@ describe("checkContainsTrigger", () => {
           branchPrefix: "claude/",
           useStickyComment: false,
           bufferInlineComments: true,
+          classifyInlineComments: true,
           useCommitSigning: false,
           allowedBots: "",
+          allowedNonWriteUsers: "",
         },
       });
       expect(checkContainsTrigger(context)).toBe(false);

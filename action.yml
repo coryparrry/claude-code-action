@@ -110,6 +110,60 @@ inputs:
     required: false
     default: "true"
 
+  allowed_non_write_users:
+    description: |
+      Comma-separated list of usernames to allow without write permissions, or '*' to allow all users.
+      Only works when github_token input is provided. WARNING: Use with extreme caution - this
+      bypasses security checks and should only be used for workflows with very limited permissions
+      (e.g., issue labeling).
+
+      SECURITY: Processing untrusted content exposes the workflow to prompt injection. When this
+      input is set, Codex does a best-effort scrub of OpenAI and GitHub Actions secrets
+      from subprocess environments. This reduces but does not eliminate prompt injection risk -
+      only use for workflows with very limited permissions and validate all outputs.
+    required: false
+    default: ""
+
+  settings:
+    description: "Codex configuration as TOML/JSON or a file, plus supported legacy model/permissions settings"
+    required: false
+    default: ""
+
+  claude_args:
+    description: "Compatibility arguments from existing Claude Action workflows, adapted to Codex; codex_args takes precedence"
+    required: false
+    default: ""
+
+  additional_permissions:
+    description: "Legacy GitHub permission hints; grant these in the calling workflow permissions or supplied token"
+    required: false
+    default: ""
+
+  classify_inline_comments:
+    description: "Buffer inline comments without confirmed=true and classify them (real review vs test/probe) before posting after the session ends. Set to 'false' to post all inline comments immediately (pre-buffering behavior)."
+    required: false
+    default: "true"
+
+  include_fix_links:
+    description: "Include links to affected PR changes with fix context in review feedback"
+    required: false
+    default: "false"
+
+  plugins:
+    description: "Newline-separated Codex plugin names (plugin@marketplace); plugins must use Codex manifests"
+    required: false
+    default: ""
+
+  plugin_marketplaces:
+    description: "Newline-separated Codex plugin marketplace sources"
+    required: false
+    default: ""
+
+  codex_args:
+    description: "Codex arguments; supported legacy CLI options are translated without a shell"
+    required: false
+    default: ""
+
 outputs:
   skipped_due_to_fork:
     description: "True when execution was skipped because the request targets a fork PR"
@@ -126,6 +180,9 @@ outputs:
   github_token:
     description: "The GitHub token used by the action"
     value: ${{ steps.run.outputs.github_token }}
+  structured_output:
+    description: "JSON result produced when an output schema is supplied"
+    value: ${{ steps.run.outputs.structured_output }}
   session_id:
     description: "Codex session identifier (execution uses ephemeral sessions)"
     value: ${{ steps.run.outputs.session_id }}
@@ -186,7 +243,17 @@ runs:
         BASE_BRANCH: ${{ inputs.base_branch }}
         BRANCH_PREFIX: ${{ inputs.branch_prefix }}
         BRANCH_NAME_TEMPLATE: ${{ inputs.branch_name_template }}
+        GITHUB_TOKEN_PROVIDED: ${{ inputs.github_token != '' }}
         OVERRIDE_GITHUB_TOKEN: ${{ inputs.github_token || github.token }}
+        ALLOWED_NON_WRITE_USERS: ${{ inputs.allowed_non_write_users }}
+        CLAUDE_ARGS: ${{ inputs.claude_args }}
+        CODEX_ARGS: ${{ inputs.codex_args }}
+        INPUT_SETTINGS: ${{ inputs.settings }}
+        INPUT_PLUGINS: ${{ inputs.plugins }}
+        INPUT_PLUGIN_MARKETPLACES: ${{ inputs.plugin_marketplaces }}
+        ADDITIONAL_PERMISSIONS: ${{ inputs.additional_permissions }}
+        CLASSIFY_INLINE_COMMENTS: ${{ inputs.classify_inline_comments }}
+        INCLUDE_FIX_LINKS: ${{ inputs.include_fix_links }}
         ALLOWED_BOTS: ${{ inputs.allowed_bots }}
         INCLUDE_COMMENTS_BY_ACTOR: ${{ inputs.include_comments_by_actor }}
         EXCLUDE_COMMENTS_BY_ACTOR: ${{ inputs.exclude_comments_by_actor }}
@@ -222,9 +289,14 @@ runs:
           run ${GITHUB_ACTION_PATH}/src/entrypoints/cleanup-ssh-signing.ts
 
     - name: Post buffered inline comments
-      if: always() && inputs.buffer_inline_comments != 'false' && steps.run.outputs.conclusion != '' && steps.run.outputs.skipped_due_to_fork != 'true'
+      if: always() && inputs.buffer_inline_comments != 'false' && inputs.classify_inline_comments != 'false' && steps.run.outputs.conclusion != '' && steps.run.outputs.skipped_due_to_fork != 'true'
       shell: bash
       env:
+        OPENAI_API_KEY: ${{ inputs.openai_api_key || env.OPENAI_API_KEY }}
+        INPUT_PATH_TO_CODEX_EXECUTABLE: ${{ inputs.path_to_codex_executable }}
+        INPUT_CODEX_MODEL: ${{ inputs.codex_model }}
+        INPUT_CODEX_EFFORT: ${{ inputs.codex_effort }}
+        CLASSIFY_INLINE_COMMENTS: ${{ inputs.classify_inline_comments }}
         GITHUB_TOKEN: ${{ steps.run.outputs.github_token || inputs.github_token || github.token }}
         REPO_OWNER: ${{ github.event.repository.owner.login }}
         REPO_NAME: ${{ github.event.repository.name }}

@@ -12,3 +12,37 @@ export async function setupGitHubToken(): Promise<string> {
   console.log("Using provided GitHub token for authentication");
   return token;
 }
+
+const DEFAULT_PERMISSIONS: Record<string, string> = {
+  contents: "write",
+  pull_requests: "write",
+  issues: "write",
+};
+
+export function parseAdditionalPermissions():
+  | Record<string, string>
+  | undefined {
+  const raw = process.env.ADDITIONAL_PERMISSIONS;
+  if (!raw || !raw.trim()) {
+    return undefined;
+  }
+
+  const additional: Record<string, string> = {};
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const colonIndex = trimmed.indexOf(":");
+    if (colonIndex === -1) continue;
+    const key = trimmed.slice(0, colonIndex).trim();
+    const value = trimmed.slice(colonIndex + 1).trim();
+    if (key && value) {
+      additional[key] = value;
+    }
+  }
+
+  if (Object.keys(additional).length === 0) {
+    return undefined;
+  }
+
+  return { ...DEFAULT_PERMISSIONS, ...additional };
+}

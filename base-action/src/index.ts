@@ -25,6 +25,11 @@ export async function run() {
       executable: process.env.INPUT_PATH_TO_CODEX_EXECUTABLE || "codex",
       mcpConfig: process.env.INPUT_MCP_CONFIG || '{"mcpServers":{}}',
       model: process.env.INPUT_CODEX_MODEL,
+      compatibilityArgs:
+        process.env.INPUT_CODEX_ARGS || process.env.INPUT_CLAUDE_ARGS,
+      settings: process.env.INPUT_SETTINGS,
+      plugins: process.env.INPUT_PLUGINS,
+      pluginMarketplaces: process.env.INPUT_PLUGIN_MARKETPLACES,
       effort: process.env.INPUT_CODEX_EFFORT,
       sandbox: process.env.INPUT_CODEX_SANDBOX,
       appendSystemPrompt: process.env.INPUT_APPEND_SYSTEM_PROMPT,
@@ -35,6 +40,11 @@ export async function run() {
     if (result.executionFile)
       core.setOutput("execution_file", result.executionFile);
     if (result.sessionId) core.setOutput("session_id", result.sessionId);
+    if (result.structuredOutput !== undefined)
+      core.setOutput(
+        "structured_output",
+        JSON.stringify(result.structuredOutput),
+      );
   } catch (error) {
     setExecutionFileOutputIfPresent();
     core.setFailed(`Action failed with error: ${error}`);

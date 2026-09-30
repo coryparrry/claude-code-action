@@ -92,12 +92,15 @@ type BaseContext = {
     branchNameTemplate?: string;
     useStickyComment: boolean;
     bufferInlineComments: boolean;
+    classifyInlineComments: boolean;
     useCommitSigning: boolean;
     sshSigningKey: string;
     botId: string;
     botName: string;
     allowedBots: string;
+    allowedNonWriteUsers: string;
     trackProgress: boolean;
+    includeFixLinks: boolean;
     includeCommentsByActor: string;
     excludeCommentsByActor: string;
   };
@@ -151,13 +154,20 @@ export function parseGitHubContext(): GitHubContext {
       branchPrefix: process.env.BRANCH_PREFIX ?? "codex/",
       branchNameTemplate: process.env.BRANCH_NAME_TEMPLATE,
       useStickyComment: process.env.USE_STICKY_COMMENT === "true",
-      bufferInlineComments: process.env.BUFFER_INLINE_COMMENTS !== "false",
+      bufferInlineComments:
+        (process.env.BUFFER_INLINE_COMMENTS ??
+          process.env.CLASSIFY_INLINE_COMMENTS) !== "false",
+      classifyInlineComments:
+        (process.env.CLASSIFY_INLINE_COMMENTS ??
+          process.env.BUFFER_INLINE_COMMENTS) !== "false",
       useCommitSigning: process.env.USE_COMMIT_SIGNING === "true",
       sshSigningKey: process.env.SSH_SIGNING_KEY || "",
       botId: process.env.BOT_ID ?? String(GITHUB_ACTIONS_BOT_ID),
       botName: process.env.BOT_NAME ?? GITHUB_ACTIONS_BOT_LOGIN,
       allowedBots: process.env.ALLOWED_BOTS ?? "",
+      allowedNonWriteUsers: process.env.ALLOWED_NON_WRITE_USERS ?? "",
       trackProgress: process.env.TRACK_PROGRESS === "true",
+      includeFixLinks: process.env.INCLUDE_FIX_LINKS === "true",
       includeCommentsByActor: process.env.INCLUDE_COMMENTS_BY_ACTOR ?? "",
       excludeCommentsByActor: process.env.EXCLUDE_COMMENTS_BY_ACTOR ?? "",
     },

@@ -10,16 +10,37 @@ import {
   SECURITY_OVERRIDES,
   serializeMcpConfig,
 } from "./codex-config";
+import { expandCommand } from "./codex-commands";
+import { pluginSetupCommands, setupCodexPlugins } from "./codex-plugins";
+import { tomlString } from "./codex-config";
+import { resolveCompatibility } from "./codex-compat";
+import { workflowToolEnvironment } from "./codex-tool-environment";
 import { CodexTranscript } from "./codex-transcript";
 
 export type CodexRunResult = {
   executionFile?: string;
   sessionId?: string;
   conclusion: "success" | "failure";
+  structuredOutput?: unknown;
 };
 
 export type CodexOptions = {
   mcpConfig: string;
+  compatibilityArgs?: string;
+  defaultAllowedTools?: string[];
+  settings?: string;
+  plugins?: string;
+  pluginMarketplaces?: string;
+  githubEnvironment?: Partial<
+    Record<
+      | "GH_TOKEN"
+      | "GITHUB_REPOSITORY"
+      | "GITHUB_EVENT_PATH"
+      | "GITHUB_WORKSPACE"
+      | "GH_HOST",
+      string
+    >
+  >;
   executable: string;
   model?: string;
   effort?: string;
@@ -34,7 +55,7 @@ const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 const MAX_LAST_MESSAGE_BYTES = 4 * 1024 * 1024;
 
 async function createPrompt(path: string, appended?: string): Promise<string> {
-  const context = await readFile(path, "utf8");
+  let context = await readFile(path, "utf8");
   let request = "";
   try {
     request = await readFile(
@@ -44,6 +65,8 @@ async function createPrompt(path: string, appended?: string): Promise<string> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
+  if (request) request = await expandCommand(request);
+  else context = await expandCommand(context);
   return [
     context,
     appended ? `Additional instructions:\n${appended}` : "",
@@ -62,15 +85,30 @@ export async function runCodex(
   if (!apiKey?.trim())
     throw new Error("OPENAI_API_KEY is required to run Codex");
   core.setSecret(apiKey);
+  const compatibility = await resolveCompatibility(
+    options.compatibilityArgs || "",
+    options.settings || "",
+    options.mcpConfig,
+    options.defaultAllowedTools,
+  );
+  const model = options.model || compatibility.model;
+  const effort = options.effort || compatibility.effort;
   const sandbox = options.sandbox || "workspace-write";
   if (!["read-only", "workspace-write"].includes(sandbox)) {
     throw new Error("Codex sandbox must be read-only or workspace-write");
   }
   if (
-    options.effort &&
-    !["none", "minimal", "low", "medium", "high", "xhigh"].includes(
-      options.effort,
-    )
+    effort &&
+    ![
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra",
+    ].includes(effort)
   ) {
     throw new Error("Unsupported Codex reasoning effort");
   }
@@ -78,10 +116,48 @@ export async function runCodex(
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0)
     throw new Error("Codex timeout must be a positive integer");
 
-  const mcp = serializeMcpConfig(options.mcpConfig);
+  const pluginCommands = pluginSetupCommands(
+    options.plugins,
+    options.pluginMarketplaces,
+  );
+  const deadline = Date.now() + timeoutMs;
+  const githubEnvironment = options.githubEnvironment || {};
+  if (
+    Object.keys(githubEnvironment).some(
+      (name) =>
+        ![
+          "GH_TOKEN",
+          "GITHUB_REPOSITORY",
+          "GITHUB_EVENT_PATH",
+          "GITHUB_WORKSPACE",
+          "GH_HOST",
+        ].includes(name),
+    ) ||
+    Object.values(githubEnvironment).some((value) => typeof value !== "string")
+  )
+    throw new Error("Invalid trusted GitHub environment");
+  const mcp = serializeMcpConfig(compatibility.mcpConfig);
+  const toolEnvironment = workflowToolEnvironment(
+    {
+      ...process.env,
+      ...compatibility.toolEnvironment,
+    },
+    mcp.secrets,
+  );
+  for (const variable of Object.keys(mcp.clientEnvironment))
+    delete toolEnvironment[variable];
+  Object.assign(toolEnvironment, githubEnvironment);
+  const securityOverrides = SECURITY_OVERRIDES.map((value) =>
+    value === "shell_environment_policy.set={}"
+      ? `shell_environment_policy.set={${Object.entries(toolEnvironment)
+          .map(([name, value]) => `${tomlString(name)}=${tomlString(value!)}`)
+          .join(",")}}`
+      : value,
+  );
   const secrets = [
     apiKey,
     ...mcp.secrets,
+    ...(githubEnvironment.GH_TOKEN ? [githubEnvironment.GH_TOKEN] : []),
     ...Object.entries(process.env)
       .filter(
         ([name, value]) =>
@@ -93,6 +169,7 @@ export async function runCodex(
     .filter(Boolean)
     .sort((a, b) => b.length - a.length);
   for (const secret of mcp.secrets) core.setSecret(secret);
+  if (githubEnvironment.GH_TOKEN) core.setSecret(githubEnvironment.GH_TOKEN);
   const redact = (value: string): string => {
     for (const secret of secrets)
       value = value.split(secret).join("[REDACTED]");
@@ -115,13 +192,26 @@ export async function runCodex(
   let home: string | undefined;
   let failure: string | undefined;
   let executionFile: string | undefined;
+  let structuredOutput: unknown;
   try {
-    const prompt = await createPrompt(promptPath, options.appendSystemPrompt);
+    const prompt = await createPrompt(
+      promptPath,
+      [options.appendSystemPrompt, compatibility.appendSystemPrompt]
+        .filter(Boolean)
+        .join("\n\n"),
+    );
     home = await mkdtemp(join(tmpdir(), "codex-action-"));
     await writeFile(
       join(home, "config.toml"),
-      `${SECURITY_OVERRIDES.join("\n")}\n${mcp.toml}\n`,
+      `${securityOverrides.join("\n")}\n${mcp.toml}\n`,
       { mode: 0o600 },
+    );
+    await setupCodexPlugins(
+      options.executable,
+      pluginCommands,
+      codexEnvironment(home, apiKey),
+      deadline,
+      options.signal,
     );
     const lastMessagePath = join(home, "last-message.txt");
     const args = [
@@ -135,13 +225,21 @@ export async function runCodex(
       "--output-last-message",
       lastMessagePath,
     ];
-    for (const override of SECURITY_OVERRIDES) args.push("-c", override);
-    if (options.model) args.push("--model", options.model);
-    if (options.effort)
-      args.push(
-        "-c",
-        `model_reasoning_effort=${JSON.stringify(options.effort)}`,
-      );
+    for (const override of compatibility.configOverrides)
+      args.push("-c", override);
+    // Security settings always win over supplied settings and project configuration.
+    for (const override of securityOverrides) args.push("-c", override);
+    if (compatibility.skipGitRepoCheck) args.push("--skip-git-repo-check");
+    if (compatibility.schema) {
+      const schemaPath = join(home, "output-schema.json");
+      await writeFile(schemaPath, JSON.stringify(compatibility.schema), {
+        mode: 0o600,
+      });
+      args.push("--output-schema", schemaPath);
+    }
+    if (model) args.push("--model", model);
+    if (effort)
+      args.push("-c", `model_reasoning_effort=${JSON.stringify(effort)}`);
     args.push("-");
     core.info("Running Codex with API key authentication");
 
@@ -152,7 +250,7 @@ export async function runCodex(
         return;
       }
       const child = spawn(options.executable, args, {
-        env: codexEnvironment(home!, apiKey),
+        env: { ...codexEnvironment(home!, apiKey), ...mcp.clientEnvironment },
         stdio: ["pipe", "pipe", "pipe"],
         detached: process.platform !== "win32",
         shell: false,
@@ -228,7 +326,7 @@ export async function runCodex(
       options.signal?.addEventListener("abort", abort, { once: true });
       const timer = setTimeout(
         () => terminate("Codex execution timed out"),
-        timeoutMs,
+        Math.max(1, deadline - Date.now()),
       );
       child.on("close", (code, signal) => {
         clearTimeout(timer);
@@ -270,12 +368,19 @@ export async function runCodex(
       failure ??= "Codex did not emit a completed turn";
     if (!transcript.finalMessage?.trim())
       failure ??= "Codex did not produce a final assistant message";
+    if (compatibility.schema && !failure) {
+      try {
+        structuredOutput = JSON.parse(transcript.finalMessage!);
+      } catch {
+        failure = "Codex schema response was not valid JSON";
+      }
+    }
   } catch (error) {
     failure ??= redact(
       error instanceof Error ? error.message : String(error),
     ).slice(0, 4000);
   } finally {
-    transcript.finish(failure);
+    transcript.finish(failure, structuredOutput);
     try {
       executionFile = await writeExecutionFile(
         transcript.messages.map(redactObject),
@@ -289,5 +394,6 @@ export async function runCodex(
     conclusion: "success",
     executionFile,
     sessionId: transcript.sessionId,
+    structuredOutput,
   };
 }

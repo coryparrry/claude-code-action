@@ -1,0 +1,55 @@
+name: Codex
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  codex:
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@codex')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@codex')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@codex')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@codex') || contains(github.event.issue.title, '@codex')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read # Required for Codex to read CI results on PRs
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Run Codex
+        id: claude
+        uses: coryparrry/claude-code-action@codex/openai-runtime
+        with:
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Optional: Customize the trigger phrase (default: @codex)
+          # trigger_phrase: "/codex"
+
+          # Optional: Trigger when specific user is assigned to an issue
+          # assignee_trigger: "codex-bot"
+
+          # Optional: Configure Codex's behavior with CLI arguments
+          # claude_args: |
+          #   --model gpt-5.4
+          #   # No Codex turn limit; use the job timeout-minutes for a time bound.
+          #   --allowedTools "Bash(npm install),Bash(npm run build),Bash(npm run test:*),Bash(npm run lint:*)"
+          #   --append-system-prompt "Follow our coding standards. Ensure all new code has tests. Use TypeScript for new files."
+
+          # Optional: native settings configuration
+          # settings: |
+          #   model_reasoning_effort = "medium"
+          # Set custom environment variables on the step's env: block;
+          # legacy settings.env is unsupported.

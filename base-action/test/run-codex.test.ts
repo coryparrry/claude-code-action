@@ -59,11 +59,14 @@ describe("Codex runner (offline fake CLI)", () => {
     await rm(directory, { recursive: true, force: true });
   });
 
-  async function fake(script: string): Promise<string> {
+  async function fake(
+    script: string,
+    pluginScript = "process.exit(0);",
+  ): Promise<string> {
     const executable = join(directory, "fake-codex");
     await writeFile(
       executable,
-      `#!${process.execPath}\nconst fs = require("node:fs");\nconst path = require("node:path");\nconst args = process.argv.slice(2);\nconst home = process.env.CODEX_HOME;\nconst output = args[args.indexOf("--output-last-message") + 1];\nlet prompt = "";\nprocess.stdin.setEncoding("utf8");\nprocess.stdin.on("data", chunk => prompt += chunk);\nprocess.stdin.on("end", () => {\nfs.writeFileSync(${JSON.stringify(capture)}, JSON.stringify({ args, home, prompt, config: fs.readFileSync(path.join(home, "config.toml"), "utf8"), env: process.env }));\n${script}\n});\n`,
+      `#!${process.execPath}\nconst fs = require("node:fs");\nconst path = require("node:path");\nconst args = process.argv.slice(2);\nconst home = process.env.CODEX_HOME;\nif (args[0] === "plugin") { fs.appendFileSync(${JSON.stringify(join(directory, "plugins.jsonl"))}, JSON.stringify({args, home}) + "\\n"); ${pluginScript} }\nconst output = args[args.indexOf("--output-last-message") + 1];\nlet prompt = "";\nprocess.stdin.setEncoding("utf8");\nprocess.stdin.on("data", chunk => prompt += chunk);\nprocess.stdin.on("end", () => {\nfs.writeFileSync(${JSON.stringify(capture)}, JSON.stringify({ args, home, prompt, config: fs.readFileSync(path.join(home, "config.toml"), "utf8"), env: process.env }));\n${script}\n});\n`,
     );
     await chmod(executable, 0o700);
     return executable;
@@ -113,6 +116,14 @@ describe("Codex runner (offline fake CLI)", () => {
       sandbox: "read-only",
     });
     expect(result.conclusion).toBe("success");
+    const report = (await artifact()).at(-1)!;
+    expect(report.num_turns).toBe(1);
+    expect(report.duration_ms).toBeGreaterThanOrEqual(0);
+    expect(report.usage).toEqual({
+      input_tokens: 1,
+      output_tokens: 1,
+      cache_read_input_tokens: 0,
+    });
     expect(result.sessionId).toBe("session-test-123");
     expect(result.executionFile).toBe(
       join(directory, "codex-execution-output.json"),
@@ -266,6 +277,243 @@ describe("Codex runner (offline fake CLI)", () => {
     await assertCleaned();
   });
 
+  test("keeps tag-mode defaults alongside an explicit allowlist and applies explicit denies last", async () => {
+    const executable = await fake(output());
+    await runCodex(prompt, {
+      executable,
+      mcpConfig: JSON.stringify({
+        mcpServers: {
+          github: { command: "bun" },
+          github_comment: { command: "bun" },
+          github_file_ops: { command: "bun" },
+        },
+      }),
+      compatibilityArgs:
+        "# --allowedTools ignored\n--allowedTools mcp__github__get_issue --disallowedTools mcp__github_file_ops__delete_file",
+      defaultAllowedTools: [
+        "Bash",
+        "mcp__github_comment__update_codex_comment",
+        "mcp__github_file_ops__*",
+        "mcp__github_ci__*",
+      ],
+    });
+    const captured = JSON.parse(await readFile(capture, "utf8"));
+    expect(captured.args).toContain(
+      'mcp_servers."github".enabled_tools=["get_issue"]',
+    );
+    expect(captured.args).toContain(
+      'mcp_servers."github_comment".enabled_tools=["update_codex_comment"]',
+    );
+    expect(captured.args).not.toContain(
+      'mcp_servers."github_comment".enabled=false',
+    );
+    expect(captured.args).not.toContain(
+      'mcp_servers."github_file_ops".enabled=false',
+    );
+    expect(captured.args).not.toContain("features.shell_tool=false");
+    expect(captured.args).toContain(
+      'mcp_servers."github_file_ops".disabled_tools=["delete_file"]',
+    );
+    expect(captured.args.join(" ")).not.toContain("github_ci");
+    await assertCleaned();
+  });
+
+  test("an explicit Bash deny overrides tag-mode Bash defaults", async () => {
+    const executable = await fake(output());
+    await runCodex(prompt, {
+      executable,
+      mcpConfig: '{"mcpServers":{}}',
+      compatibilityArgs: "--allowedTools Bash --disallowedTools Bash",
+      defaultAllowedTools: ["Bash"],
+    });
+    const captured = JSON.parse(await readFile(capture, "utf8"));
+    expect(captured.args).toContain("features.shell_tool=false");
+    expect(captured.args).toContain("features.unified_exec=false");
+    await assertCleaned();
+  });
+
+  test("maps compatibility schema/options and returns structured report output", async () => {
+    const final = JSON.stringify({ done: true });
+    const executable = await fake(output(events, final));
+    const result = await runCodex(prompt, {
+      executable,
+      mcpConfig: '{"mcpServers":{}}',
+      compatibilityArgs: `--skip-git-repo-check --model compat-model --effort high --json-schema '{"type":"object","properties":{"done":{"type":"boolean"}},"required":["done"],"additionalProperties":false}' --append-system-prompt 'Extra compatibility rules'`,
+      settings: 'model_verbosity = "low"',
+    });
+    expect(result.structuredOutput).toEqual({ done: true });
+    expect((await artifact()).at(-1)?.structured_output).toEqual({
+      done: true,
+    });
+    const captured = JSON.parse(await readFile(capture, "utf8"));
+    expect(captured.args).toContain("--output-schema");
+    expect(captured.args).toContain("--skip-git-repo-check");
+    expect(captured.args).toContain("compat-model");
+    expect(captured.args).toContain('model_verbosity="low"');
+    expect(captured.prompt).toContain("Extra compatibility rules");
+    await assertCleaned();
+  });
+
+  test("fails when a schema response is not valid JSON", async () => {
+    const executable = await fake(output(events, "not-json"));
+    await expect(
+      runCodex(prompt, {
+        executable,
+        mcpConfig: '{"mcpServers":{}}',
+        compatibilityArgs: `--json-schema '{"type":"object"}'`,
+      }),
+    ).rejects.toThrow("not valid JSON");
+    expect((await artifact()).at(-1)?.is_error).toBe(true);
+    await assertCleaned();
+  });
+
+  test("preserves actual build environment and legacy env settings in shell config", async () => {
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = "test";
+    try {
+      const executable = await fake(output());
+      await runCodex(prompt, {
+        executable,
+        mcpConfig: '{"mcpServers":{}}',
+        settings: JSON.stringify({ env: { APP_MODE: "fixture" } }),
+      });
+      const captured = JSON.parse(await readFile(capture, "utf8"));
+      const env = parseToml(captured.config).shell_environment_policy.set;
+      expect(env.NODE_ENV).toBe("test");
+      expect(env.APP_MODE).toBe("fixture");
+      expect(env.OPENAI_API_KEY).toBeUndefined();
+      expect(env.ALL_INPUTS).toBeUndefined();
+    } finally {
+      if (previous === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previous;
+    }
+  });
+  test("rejects model credentials smuggled through legacy settings.env values", async () => {
+    const executable = await fake(output());
+    await expect(
+      runCodex(prompt, {
+        executable,
+        mcpConfig: '{"mcpServers":{}}',
+        settings: JSON.stringify({
+          env: {
+            APP_CONFIG: JSON.stringify({ key: process.env.OPENAI_API_KEY }),
+          },
+        }),
+      }),
+    ).rejects.toThrow("reserved or credential variable");
+  });
+  test("grants only explicit trusted GitHub context to shell tools while model credentials stay isolated", async () => {
+    const executable = await fake(output());
+    await runCodex(prompt, {
+      executable,
+      mcpConfig: '{"mcpServers":{}}',
+      githubEnvironment: {
+        GH_TOKEN: "trusted-scoped-token",
+        GITHUB_REPOSITORY: "owner/repo",
+        GITHUB_EVENT_PATH: "/tmp/event.json",
+        GITHUB_WORKSPACE: "/workspace",
+        GH_HOST: "github.com",
+      },
+    });
+    const captured = JSON.parse(await readFile(capture, "utf8"));
+    const config = parseToml(captured.config);
+    expect(config.shell_environment_policy.set).toMatchObject({
+      GH_TOKEN: "trusted-scoped-token",
+      GITHUB_REPOSITORY: "owner/repo",
+      GITHUB_EVENT_PATH: "/tmp/event.json",
+      GITHUB_WORKSPACE: "/workspace",
+      GH_HOST: "github.com",
+    });
+    expect(config.shell_environment_policy.set.OPENAI_API_KEY).toBeUndefined();
+    expect(config.shell_environment_policy.set.CODEX_API_KEY).toBeUndefined();
+    expect(captured.env.GH_TOKEN).toBeUndefined();
+    expect(captured.args).toContain('approval_policy="never"');
+    await assertCleaned();
+  });
+
+  test("gives HTTP authentication to Codex without leaking it into shell configuration or reports", async () => {
+    process.env.REMOTE_MCP_AUTH = "remote-auth-test-only";
+    process.env.APP_DATA = JSON.stringify({ auth: "remote-auth-test-only" });
+    process.env.APP_HEADERS = JSON.stringify({ auth: "header-auth-test-only" });
+    const executable = await fake(
+      output(
+        events,
+        "remote-auth-test-only header-auth-test-only cookie-auth-test-only",
+      ),
+    );
+    await runCodex(prompt, {
+      executable,
+      mcpConfig: JSON.stringify({
+        mcpServers: {
+          remote: {
+            type: "streamable-http",
+            url: "https://example.com/mcp",
+            bearer_token_env_var: "REMOTE_MCP_AUTH",
+            http_headers: {
+              Authorization: "Bearer header-auth-test-only",
+              Cookie: "session=cookie-auth-test-only",
+            },
+          },
+        },
+      }),
+    });
+    const captured = JSON.parse(await readFile(capture, "utf8"));
+    const config = parseToml(captured.config);
+    expect(captured.env.REMOTE_MCP_AUTH).toBe("remote-auth-test-only");
+    expect(config.shell_environment_policy.set.REMOTE_MCP_AUTH).toBeUndefined();
+    expect(config.shell_environment_policy.set.APP_DATA).toBeUndefined();
+    expect(config.shell_environment_policy.set.APP_HEADERS).toBeUndefined();
+    expect(config.mcp_servers.remote.url).toBe("https://example.com/mcp");
+    const report = JSON.stringify(await artifact());
+    expect(report).not.toContain("remote-auth-test-only");
+    expect(report).not.toContain("header-auth-test-only");
+    expect(report).not.toContain("cookie-auth-test-only");
+    expect(secret).toHaveBeenCalledWith("cookie-auth-test-only");
+    expect(secret).toHaveBeenCalledWith("remote-auth-test-only");
+    await assertCleaned();
+  });
+
+  test("installs native plugins into the same disposable home before execution", async () => {
+    const executable = await fake(output());
+    await runCodex(prompt, {
+      executable,
+      mcpConfig: '{"mcpServers":{}}',
+      plugins: "tool@market",
+      pluginMarketplaces: "./marketplace",
+    });
+    const captured = JSON.parse(await readFile(capture, "utf8"));
+    const installations = (
+      await readFile(join(directory, "plugins.jsonl"), "utf8")
+    )
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(installations.map((item) => item.args)).toEqual([
+      ["plugin", "marketplace", "add", "./marketplace", "--json"],
+      ["plugin", "add", "tool@market", "--json"],
+    ]);
+    expect(installations.every((item) => item.home === captured.home)).toBe(
+      true,
+    );
+    await assertCleaned();
+  });
+
+  test("fails and cleans up when native plugin setup fails", async () => {
+    const executable = await fake(output(), "process.exit(2);");
+    await expect(
+      runCodex(prompt, {
+        executable,
+        mcpConfig: '{"mcpServers":{}}',
+        plugins: "tool@market",
+      }),
+    ).rejects.toThrow("plugin setup failed");
+    const setup = JSON.parse(
+      (await readFile(join(directory, "plugins.jsonl"), "utf8")).trim(),
+    );
+    await expect(readFile(join(setup.home, "config.toml"))).rejects.toThrow();
+    expect((await artifact()).at(-1)?.is_error).toBe(true);
+  });
+
   test("rejects malformed NDJSON even if a success event follows", async () => {
     const executable = await fake(
       `process.stdout.write("not-json\\n");\n${output()}`,
@@ -347,14 +595,71 @@ describe("Codex configuration", () => {
   });
 
   test.each([
-    { type: "http", url: "https://example.com" },
     { command: "bun", env: { TOKEN: 123 } },
     { command: "bun", args: [123] },
-    { command: "bun", url: "https://example.com" },
   ])("rejects unsupported or malformed MCP configuration", (server) => {
     expect(() =>
       serializeMcpConfig(JSON.stringify({ mcpServers: { bad: server } })),
     ).toThrow("supports MCP stdio");
+  });
+
+  test.each([
+    { type: "sse", url: "https://example.com" },
+    { command: "bun", url: "https://example.com" },
+    { url: "file:///tmp/server" },
+    { url: "https://user:password@example.com" },
+    { url: "https://example.com", headers: { Authorization: "a\nb" } },
+    { url: "https://example.com", headers: {}, http_headers: {} },
+    { url: "https://example.com", bearer_token_env_var: "OPENAI_API_KEY" },
+    {
+      url: "https://example.com",
+      bearer_token_env_var: "UNSET_HTTP_AUTH_TEST",
+    },
+  ])(
+    "rejects malformed HTTP or unsupported transport without echoing credentials",
+    (server) => {
+      expect(() =>
+        serializeMcpConfig(JSON.stringify({ mcpServers: { bad: server } })),
+      ).toThrow();
+    },
+  );
+
+  test("translates streamable HTTP headers and isolated bearer authentication", () => {
+    process.env.REMOTE_MCP_AUTH = "remote-auth-test-only";
+    try {
+      const result = serializeMcpConfig(
+        JSON.stringify({
+          mcpServers: {
+            remote: {
+              type: "http",
+              url: "https://example.com/mcp",
+              headers: {
+                Authorization: "Bearer header-auth-test-only",
+                "X-Region": "test",
+              },
+              bearer_token_env_var: "REMOTE_MCP_AUTH",
+            },
+          },
+        }),
+      );
+      const parsed = parseToml(result.toml);
+      expect(parsed.mcp_servers.remote).toEqual({
+        url: "https://example.com/mcp",
+        required: true,
+        bearer_token_env_var: "REMOTE_MCP_AUTH",
+        http_headers: {
+          Authorization: "Bearer header-auth-test-only",
+          "X-Region": "test",
+        },
+      });
+      expect(result.clientEnvironment).toEqual({
+        REMOTE_MCP_AUTH: "remote-auth-test-only",
+      });
+      expect(result.secrets).toContain("remote-auth-test-only");
+      expect(result.secrets).toContain("header-auth-test-only");
+    } finally {
+      delete process.env.REMOTE_MCP_AUTH;
+    }
   });
 
   test("rejects invalid JSON without echoing a credential-bearing config", () => {

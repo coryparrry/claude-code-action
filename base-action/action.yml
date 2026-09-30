@@ -37,7 +37,7 @@ inputs:
     required: false
     default: "30"
   mcp_config:
-    description: "JSON object with stdio mcpServers (command, string args, string env)"
+    description: "JSON object with stdio or streamable HTTP mcpServers"
     required: false
     default: '{"mcpServers":{}}'
   append_system_prompt:
@@ -57,6 +57,27 @@ inputs:
     required: false
     default: "false"
 
+  codex_args:
+    description: "Codex and supported legacy CLI arguments"
+    required: false
+    default: ""
+  claude_args:
+    description: "Compatibility alias for codex_args"
+    required: false
+    default: ""
+  settings:
+    description: "Codex configuration or supported legacy settings"
+    required: false
+    default: ""
+  plugins:
+    description: "Newline-separated Codex plugin names"
+    required: false
+    default: ""
+  plugin_marketplaces:
+    description: "Newline-separated Codex plugin marketplace sources"
+    required: false
+    default: ""
+
 outputs:
   conclusion:
     description: "Execution status: success or failure"
@@ -64,6 +85,9 @@ outputs:
   execution_file:
     description: "Path to the redacted JSON execution report"
     value: ${{ steps.run_codex.outputs.execution_file }}
+  structured_output:
+    description: "JSON result when an output schema is supplied"
+    value: ${{ steps.run_codex.outputs.structured_output }}
   session_id:
     description: "Codex thread ID for report correlation; sessions are ephemeral"
     value: ${{ steps.run_codex.outputs.session_id }}
@@ -114,6 +138,11 @@ runs:
         fi
         bun --no-env-file --config="$GITHUB_ACTION_PATH/bunfig.toml" run "$GITHUB_ACTION_PATH/src/index.ts"
       env:
+        INPUT_CODEX_ARGS: ${{ inputs.codex_args }}
+        INPUT_CLAUDE_ARGS: ${{ inputs.claude_args }}
+        INPUT_SETTINGS: ${{ inputs.settings }}
+        INPUT_PLUGINS: ${{ inputs.plugins }}
+        INPUT_PLUGIN_MARKETPLACES: ${{ inputs.plugin_marketplaces }}
         INPUT_PROMPT: ${{ inputs.prompt }}
         INPUT_PROMPT_FILE: ${{ inputs.prompt_file }}
         OPENAI_API_KEY: ${{ inputs.openai_api_key }}

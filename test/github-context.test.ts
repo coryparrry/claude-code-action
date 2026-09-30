@@ -52,6 +52,7 @@ const ENV_KEYS = [
   "BRANCH_NAME_TEMPLATE",
   "USE_STICKY_COMMENT",
   "BUFFER_INLINE_COMMENTS",
+  "CLASSIFY_INLINE_COMMENTS",
   "USE_COMMIT_SIGNING",
   "SSH_SIGNING_KEY",
   "BOT_ID",
@@ -350,11 +351,14 @@ describe("parseGitHubContext", () => {
       expect(inputs.branchNameTemplate).toBeUndefined();
       expect(inputs.useStickyComment).toBe(false);
       expect(inputs.bufferInlineComments).toBe(true);
+      expect(inputs.classifyInlineComments).toBe(true);
       expect(inputs.useCommitSigning).toBe(false);
       expect(inputs.sshSigningKey).toBe("");
       expect(inputs.botId).toBe(String(GITHUB_ACTIONS_BOT_ID));
       expect(inputs.botName).toBe(GITHUB_ACTIONS_BOT_LOGIN);
       expect(inputs.allowedBots).toBe("");
+      expect(inputs.allowedNonWriteUsers).toBe("");
+      expect(inputs.includeFixLinks).toBe(false);
       expect(inputs.trackProgress).toBe(false);
       expect(inputs.includeCommentsByActor).toBe("");
       expect(inputs.excludeCommentsByActor).toBe("");
@@ -399,14 +403,29 @@ describe("parseGitHubContext", () => {
       expect(inputs.branchNameTemplate).toBe("{{description}}");
       expect(inputs.useStickyComment).toBe(true);
       expect(inputs.bufferInlineComments).toBe(false);
+      expect(inputs.classifyInlineComments).toBe(false);
       expect(inputs.useCommitSigning).toBe(true);
       expect(inputs.sshSigningKey).toBe("ssh-key-material");
       expect(inputs.botId).toBe("111");
       expect(inputs.botName).toBe("custom-bot");
       expect(inputs.allowedBots).toBe("dependabot[bot]");
+      expect(inputs.allowedNonWriteUsers).toBe("trusted-user");
+      expect(inputs.includeFixLinks).toBe(true);
       expect(inputs.trackProgress).toBe(true);
       expect(inputs.includeCommentsByActor).toBe("alice");
       expect(inputs.excludeCommentsByActor).toBe("bob");
+    });
+
+    test("classify_inline_comments remains an alias for comment buffering", () => {
+      process.env.CLASSIFY_INLINE_COMMENTS = "false";
+      setEvent("issues", {
+        action: "opened",
+        issue: { number: 1 },
+        repository: repositoryPayload,
+      } as unknown as IssuesEvent);
+      expect(parseGitHubContext().inputs.bufferInlineComments).toBe(false);
+      process.env.BUFFER_INLINE_COMMENTS = "true";
+      expect(parseGitHubContext().inputs.bufferInlineComments).toBe(true);
     });
 
     test("boolean inputs only accept the lowercase string true", () => {

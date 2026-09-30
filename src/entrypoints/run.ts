@@ -128,6 +128,8 @@ async function run() {
       const hasWritePermissions = await checkWritePermissions(
         octokit.rest,
         context,
+        context.inputs.allowedNonWriteUsers,
+        process.env.GITHUB_TOKEN_PROVIDED === "true",
       );
       if (!hasWritePermissions) {
         throw new Error(
@@ -211,6 +213,34 @@ async function run() {
       sandbox: process.env.CODEX_SANDBOX,
       appendSystemPrompt: process.env.APPEND_SYSTEM_PROMPT,
       showFullOutput: process.env.INPUT_SHOW_FULL_OUTPUT,
+      compatibilityArgs: process.env.CODEX_ARGS || process.env.CLAUDE_ARGS,
+      defaultAllowedTools:
+        modeName === "tag"
+          ? [
+              "Bash",
+              ...Object.keys(JSON.parse(prepareResult.mcpConfig).mcpServers)
+                .filter((name) =>
+                  [
+                    "github_comment",
+                    "github_inline_comment",
+                    "github_file_ops",
+                    "github_ci",
+                  ].includes(name),
+                )
+                .map((name) => `mcp__${name}__*`),
+            ]
+          : undefined,
+      settings: process.env.INPUT_SETTINGS,
+      plugins: process.env.INPUT_PLUGINS,
+      pluginMarketplaces: process.env.INPUT_PLUGIN_MARKETPLACES,
+      githubEnvironment: context.inputs.allowedNonWriteUsers
+        ? undefined
+        : {
+            GH_TOKEN: githubToken,
+            GITHUB_REPOSITORY: context.repository.full_name,
+            GITHUB_EVENT_PATH: process.env.GITHUB_EVENT_PATH || "",
+            GITHUB_WORKSPACE: process.env.GITHUB_WORKSPACE || process.cwd(),
+          },
     });
 
     claudeSuccess = result.conclusion === "success";
@@ -222,6 +252,12 @@ async function run() {
     }
     if (result.sessionId) {
       core.setOutput("session_id", result.sessionId);
+    }
+    if (result.structuredOutput !== undefined) {
+      core.setOutput(
+        "structured_output",
+        JSON.stringify(result.structuredOutput),
+      );
     }
     core.setOutput("conclusion", result.conclusion);
   } catch (error) {

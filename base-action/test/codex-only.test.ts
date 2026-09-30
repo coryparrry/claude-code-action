@@ -27,7 +27,7 @@ describe("Codex-only base action", () => {
     for (const name of readdirSync(join(base, "src"))) {
       const source = readFileSync(join(base, "src", name), "utf8");
       expect(source).not.toMatch(
-        /@anthropic-ai|run-claude|CLAUDE_CODE_|ANTHROPIC_/,
+        /from ["\']@anthropic-ai|runClaude\(|installClaude\(|setupWorkloadIdentity\(/,
       );
     }
   });
@@ -39,6 +39,10 @@ describe("Codex-only base action", () => {
       'npm install --global "@openai/codex@$CODEX_VERSION"',
     );
     expect(metadata).toContain("OPENAI_API_KEY: ${{ inputs.openai_api_key }}");
-    expect(metadata).not.toMatch(/claude|anthropic|bedrock|vertex|foundry/i);
+    expect(metadata).toContain("claude_args:");
+    expect(metadata).toContain("codex_args:");
+    expect(metadata).not.toMatch(
+      /anthropic|bedrock|vertex|foundry|claude_code_oauth_token/i,
+    );
   });
 });

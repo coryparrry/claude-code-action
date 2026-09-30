@@ -43,20 +43,13 @@ describe("Codex-only runtime contract", () => {
         "engine",
         "anthropic_api_key",
         "claude_code_oauth_token",
-        "claude_args",
-        "settings",
-        "plugins",
-        "plugin_marketplaces",
         "use_bedrock",
         "use_vertex",
         "use_foundry",
-        "allowed_non_write_users",
-        "include_fix_links",
-        "classify_inline_comments",
       ]) {
         expect(metadata.inputs[legacy]).toBeUndefined();
       }
-      expect(metadata.outputs.structured_output).toBeUndefined();
+      expect(metadata.outputs.structured_output).toBeDefined();
       expect(
         readFileSync(
           new URL(path.replace("action.yml", "bunfig.toml"), import.meta.url),
@@ -68,7 +61,7 @@ describe("Codex-only runtime contract", () => {
           /claude\.ai|api\.anthropic\.com|run-claude/,
         );
         expect(Object.keys(step.env ?? {}).join("\n")).not.toMatch(
-          /ANTHROPIC|CLAUDE|BEDROCK|VERTEX|FOUNDRY/,
+          /ANTHROPIC|CLAUDE_CODE_OAUTH|BEDROCK|VERTEX|FOUNDRY/,
         );
       }
     });
@@ -102,8 +95,33 @@ describe("Codex-only runtime contract", () => {
       ),
       "utf8",
     );
-    expect(postStep).not.toMatch(
-      /fetch\(|ANTHROPIC|classifyComments|api\.anthropic/,
-    );
+    expect(postStep).toContain("classifyComments");
+    expect(postStep).not.toMatch(/ANTHROPIC|api\.anthropic/);
   });
+});
+
+test("preserves the workflow capability inputs around the Codex backend", () => {
+  const metadata = parseYaml(
+    readFileSync(new URL("../action.yml", import.meta.url), "utf8"),
+  );
+  for (const input of [
+    "prompt",
+    "claude_args",
+    "codex_args",
+    "settings",
+    "plugins",
+    "plugin_marketplaces",
+    "allowed_non_write_users",
+    "additional_permissions",
+    "use_commit_signing",
+    "classify_inline_comments",
+    "include_fix_links",
+    "use_sticky_comment",
+    "track_progress",
+  ])
+    expect(metadata.inputs[input]).toBeDefined();
+  const postStep = metadata.runs.steps.find(
+    (step) => step.name === "Post buffered inline comments",
+  );
+  expect(postStep?.env?.OPENAI_API_KEY).toContain("inputs.openai_api_key");
 });
