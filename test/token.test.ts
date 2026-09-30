@@ -1,164 +1,56 @@
-import { describe, expect, test, beforeEach, afterEach, spyOn } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import * as core from "@actions/core";
-import {
-  setupGitHubToken,
-  WorkflowValidationSkipError,
-} from "../src/github/token";
+import { setupGitHubToken } from "../src/github/token";
 
-describe("setupGitHubToken", () => {
-  let originalOverrideToken: string | undefined;
-  let originalAdditionalPermissions: string | undefined;
-  let getIDTokenSpy: any;
-  let setSecretSpy: any;
-  let warningSpy: any;
-  let fetchSpy: any;
-  let setTimeoutSpy: any;
-  let consoleLogSpy: any;
-  let consoleErrorSpy: any;
-
+describe("GitHub token authentication", () => {
+  let originalToken: string | undefined;
+  let originalOverride: string | undefined;
+  let secretSpy: ReturnType<typeof spyOn>;
+  let oidcSpy: ReturnType<typeof spyOn>;
+  let fetchSpy: ReturnType<typeof spyOn>;
   beforeEach(() => {
-    originalOverrideToken = process.env.OVERRIDE_GITHUB_TOKEN;
-    originalAdditionalPermissions = process.env.ADDITIONAL_PERMISSIONS;
+    originalToken = process.env.GITHUB_TOKEN;
+    originalOverride = process.env.OVERRIDE_GITHUB_TOKEN;
+    delete process.env.GITHUB_TOKEN;
     delete process.env.OVERRIDE_GITHUB_TOKEN;
-    delete process.env.ADDITIONAL_PERMISSIONS;
-
-    getIDTokenSpy = spyOn(core, "getIDToken").mockResolvedValue("oidc-token");
-    setSecretSpy = spyOn(core, "setSecret").mockImplementation(() => {});
-    warningSpy = spyOn(core, "warning").mockImplementation(() => {});
-    fetchSpy = spyOn(global, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ token: "app-token" }), {
-        status: 200,
-        statusText: "OK",
-      }),
+    secretSpy = spyOn(core, "setSecret").mockImplementation(() => {});
+    oidcSpy = spyOn(core, "getIDToken").mockRejectedValue(
+      new Error("OIDC must not be called"),
     );
-    setTimeoutSpy = spyOn(global, "setTimeout").mockImplementation(((
-      handler: any,
-    ) => {
-      handler();
-      return 0 as any;
-    }) as any);
-    consoleLogSpy = spyOn(console, "log").mockImplementation(() => {});
-    consoleErrorSpy = spyOn(console, "error").mockImplementation(() => {});
+    fetchSpy = spyOn(global, "fetch").mockRejectedValue(
+      new Error("No external token exchange"),
+    );
   });
-
   afterEach(() => {
-    if (originalOverrideToken === undefined) {
+    if (originalToken === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = originalToken;
+    if (originalOverride === undefined)
       delete process.env.OVERRIDE_GITHUB_TOKEN;
-    } else {
-      process.env.OVERRIDE_GITHUB_TOKEN = originalOverrideToken;
-    }
-
-    if (originalAdditionalPermissions === undefined) {
-      delete process.env.ADDITIONAL_PERMISSIONS;
-    } else {
-      process.env.ADDITIONAL_PERMISSIONS = originalAdditionalPermissions;
-    }
-
-    getIDTokenSpy.mockRestore();
-    setSecretSpy.mockRestore();
-    warningSpy.mockRestore();
+    else process.env.OVERRIDE_GITHUB_TOKEN = originalOverride;
+    expect(oidcSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    secretSpy.mockRestore();
+    oidcSpy.mockRestore();
     fetchSpy.mockRestore();
-    setTimeoutSpy.mockRestore();
-    consoleLogSpy.mockRestore();
-    consoleErrorSpy.mockRestore();
   });
-
-  test("returns app token from OIDC exchange", async () => {
-    await expect(setupGitHubToken()).resolves.toBe("app-token");
-
-    expect(getIDTokenSpy).toHaveBeenCalledWith("claude-code-github-action");
-    expect(setSecretSpy).toHaveBeenCalledWith("app-token");
+  test("uses the workflow token and masks it", async () => {
+    process.env.GITHUB_TOKEN = "workflow-token";
+    expect(await setupGitHubToken()).toBe("workflow-token");
+    expect(secretSpy).toHaveBeenCalledWith("workflow-token");
   });
-
-  test("skips without retrying when workflow is missing from default branch", async () => {
-    const message =
-      "Workflow validation failed. The workflow file must exist and have identical content to the version on the repository's default branch.";
-    fetchSpy.mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          error: {
-            message,
-            details: {
-              error_code: "workflow_not_found_on_default_branch",
-            },
-          },
-        }),
-        { status: 401, statusText: "Unauthorized" },
-      ),
-    );
-
-    await expect(setupGitHubToken()).rejects.toBeInstanceOf(
-      WorkflowValidationSkipError,
-    );
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(warningSpy).toHaveBeenCalledWith(
-      `Skipping action due to workflow validation: ${message}`,
-    );
+  test("prefers the explicitly supplied GitHub token", async () => {
+    process.env.GITHUB_TOKEN = "workflow-token";
+    process.env.OVERRIDE_GITHUB_TOKEN = "custom-token";
+    expect(await setupGitHubToken()).toBe("custom-token");
+    expect(secretSpy).toHaveBeenCalledWith("custom-token");
   });
-
-  test("skips without retrying when workflow validation message has no error code", async () => {
-    const message =
-      "Workflow validation failed. The workflow file must exist and have identical content to the version on the repository's default branch.";
-    fetchSpy.mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          error: {
-            message,
-          },
-        }),
-        { status: 401, statusText: "Unauthorized" },
-      ),
-    );
-
-    await expect(setupGitHubToken()).rejects.toBeInstanceOf(
-      WorkflowValidationSkipError,
-    );
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(warningSpy).toHaveBeenCalledWith(
-      `Skipping action due to workflow validation: ${message}`,
-    );
-  });
-
-  test("retries ordinary token exchange errors instead of skipping", async () => {
-    const message = "Bad credentials";
-    fetchSpy.mockImplementation(
-      async () =>
-        new Response(
-          JSON.stringify({
-            error: {
-              message,
-            },
-          }),
-          { status: 401, statusText: "Unauthorized" },
-        ),
-    );
-
-    await expect(setupGitHubToken()).rejects.toThrow(message);
-
-    expect(fetchSpy).toHaveBeenCalledTimes(3);
-    expect(warningSpy).not.toHaveBeenCalled();
-  });
-
-  test("does not skip message-only workflow validation errors with unexpected status", async () => {
-    const message =
-      "Workflow validation failed. The workflow file must exist and have identical content to the version on the repository's default branch.";
-    fetchSpy.mockImplementation(
-      async () =>
-        new Response(
-          JSON.stringify({
-            error: {
-              message,
-            },
-          }),
-          { status: 500, statusText: "Internal Server Error" },
-        ),
-    );
-
-    await expect(setupGitHubToken()).rejects.toThrow(message);
-
-    expect(fetchSpy).toHaveBeenCalledTimes(3);
-    expect(warningSpy).not.toHaveBeenCalled();
-  });
+  for (const value of [undefined, "", "   "]) {
+    test(`rejects a missing or blank GitHub token (${JSON.stringify(value)})`, async () => {
+      if (value !== undefined) process.env.GITHUB_TOKEN = value;
+      await expect(setupGitHubToken()).rejects.toThrow(
+        "A GitHub token is required",
+      );
+      expect(secretSpy).not.toHaveBeenCalled();
+    });
+  }
 });

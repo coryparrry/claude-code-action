@@ -7,18 +7,32 @@ import {
   spyOn,
   mock,
 } from "bun:test";
+import {
+  mkdtempSync,
+  rmSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { prepareAgentMode } from "../../src/modes/agent";
 import { createMockAutomationContext } from "../mockContext";
 import * as core from "@actions/core";
 import * as gitConfig from "../../src/github/operations/git-config";
 
 describe("Agent Mode", () => {
+  let directory: string;
+  let originalRunnerTemp: string | undefined;
   let exportVariableSpy: any;
   let setOutputSpy: any;
   let configureGitAuthSpy: any;
   let replaceCheckoutCredentialsSpy: any;
 
   beforeEach(() => {
+    originalRunnerTemp = process.env.RUNNER_TEMP;
+    directory = mkdtempSync(join(tmpdir(), "codex-agent-mode-"));
+    process.env.RUNNER_TEMP = directory;
     exportVariableSpy = spyOn(core, "exportVariable").mockImplementation(
       () => {},
     );
@@ -37,6 +51,9 @@ describe("Agent Mode", () => {
   });
 
   afterEach(() => {
+    if (originalRunnerTemp === undefined) delete process.env.RUNNER_TEMP;
+    else process.env.RUNNER_TEMP = originalRunnerTemp;
+    rmSync(directory, { recursive: true, force: true });
     exportVariableSpy?.mockClear();
     setOutputSpy?.mockClear();
     configureGitAuthSpy?.mockClear();
@@ -51,7 +68,7 @@ describe("Agent Mode", () => {
     expect(typeof prepareAgentMode).toBe("function");
   });
 
-  test("prepare passes through claude_args", async () => {
+  test("prepare returns Codex MCP configuration without engine flags", async () => {
     // Clear any previous calls before this test
     exportVariableSpy.mockClear();
     setOutputSpy.mockClear();
@@ -65,9 +82,6 @@ describe("Agent Mode", () => {
     const originalRefName = process.env.GITHUB_REF_NAME;
     delete process.env.GITHUB_HEAD_REF;
     delete process.env.GITHUB_REF_NAME;
-
-    // Set CLAUDE_ARGS environment variable
-    process.env.CLAUDE_ARGS = "--model claude-sonnet-4 --max-turns 10";
 
     const mockOctokit = {
       rest: {
@@ -91,9 +105,7 @@ describe("Agent Mode", () => {
       githubToken: "test-token",
     });
 
-    // Verify claude_args includes user args (no MCP config in agent mode without allowed tools)
-    expect(result.claudeArgs).toBe("--model claude-sonnet-4 --max-turns 10");
-    expect(result.claudeArgs).not.toContain("--mcp-config");
+    // The return value is ready for the Codex runner.
 
     // Verify return structure - should fall back to repository.default_branch when no env vars set
     expect(result).toEqual({
@@ -104,11 +116,9 @@ describe("Agent Mode", () => {
         claudeBranch: undefined,
       },
       mcpConfig: expect.any(String),
-      claudeArgs: "--model claude-sonnet-4 --max-turns 10",
     });
 
     // Clean up
-    delete process.env.CLAUDE_ARGS;
     if (originalHeadRef !== undefined)
       process.env.GITHUB_HEAD_REF = originalHeadRef;
     if (originalRefName !== undefined)
@@ -127,10 +137,10 @@ describe("Agent Mode", () => {
     });
 
     // Save and clear env vars that would otherwise override the fallback
-    const originalClaudeBranch = process.env.CLAUDE_BRANCH;
+    const originalClaudeBranch = process.env.CODEX_BRANCH;
     const originalHeadRef = process.env.GITHUB_HEAD_REF;
     const originalRefName = process.env.GITHUB_REF_NAME;
-    delete process.env.CLAUDE_BRANCH;
+    delete process.env.CODEX_BRANCH;
     delete process.env.GITHUB_HEAD_REF;
     delete process.env.GITHUB_REF_NAME;
 
@@ -162,7 +172,7 @@ describe("Agent Mode", () => {
 
     // Restore env vars
     if (originalClaudeBranch !== undefined)
-      process.env.CLAUDE_BRANCH = originalClaudeBranch;
+      process.env.CODEX_BRANCH = originalClaudeBranch;
     if (originalHeadRef !== undefined)
       process.env.GITHUB_HEAD_REF = originalHeadRef;
     if (originalRefName !== undefined)
@@ -233,7 +243,14 @@ describe("Agent Mode", () => {
       eventName: "workflow_dispatch",
     });
     // In v1-dev, we only have the unified prompt field
-    contextWithPrompts.inputs.prompt = "Custom prompt content";
+    contextWithPrompts.inputs.prompt =
+      "Keep Claude Code /review-pr and CLAUDE.md exactly as written.\nSecond line.";
+    const promptDirectory = join(directory, "codex-prompts");
+    mkdirSync(promptDirectory);
+    writeFileSync(
+      join(promptDirectory, "codex-user-request.txt"),
+      "stale request",
+    );
 
     const mockOctokit = {
       rest: {
@@ -256,13 +273,13 @@ describe("Agent Mode", () => {
       octokit: mockOctokit,
       githubToken: "test-token",
     });
-
-    // Note: We can't easily test file creation in this unit test,
-    // but we can verify the method completes without errors
-    // With our conditional MCP logic, agent mode with no allowed tools
-    // should not include any MCP config
-    // Should be empty or just whitespace when no MCP servers are included
-    expect(result.claudeArgs).not.toContain("--mcp-config");
+    expect(
+      readFileSync(join(promptDirectory, "codex-prompt.txt"), "utf8"),
+    ).toBe(contextWithPrompts.inputs.prompt);
+    expect(() =>
+      readFileSync(join(promptDirectory, "codex-user-request.txt")),
+    ).toThrow();
+    expect(result).not.toHaveProperty("claudeArgs");
   });
 
   describe("git credential configuration", () => {

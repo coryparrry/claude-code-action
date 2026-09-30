@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 /**
- * Create the initial tracking comment when Claude Code starts working
+ * Create the initial tracking comment when Codex starts working
  * This comment shows the working status and includes a link to the job run
  */
 
@@ -17,8 +17,6 @@ import {
   type ParsedGitHubContext,
 } from "../../context";
 import type { Octokit } from "@octokit/rest";
-
-const CLAUDE_APP_BOT_ID = 209825114;
 
 export async function createInitialComment(
   octokit: Octokit,
@@ -43,21 +41,11 @@ export async function createInitialComment(
         issue_number: context.entityNumber,
       });
       const existingComment = comments.data.find((comment) => {
-        if (process.env.ACTION_ENGINE === "codex") {
-          const expectedAuthor = process.env.BOT_NAME || "github-actions[bot]";
-          return (
-            comment.user?.login.toLowerCase() ===
-              expectedAuthor.toLowerCase() &&
-            !!comment.body?.includes(CODEX_COMMENT_MARKER)
-          );
-        }
-        const idMatch = comment.user?.id === CLAUDE_APP_BOT_ID;
-        const botNameMatch =
-          comment.user?.type === "Bot" &&
-          comment.user?.login.toLowerCase().includes("claude");
-        const bodyMatch = comment.body === initialBody;
-
-        return idMatch || botNameMatch || bodyMatch;
+        return (
+          comment.user?.login.toLowerCase() ===
+            context.inputs.botName.toLowerCase() &&
+          !!comment.body?.includes(CODEX_COMMENT_MARKER)
+        );
       });
       if (existingComment) {
         response = await octokit.rest.issues.updateComment({
@@ -96,7 +84,7 @@ export async function createInitialComment(
 
     // Output the comment ID for downstream steps using GITHUB_OUTPUT
     const githubOutput = process.env.GITHUB_OUTPUT!;
-    appendFileSync(githubOutput, `claude_comment_id=${response.data.id}\n`);
+    appendFileSync(githubOutput, `codex_comment_id=${response.data.id}\n`);
     console.log(`✅ Created initial comment with ID: ${response.data.id}`);
     return response.data;
   } catch (error) {
@@ -112,7 +100,7 @@ export async function createInitialComment(
       });
 
       const githubOutput = process.env.GITHUB_OUTPUT!;
-      appendFileSync(githubOutput, `claude_comment_id=${response.data.id}\n`);
+      appendFileSync(githubOutput, `codex_comment_id=${response.data.id}\n`);
       console.log(`✅ Created fallback comment with ID: ${response.data.id}`);
       return response.data;
     } catch (fallbackError) {

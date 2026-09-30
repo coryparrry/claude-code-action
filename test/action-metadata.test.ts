@@ -13,3 +13,97 @@ describe("action metadata", () => {
     );
   });
 });
+
+const parseYaml = (
+  Bun as unknown as {
+    YAML: {
+      parse: (source: string) => {
+        inputs: Record<string, unknown>;
+        outputs: Record<string, unknown>;
+        runs: {
+          steps: {
+            name?: string;
+            run?: string;
+            env?: Record<string, string>;
+          }[];
+        };
+      };
+    };
+  }
+).YAML.parse;
+
+describe("Codex-only runtime contract", () => {
+  for (const path of ["../action.yml", "../base-action/action.yml"]) {
+    test(`${path} exposes only Codex model authentication`, () => {
+      const metadata = parseYaml(
+        readFileSync(new URL(path, import.meta.url), "utf8"),
+      );
+      expect(metadata.inputs.openai_api_key).toBeDefined();
+      for (const legacy of [
+        "engine",
+        "anthropic_api_key",
+        "claude_code_oauth_token",
+        "claude_args",
+        "settings",
+        "plugins",
+        "plugin_marketplaces",
+        "use_bedrock",
+        "use_vertex",
+        "use_foundry",
+        "allowed_non_write_users",
+        "include_fix_links",
+        "classify_inline_comments",
+      ]) {
+        expect(metadata.inputs[legacy]).toBeUndefined();
+      }
+      expect(metadata.outputs.structured_output).toBeUndefined();
+      expect(
+        readFileSync(
+          new URL(path.replace("action.yml", "bunfig.toml"), import.meta.url),
+          "utf8",
+        ),
+      ).toContain("Intentionally minimal");
+      for (const step of metadata.runs.steps) {
+        expect(step.run ?? "").not.toMatch(
+          /claude\.ai|api\.anthropic\.com|run-claude/,
+        );
+        expect(Object.keys(step.env ?? {}).join("\n")).not.toMatch(
+          /ANTHROPIC|CLAUDE|BEDROCK|VERTEX|FOUNDRY/,
+        );
+      }
+    });
+  }
+  for (const path of ["../package.json", "../base-action/package.json"]) {
+    test(`${path} has no model-agent SDK dependency`, () => {
+      const manifest = JSON.parse(
+        readFileSync(new URL(path, import.meta.url), "utf8"),
+      );
+      expect(Object.keys(manifest.dependencies)).not.toContain(
+        "@anthropic-ai/claude-agent-sdk",
+      );
+      expect(Object.keys(manifest.dependencies)).not.toContain(
+        "@openai/agents",
+      );
+    });
+  }
+  test("the orchestrator and buffered-comment post-step cannot select or call Claude", () => {
+    const orchestrator = readFileSync(
+      new URL("../src/entrypoints/run.ts", import.meta.url),
+      "utf8",
+    );
+    expect(orchestrator).toContain("await runCodex(");
+    expect(orchestrator).not.toMatch(
+      /runClaude|installClaude|setupWorkloadIdentity|setupClaudeCodeSettings|installPlugins/,
+    );
+    const postStep = readFileSync(
+      new URL(
+        "../src/entrypoints/post-buffered-inline-comments.ts",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    expect(postStep).not.toMatch(
+      /fetch\(|ANTHROPIC|classifyComments|api\.anthropic/,
+    );
+  });
+});

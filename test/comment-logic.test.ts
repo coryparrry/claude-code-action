@@ -18,46 +18,46 @@ describe("updateCommentBody", () => {
     it("includes success message header with duration", () => {
       const input = {
         ...baseInput,
-        currentBody: "Claude Code is working…",
+        currentBody: "Codex is working…",
         executionDetails: { duration_ms: 74000 }, // 1m 14s
         triggerUsername: "trigger-user",
       };
 
       const result = updateCommentBody(input);
       expect(result).toContain(
-        "**Claude finished @trigger-user's task in 1m 14s**",
+        "**Codex finished @trigger-user's task in 1m 14s**",
       );
-      expect(result).not.toContain("Claude Code is working");
+      expect(result).not.toContain("Codex is working");
     });
 
     it("includes error message header with duration", () => {
       const input = {
         ...baseInput,
-        currentBody: "Claude Code is working...",
+        currentBody: "Codex is working...",
         actionFailed: true,
         executionDetails: { duration_ms: 45000 }, // 45s
       };
 
       const result = updateCommentBody(input);
-      expect(result).toContain("**Claude encountered an error after 45s**");
+      expect(result).toContain("**Codex encountered an error after 45s**");
     });
 
     it("includes error details when provided", () => {
       const input = {
         ...baseInput,
-        currentBody: "Claude Code is working...",
+        currentBody: "Codex is working...",
         actionFailed: true,
         executionDetails: { duration_ms: 45000 },
         errorDetails: "Failed to fetch issue data",
       };
 
       const result = updateCommentBody(input);
-      expect(result).toContain("**Claude encountered an error after 45s**");
+      expect(result).toContain("**Codex encountered an error after 45s**");
       expect(result).toContain("[View job]");
       expect(result).toContain("```\nFailed to fetch issue data\n```");
       // Ensure error details come after the header/links
       const errorIndex = result.indexOf("```");
-      const headerIndex = result.indexOf("**Claude encountered an error");
+      const headerIndex = result.indexOf("**Codex encountered an error");
       expect(errorIndex).toBeGreaterThan(headerIndex);
     });
 
@@ -65,11 +65,11 @@ describe("updateCommentBody", () => {
       const input = {
         ...baseInput,
         currentBody:
-          "Claude Code is working… <img src='spinner.gif' />\n\nI'll work on this task @testuser",
+          "Codex is working… <img src='spinner.gif' />\n\nI'll work on this task @testuser",
       };
 
       const result = updateCommentBody(input);
-      expect(result).toContain("**Claude finished @testuser's task**");
+      expect(result).toContain("**Codex finished @testuser's task**");
     });
   });
 
@@ -215,7 +215,9 @@ describe("updateCommentBody", () => {
       expect(result).toContain("This PR was created.");
       // Body part should be clean with no stray parens
       const bodyAfterSeparator = result.split("---")[1]?.trim();
-      expect(bodyAfterSeparator).toBe("This PR was created.");
+      expect(bodyAfterSeparator).toBe(
+        "This PR was created.\n\n<!-- codex-action:tracking -->",
+      );
     });
 
     it("handles PR links with unencoded spaces and special characters", () => {
@@ -266,7 +268,7 @@ describe("updateCommentBody", () => {
       };
 
       const result = updateCommentBody(input);
-      expect(result).toContain("**Claude finished @testuser's task in 31s**");
+      expect(result).toContain("**Codex finished @testuser's task in 31s**");
     });
 
     it("formats duration in minutes and seconds in header", () => {
@@ -279,9 +281,7 @@ describe("updateCommentBody", () => {
       };
 
       const result = updateCommentBody(input);
-      expect(result).toContain(
-        "**Claude finished @testuser's task in 1m 15s**",
-      );
+      expect(result).toContain("**Codex finished @testuser's task in 1m 15s**");
     });
 
     it("includes duration in error header", () => {
@@ -294,7 +294,7 @@ describe("updateCommentBody", () => {
       };
 
       const result = updateCommentBody(input);
-      expect(result).toContain("**Claude encountered an error after 45s**");
+      expect(result).toContain("**Codex encountered an error after 45s**");
     });
 
     it("handles missing duration gracefully", () => {
@@ -307,7 +307,7 @@ describe("updateCommentBody", () => {
       };
 
       const result = updateCommentBody(input);
-      expect(result).toContain("**Claude finished @testuser's task**");
+      expect(result).toContain("**Codex finished @testuser's task**");
       expect(result).not.toContain(" in ");
     });
   });
@@ -317,7 +317,7 @@ describe("updateCommentBody", () => {
       const input = {
         ...baseInput,
         currentBody:
-          "Claude Code is working…\n\n### Todo List:\n- [x] Read README.md\n- [x] Add disclaimer",
+          "Codex is working…\n\n### Todo List:\n- [x] Read README.md\n- [x] Add disclaimer",
         actionFailed: false,
         branchName: "claude-branch-123",
         prLink: "\n[Create a PR](https://github.com/owner/repo/pr-url)",
@@ -332,7 +332,7 @@ describe("updateCommentBody", () => {
 
       // Check the header structure
       expect(result).toContain(
-        "**Claude finished @trigger-user's task in 1m 5s**",
+        "**Codex finished @trigger-user's task in 1m 5s**",
       );
       expect(result).toContain("—— [View job]");
       expect(result).toContain(
@@ -341,7 +341,7 @@ describe("updateCommentBody", () => {
       expect(result).toContain("• [Create PR ➔]");
 
       // Check order - header comes before separator with blank line
-      const headerIndex = result.indexOf("**Claude finished");
+      const headerIndex = result.indexOf("**Codex finished");
       const blankLineAndSeparatorPattern = /\n\n---\n/;
       expect(result).toMatch(blankLineAndSeparatorPattern);
 
@@ -361,7 +361,7 @@ describe("updateCommentBody", () => {
       const input = {
         ...baseInput,
         currentBody:
-          "Claude Code is working…\n\nI've made changes.\n[Create a PR](https://github.com/owner/repo/pr-url-in-content)\n\n@john-doe",
+          "Codex is working…\n\nI've made changes.\n[Create a PR](https://github.com/owner/repo/pr-url-in-content)\n\n@john-doe",
         branchName: "feature-branch",
         triggerUsername: "john-doe",
       };
@@ -375,7 +375,7 @@ describe("updateCommentBody", () => {
       // Original link should be removed from body
       expect(result).not.toContain("[Create a PR]");
       // Username should come from argument, not extraction
-      expect(result).toContain("**Claude finished @john-doe's task**");
+      expect(result).toContain("**Codex finished @john-doe's task**");
       // Content should be preserved
       expect(result).toContain("I've made changes.");
     });
@@ -383,7 +383,7 @@ describe("updateCommentBody", () => {
     it("includes PR link for new branches (issues and closed PRs)", () => {
       const input = {
         ...baseInput,
-        currentBody: "Claude Code is working… <img src='spinner.gif' />",
+        currentBody: "Codex is working… <img src='spinner.gif' />",
         branchName: "claude/pr-456-20240101-1200",
         prLink:
           "\n[Create a PR](https://github.com/owner/repo/compare/main...claude/pr-456-20240101-1200)",
@@ -396,13 +396,13 @@ describe("updateCommentBody", () => {
       expect(result).toContain(
         "• [Create PR ➔](https://github.com/owner/repo/compare/main...claude/pr-456-20240101-1200)",
       );
-      expect(result).toContain("**Claude finished @jane-doe's task**");
+      expect(result).toContain("**Codex finished @jane-doe's task**");
     });
 
     it("includes both branch link and PR link for new branches", () => {
       const input = {
         ...baseInput,
-        currentBody: "Claude Code is working…",
+        currentBody: "Codex is working…",
         branchName: "claude/issue-123-20240101-1200",
         branchLink:
           "\n[View branch](https://github.com/owner/repo/tree/claude/issue-123-20240101-1200)",
@@ -435,7 +435,7 @@ describe("updateCommentBody", () => {
 
       const result = updateCommentBody(input);
 
-      expect(result).toContain("Claude finished @claude's task in 1m 30s");
+      expect(result).toContain("Codex finished @claude's task in 1m 30s");
       expect(result).toContain(
         "[View job](https://github.com/owner/repo/actions/runs/123)",
       );

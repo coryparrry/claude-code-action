@@ -4,7 +4,6 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { redactSecrets } from "../../src/github/utils/sanitizer";
-import type { ClaudeRunResult } from "./run-claude-sdk";
 import { writeExecutionFile } from "./execution-file";
 import {
   codexEnvironment,
@@ -12,6 +11,12 @@ import {
   serializeMcpConfig,
 } from "./codex-config";
 import { CodexTranscript } from "./codex-transcript";
+
+export type CodexRunResult = {
+  executionFile?: string;
+  sessionId?: string;
+  conclusion: "success" | "failure";
+};
 
 export type CodexOptions = {
   mcpConfig: string;
@@ -33,7 +38,7 @@ async function createPrompt(path: string, appended?: string): Promise<string> {
   let request = "";
   try {
     request = await readFile(
-      join(dirname(path), "claude-user-request.txt"),
+      join(dirname(path), "codex-user-request.txt"),
       "utf8",
     );
   } catch (error) {
@@ -52,7 +57,7 @@ async function createPrompt(path: string, appended?: string): Promise<string> {
 export async function runCodex(
   promptPath: string,
   options: CodexOptions,
-): Promise<ClaudeRunResult> {
+): Promise<CodexRunResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey?.trim())
     throw new Error("OPENAI_API_KEY is required to run Codex");

@@ -23,7 +23,7 @@ export async function checkAndCommitOrDeleteBranch(
   //
   // The exclusion is driven by what was actually restored rather than applied
   // unconditionally: this path also runs for issues, where no restore happens
-  // and Claude may legitimately have been asked to edit CLAUDE.md or
+  // and Codex may legitimately have been asked to edit CLAUDE.md or
   // .claude/settings.json. Excluding those there would silently drop the work.
   const pathspecArgs =
     restoredConfigPaths.length > 0
@@ -62,7 +62,7 @@ export async function checkAndCommitOrDeleteBranch(
       return { shouldDeleteBranch: false, branchLink: "" };
     }
 
-    // Check if Claude made any commits to the branch
+    // Check if Codex made any commits to the branch
     try {
       const { data: comparison } =
         await octokit.rest.repos.compareCommitsWithBasehead({
@@ -75,7 +75,7 @@ export async function checkAndCommitOrDeleteBranch(
       if (comparison.total_commits === 0) {
         if (!useCommitSigning) {
           console.log(
-            `Branch ${claudeBranch} has no commits from Claude, checking for uncommitted changes...`,
+            `Branch ${claudeBranch} has no commits from Codex, checking for uncommitted changes...`,
           );
 
           // Check for uncommitted changes using git status
@@ -96,7 +96,7 @@ export async function checkAndCommitOrDeleteBranch(
 
               // Commit with a descriptive message
               const runId = process.env.GITHUB_RUN_ID || "unknown";
-              const commitMessage = `Auto-commit: Save uncommitted changes from Claude\n\nRun ID: ${runId}`;
+              const commitMessage = `Auto-commit: Save uncommitted changes from Codex\n\nRun ID: ${runId}`;
               await $`git commit -m ${commitMessage}`;
 
               // Push the changes
@@ -123,7 +123,7 @@ export async function checkAndCommitOrDeleteBranch(
           }
         } else {
           console.log(
-            `Branch ${claudeBranch} has no commits from Claude, will delete it`,
+            `Branch ${claudeBranch} has no commits from Codex, will delete it`,
           );
           shouldDeleteBranch = true;
         }
@@ -133,7 +133,7 @@ export async function checkAndCommitOrDeleteBranch(
         branchLink = `\n[View branch](${branchUrl})`;
       }
     } catch (error) {
-      console.error("Error comparing commits on Claude branch:", error);
+      console.error("Error comparing commits on Codex branch:", error);
       // If we can't compare but the branch exists remotely, include the branch link
       const branchUrl = `${GITHUB_SERVER_URL}/${owner}/${repo}/tree/${encodeBranchNameForUrl(claudeBranch)}`;
       branchLink = `\n[View branch](${branchUrl})`;

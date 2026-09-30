@@ -36,5 +36,5 @@ export function createCommentBody(
 
 I'll analyze this and get back to you.
 
-${jobRunLink}${branchLink}${process.env.ACTION_ENGINE === "codex" ? `\n\n${CODEX_COMMENT_MARKER}` : ""}`;
+${jobRunLink}${branchLink}\n\n${CODEX_COMMENT_MARKER}`;
 }

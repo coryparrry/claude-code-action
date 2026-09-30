@@ -16,7 +16,7 @@ describe("SSH Signing", () => {
   // Use a temp directory for tests
   const testTmpDir = join(tmpdir(), "claude-ssh-signing-test");
   const testSshDir = join(testTmpDir, ".ssh");
-  const testKeyPath = join(testSshDir, "claude_signing_key");
+  const testKeyPath = join(testSshDir, "codex_signing_key");
   const testKey =
     "-----BEGIN OPENSSH PRIVATE KEY-----\ntest-key-content\n-----END OPENSSH PRIVATE KEY-----";
 

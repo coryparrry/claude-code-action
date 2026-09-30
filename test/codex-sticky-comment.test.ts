@@ -89,6 +89,13 @@ test("supports a configured custom token author", async () => {
       },
     },
   } as unknown as Octokit;
-  expect((await createInitialComment(octokit, context())).id).toBe(123);
+  expect(
+    (
+      await createInitialComment(octokit, {
+        ...context(),
+        inputs: { ...context().inputs, botName: "my-codex-bot[bot]" },
+      })
+    ).id,
+  ).toBe(123);
   expect(create).not.toHaveBeenCalled();
 });

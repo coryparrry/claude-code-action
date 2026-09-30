@@ -356,7 +356,7 @@ export function groupTurnsNaturally(data: Turn[]): GroupedContent[] {
 }
 
 export function formatGroupedContent(groupedContent: GroupedContent[]): string {
-  let markdown = "## Claude Code Report\n\n";
+  let markdown = "## Codex Report\n\n";
 
   for (const item of groupedContent) {
     const itemType = item.type;

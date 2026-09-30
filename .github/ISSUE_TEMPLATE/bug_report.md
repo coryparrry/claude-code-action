@@ -24,13 +24,9 @@ A clear and concise description of what you expected to happen.
 If applicable, add screenshots to help explain your problem.
 
 **Workflow yml file**
-If it's not sensitive, consider including a paste of your full Claude workflow.yml file.
+If it's not sensitive, consider including a paste of your full Codex workflow.yml file.
 
-**API Provider**
-
-[ ] Anthropic First-Party API (default)
-[ ] AWS Bedrock
-[ ] GCP Vertex
+**Codex CLI version and runner OS**
 
 **Additional context**
 Add any other context about the problem here.

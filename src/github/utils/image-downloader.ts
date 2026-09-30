@@ -255,7 +255,7 @@ export async function downloadCommentImages(
           // no file extension, so the URL-based guess silently falls back to
           // ".png". When the bytes are actually JPEG/GIF/WebP, the saved file is
           // mislabeled and the Read tool sends a base64 image with the wrong
-          // media_type, which the Anthropic API rejects (400 invalid_request).
+          // media_type, which image viewers may reject.
           // Detect the real type from the magic bytes and only fall back to the
           // URL extension when the signature is unrecognized.
           const fileExtension =
@@ -335,7 +335,7 @@ function getImageExtension(url: string): string {
  * Determine an image's file extension from its magic bytes, independent of the
  * (often extensionless) source URL. Returns undefined when the signature is not
  * a format we can confidently identify, so the caller can fall back to the
- * URL-based extension. Covers the raster formats the Anthropic API accepts.
+ * URL-based extension. Covers supported raster image formats.
  */
 function detectImageExtensionFromBuffer(buffer: Buffer): string | undefined {
   // PNG: 89 50 4E 47 0D 0A 1A 0A

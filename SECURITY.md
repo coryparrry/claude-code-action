@@ -1,15 +1,12 @@
-# Security Policy
+# Security
 
-Thank you for helping us keep this action and the systems they interact with secure.
+Fork PR execution is disabled. PR identity lookup failures fail closed, and entity
+and upstream workflow actors must have repository write or admin permission.
+The action runs Codex with an isolated temporary configuration and restricted
+shell environment. Its scoped GitHub MCP servers receive only their GitHub token.
+PR-authored instructions and configuration are restored from the trusted base.
 
-## Reporting Security Issues
-
-This repository is maintained by [Anthropic](https://www.anthropic.com/).
-
-The security of our systems and user data is Anthropic’s top priority. We appreciate the work of security researchers acting in good faith in identifying and reporting potential vulnerabilities.
-
-Our security program is managed on HackerOne and we ask that any validated vulnerability in this functionality be reported through their [submission form](https://hackerone.com/4f1f16ba-10d3-4d09-9ecc-c721aad90f24/embedded_submissions/new).
-
-## Anthropic Bug Bounty
-
-Our Bug Bounty Program Guidelines are defined on our [HackerOne program page](https://hackerone.com/anthropic).
+Use repository-scoped workflow permissions and trusted workflow authors. Model
+output may still be incorrect; inspect changes before merging. See the runtime
+and fork-policy tests for enforced behavior. Report issues to this fork's
+maintainer through GitHub; upstream Anthropic support does not maintain this fork.

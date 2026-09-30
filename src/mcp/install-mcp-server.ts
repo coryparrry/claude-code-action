@@ -1,5 +1,5 @@
 import * as core from "@actions/core";
-import { GITHUB_API_URL, GITHUB_SERVER_URL } from "../github/api/config";
+import { GITHUB_API_URL } from "../github/api/config";
 import type { GitHubContext } from "../github/context";
 import { isEntityContext } from "../github/context";
 import { Octokit } from "@octokit/rest";
@@ -12,7 +12,6 @@ type PrepareConfigParams = {
   branch: string;
   baseBranch: string;
   claudeCommentId?: string;
-  allowedTools: string[];
   mode: AutoDetectedMode;
   context: GitHubContext;
 };
@@ -73,47 +72,15 @@ export async function prepareMcpConfig(
     branch,
     baseBranch,
     claudeCommentId,
-    allowedTools,
     context,
-    mode,
   } = params;
   try {
-    const allowedToolsList = allowedTools || [];
-
-    // Detect if we're in agent mode (explicit prompt provided)
-    const isAgentMode = mode === "agent";
-
-    const hasGitHubCommentTools = allowedToolsList.some(
-      (tool) =>
-        tool === "mcp__github_comment" ||
-        tool.startsWith("mcp__github_comment__"),
-    );
-
-    const hasGitHubMcpTools = allowedToolsList.some(
-      (tool) => tool === "mcp__github" || tool.startsWith("mcp__github__"),
-    );
-
-    const hasInlineCommentTools = allowedToolsList.some(
-      (tool) =>
-        tool === "mcp__github_inline_comment" ||
-        tool.startsWith("mcp__github_inline_comment__"),
-    );
-
-    const hasGitHubCITools = allowedToolsList.some(
-      (tool) =>
-        tool === "mcp__github_ci" || tool.startsWith("mcp__github_ci__"),
-    );
-
     const baseMcpConfig: { mcpServers: Record<string, unknown> } = {
       mcpServers: {},
     };
 
-    // Include comment server:
-    // - Always in tag mode (for updating Claude comments)
-    // - Only with explicit tools in agent mode
-    const shouldIncludeCommentServer = !isAgentMode || hasGitHubCommentTools;
-
-    if (shouldIncludeCommentServer) {
+    // Tracking comments exist only in mention mode.
+    if (claudeCommentId) {
       baseMcpConfig.mcpServers.github_comment = {
         command: "bun",
         args: bunServerArgs("src/mcp/github-comment-server.ts"),
@@ -121,7 +88,7 @@ export async function prepareMcpConfig(
           GITHUB_TOKEN: githubToken,
           REPO_OWNER: owner,
           REPO_NAME: repo,
-          ...(claudeCommentId && { CLAUDE_COMMENT_ID: claudeCommentId }),
+          ...(claudeCommentId && { CODEX_COMMENT_ID: claudeCommentId }),
           GITHUB_EVENT_NAME: process.env.GITHUB_EVENT_NAME || "",
           GITHUB_API_URL: GITHUB_API_URL,
         },
@@ -147,12 +114,8 @@ export async function prepareMcpConfig(
       };
     }
 
-    // Include inline comment server for PRs when requested via allowed tools
-    if (
-      isEntityContext(context) &&
-      context.isPR &&
-      (hasGitHubMcpTools || hasInlineCommentTools)
-    ) {
+    // Inline review tools are available for PR tasks in either mode.
+    if (isEntityContext(context) && context.isPR) {
       baseMcpConfig.mcpServers.github_inline_comment = {
         command: "bun",
         args: bunServerArgs("src/mcp/github-inline-comment-server.ts"),
@@ -162,22 +125,18 @@ export async function prepareMcpConfig(
           REPO_NAME: repo,
           PR_NUMBER: context.entityNumber?.toString() || "",
           GITHUB_API_URL: GITHUB_API_URL,
-          CLASSIFY_INLINE_COMMENTS: context.inputs.classifyInlineComments
+          BUFFER_INLINE_COMMENTS: context.inputs.bufferInlineComments
             ? "true"
             : "false",
         },
       };
     }
 
-    // CI server is included when:
-    // - In tag mode: when we have a workflow token and context is a PR
-    // - In agent mode: same conditions PLUS explicit CI tools in allowedTools
-    const hasWorkflowToken = !!process.env.DEFAULT_WORKFLOW_TOKEN;
+    // CI reads require an explicit actions:read grant on the workflow token.
     const shouldIncludeCIServer =
-      (!isAgentMode || hasGitHubCITools) &&
       isEntityContext(context) &&
       context.isPR &&
-      hasWorkflowToken;
+      !!process.env.DEFAULT_WORKFLOW_TOKEN;
 
     if (shouldIncludeCIServer) {
       // Verify the token actually has actions:read permission
@@ -210,28 +169,6 @@ export async function prepareMcpConfig(
       }
     }
 
-    if (hasGitHubMcpTools) {
-      baseMcpConfig.mcpServers.github = {
-        command: "docker",
-        args: [
-          "run",
-          "-i",
-          "--rm",
-          "-e",
-          "GITHUB_PERSONAL_ACCESS_TOKEN",
-          "-e",
-          "GITHUB_HOST",
-          "ghcr.io/github/github-mcp-server:sha-23fa0dd", // https://github.com/github/github-mcp-server/releases/tag/v0.17.1
-        ],
-        env: {
-          GITHUB_PERSONAL_ACCESS_TOKEN: githubToken,
-          GITHUB_HOST: GITHUB_SERVER_URL,
-        },
-      };
-    }
-
-    // Return only our GitHub servers config
-    // User's config will be passed as separate --mcp-config flags
     return JSON.stringify(baseMcpConfig, null, 2);
   } catch (error) {
     core.setFailed(`Install MCP server failed with error: ${error}`);

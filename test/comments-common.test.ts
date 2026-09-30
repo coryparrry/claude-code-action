@@ -53,7 +53,7 @@ describe("comments/common", () => {
       const body = createCommentBody(jobRunLink);
 
       expect(body).toContain(SPINNER_HTML);
-      expect(body).toContain("Claude Code is working…");
+      expect(body).toContain("Codex is working…");
       expect(body).toContain(jobRunLink);
     });
 
@@ -61,7 +61,7 @@ describe("comments/common", () => {
       const body = createCommentBody(createJobRunLink("o", "r", "7"));
       expect(body).not.toContain("View branch");
       // No trailing branch content: body ends with the job run link.
-      expect(body.endsWith(")")).toBe(true);
+      expect(body.endsWith("<!-- codex-action:tracking -->")).toBe(true);
     });
 
     test("appends the branch link when provided", () => {

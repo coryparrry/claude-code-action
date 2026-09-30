@@ -1,17 +1,15 @@
 #!/usr/bin/env bun
 
 /**
- * Unified entrypoint for the Claude Code Action.
+ * Unified entrypoint for the Codex GitHub Action.
  * Merges all previously separate action.yml steps (prepare, install, run, cleanup)
  * into a single TypeScript orchestrator.
  */
 
 import * as core from "@actions/core";
-import { dirname } from "path";
-import { spawn } from "child_process";
 import { appendFile, rm } from "fs/promises";
 import { existsSync, readFileSync } from "fs";
-import { setupGitHubToken, WorkflowValidationSkipError } from "../github/token";
+import { setupGitHubToken } from "../github/token";
 import { checkWritePermissions } from "../github/validation/permissions";
 import {
   assertNoForkPullRequests,
@@ -41,93 +39,15 @@ import { updateCommentLink } from "./update-comment-link";
 import { formatTurnsFromData } from "./format-turns";
 import type { Turn } from "./format-turns";
 import { redactSecrets } from "../github/utils/sanitizer";
-// Base-action imports (used directly instead of subprocess)
-import { setupWorkloadIdentity } from "../../base-action/src/workload-identity";
-import type { WorkloadIdentityHandle } from "../../base-action/src/workload-identity";
-import { validateEnvironmentVariables } from "../../base-action/src/validate-env";
-import { setupClaudeCodeSettings } from "../../base-action/src/setup-claude-code-settings";
-import { installPlugins } from "../../base-action/src/install-plugins";
 import { preparePrompt } from "../../base-action/src/prepare-prompt";
-import { runClaude } from "../../base-action/src/run-claude";
-import type { ClaudeRunResult } from "../../base-action/src/run-claude-sdk";
+import type { CodexRunResult } from "../../base-action/src/run-codex";
 import {
   getExecutionFilePath,
   setExecutionFileOutputIfPresent,
 } from "../../base-action/src/execution-file";
 
-// Exported for unit testing. `set -o pipefail` makes curl's non-zero exit
-// propagate through the pipe so the install retry logic actually triggers
-// on 429/403 instead of silently succeeding (see #1136).
-export function buildInstallCommand(version: string): string {
-  return `set -o pipefail; curl -fsSL https://claude.ai/install.sh | bash -s -- ${version}`;
-}
-
 /**
- * Install Claude Code CLI, handling retry logic and custom executable paths.
- * Returns the absolute path to the claude executable.
- */
-async function installClaudeCode(): Promise<string> {
-  const customExecutable = process.env.PATH_TO_CLAUDE_CODE_EXECUTABLE;
-  if (customExecutable) {
-    if (/[\x00-\x1f\x7f]/.test(customExecutable)) {
-      throw new Error(
-        "PATH_TO_CLAUDE_CODE_EXECUTABLE contains control characters (e.g. newlines), which is not allowed",
-      );
-    }
-    console.log(`Using custom Claude Code executable: ${customExecutable}`);
-    const claudeDir = dirname(customExecutable);
-    // Add to PATH by appending to GITHUB_PATH
-    const githubPath = process.env.GITHUB_PATH;
-    if (githubPath) {
-      await appendFile(githubPath, `${claudeDir}\n`);
-    }
-    // Also add to current process PATH
-    process.env.PATH = `${claudeDir}:${process.env.PATH}`;
-    return customExecutable;
-  }
-
-  const claudeCodeVersion = "2.1.286";
-  console.log(`Installing Claude Code v${claudeCodeVersion}...`);
-
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    console.log(`Installation attempt ${attempt}...`);
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const child = spawn(
-          "bash",
-          ["-c", buildInstallCommand(claudeCodeVersion)],
-          { stdio: "inherit" },
-        );
-        child.on("close", (code) => {
-          if (code === 0) resolve();
-          else reject(new Error(`Install failed with exit code ${code}`));
-        });
-        child.on("error", reject);
-      });
-      console.log("Claude Code installed successfully");
-      // Add to PATH
-      const homeBin = `${process.env.HOME}/.local/bin`;
-      const githubPath = process.env.GITHUB_PATH;
-      if (githubPath) {
-        await appendFile(githubPath, `${homeBin}\n`);
-      }
-      process.env.PATH = `${homeBin}:${process.env.PATH}`;
-      return `${homeBin}/claude`;
-    } catch (error) {
-      if (attempt === 3) {
-        throw new Error(
-          `Failed to install Claude Code after 3 attempts: ${error}`,
-        );
-      }
-      console.log("Installation failed, retrying...");
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-    }
-  }
-  throw new Error("unreachable");
-}
-
-/**
- * Write the step summary from Claude's execution output file.
+ * Write the step summary from Codex's execution output file.
  */
 async function writeStepSummary(executionFile: string): Promise<void> {
   const summaryFile = process.env.GITHUB_STEP_SUMMARY;
@@ -136,20 +56,14 @@ async function writeStepSummary(executionFile: string): Promise<void> {
   try {
     const fileContent = readFileSync(executionFile, "utf-8");
     const data: Turn[] = JSON.parse(fileContent);
-    let markdown = formatTurnsFromData(data);
-    if (process.env.ACTION_ENGINE === "codex") {
-      markdown = markdown.replace(/Claude Code Report/g, "Codex Report");
-    }
+    const markdown = formatTurnsFromData(data);
     await appendFile(summaryFile, markdown);
-    console.log("Successfully formatted Claude Code report");
+    console.log("Successfully formatted Codex report");
   } catch (error) {
     console.error(`Failed to format output: ${error}`);
     // Fall back to raw JSON
     try {
-      let fallback =
-        process.env.ACTION_ENGINE === "codex"
-          ? "## Codex Report (Raw Output)\n\n"
-          : "## Claude Code Report (Raw Output)\n\n";
+      let fallback = "# Codex Report\n\n";
       fallback +=
         "Failed to format output (please report). Here's the raw JSON:\n\n";
       fallback += "```json\n";
@@ -163,7 +77,6 @@ async function writeStepSummary(executionFile: string): Promise<void> {
 }
 
 async function run() {
-  const engine = process.env.ACTION_ENGINE || "codex";
   let githubToken: string | undefined;
   let commentId: number | undefined;
   let claudeBranch: string | undefined;
@@ -174,7 +87,6 @@ async function run() {
   let prepareError: string | undefined;
   let context: GitHubContext | undefined;
   let octokit: Octokits | undefined;
-  let workloadIdentity: WorkloadIdentityHandle | undefined;
   // Paths reverted to the PR base branch, which cleanup must not commit back
   // onto the PR author's branch. Empty unless restoreConfigFromBase ran.
   let restoredConfigPaths: string[] = [];
@@ -183,12 +95,7 @@ async function run() {
   try {
     const previousExecutionFile = getExecutionFilePath();
     if (previousExecutionFile) await rm(previousExecutionFile, { force: true });
-    if (engine !== "codex" && engine !== "claude") {
-      throw new Error("engine must be codex or claude");
-    }
-    if (engine === "codex" && process.env.OPENAI_API_KEY) {
-      core.setSecret(process.env.OPENAI_API_KEY);
-    }
+    if (process.env.OPENAI_API_KEY) core.setSecret(process.env.OPENAI_API_KEY);
     // Phase 1: Prepare
     const actionInputsPresent = collectActionInputsPresence();
     context = parseGitHubContext();
@@ -197,16 +104,7 @@ async function run() {
       `Auto-detected mode: ${modeName} for event: ${context.eventName}`,
     );
 
-    try {
-      githubToken = await setupGitHubToken();
-    } catch (error) {
-      if (error instanceof WorkflowValidationSkipError) {
-        core.setOutput("skipped_due_to_workflow_validation_mismatch", "true");
-        console.log("Exiting due to workflow validation skip");
-        return;
-      }
-      throw error;
-    }
+    githubToken = await setupGitHubToken();
 
     octokit = createOctokit(githubToken);
 
@@ -230,8 +128,6 @@ async function run() {
       const hasWritePermissions = await checkWritePermissions(
         octokit.rest,
         context,
-        context.inputs.allowedNonWriteUsers,
-        !!process.env.OVERRIDE_GITHUB_TOKEN,
       );
       if (!hasWritePermissions) {
         throw new Error(
@@ -255,7 +151,7 @@ async function run() {
       return;
     }
 
-    if (engine === "codex") validateCodexInputs();
+    validateCodexInputs();
 
     // Run prepare
     console.log(
@@ -271,24 +167,11 @@ async function run() {
     baseBranch = prepareResult.branchInfo.baseBranch;
     prepareCompleted = true;
 
-    // Phase 2: Install the selected engine.
-    const executable =
-      engine === "codex" ? await installCodex() : await installClaudeCode();
-
-    // Phase 3: Run Claude (import base-action directly)
-    // Set env vars needed by the base-action code
+    // Phase 2: Install Codex.
+    const executable = await installCodex();
     process.env.INPUT_ACTION_INPUTS_PRESENT = actionInputsPresent;
-    process.env.CLAUDE_CODE_ACTION = "1";
-    process.env.DETAILED_PERMISSION_MESSAGES = "1";
 
-    // When workload identity federation is configured, fetch the GitHub OIDC
-    // identity token and expose it to the CLI before validating auth env vars.
-    if (engine === "claude") {
-      workloadIdentity = await setupWorkloadIdentity();
-      validateEnvironmentVariables();
-    }
-
-    // On PRs, .claude/ and .mcp.json in the checkout are attacker-controlled.
+    // PR-authored Codex configuration and instructions are attacker-controlled.
     // Restore them from the base branch before the CLI reads them.
     //
     // We read pull_request.base.ref from the payload directly because agent
@@ -312,56 +195,35 @@ async function run() {
       }
     }
 
-    if (engine === "claude") {
-      await setupClaudeCodeSettings(process.env.INPUT_SETTINGS);
-      await installPlugins(
-        process.env.INPUT_PLUGIN_MARKETPLACES,
-        process.env.INPUT_PLUGINS,
-        executable,
-      );
-    }
-
     const promptFile =
       process.env.INPUT_PROMPT_FILE ||
-      `${process.env.RUNNER_TEMP}/claude-prompts/claude-prompt.txt`;
+      `${process.env.RUNNER_TEMP}/codex-prompts/codex-prompt.txt`;
     const promptConfig = await preparePrompt({
       prompt: "",
       promptFile,
     });
 
-    const claudeResult: ClaudeRunResult =
-      engine === "codex"
-        ? await runCodex(promptConfig.path, {
-            mcpConfig: prepareResult.mcpConfig,
-            executable,
-            model: process.env.CODEX_MODEL,
-            effort: process.env.CODEX_EFFORT,
-            sandbox: process.env.CODEX_SANDBOX,
-            appendSystemPrompt: process.env.APPEND_SYSTEM_PROMPT,
-            showFullOutput: process.env.INPUT_SHOW_FULL_OUTPUT,
-          })
-        : await runClaude(promptConfig.path, {
-            claudeArgs: prepareResult.claudeArgs,
-            appendSystemPrompt: process.env.APPEND_SYSTEM_PROMPT,
-            model: process.env.ANTHROPIC_MODEL,
-            pathToClaudeCodeExecutable: executable,
-            showFullOutput: process.env.INPUT_SHOW_FULL_OUTPUT,
-          });
+    const result: CodexRunResult = await runCodex(promptConfig.path, {
+      mcpConfig: prepareResult.mcpConfig,
+      executable,
+      model: process.env.CODEX_MODEL,
+      effort: process.env.CODEX_EFFORT,
+      sandbox: process.env.CODEX_SANDBOX,
+      appendSystemPrompt: process.env.APPEND_SYSTEM_PROMPT,
+      showFullOutput: process.env.INPUT_SHOW_FULL_OUTPUT,
+    });
 
-    claudeSuccess = claudeResult.conclusion === "success";
-    executionFile = claudeResult.executionFile;
+    claudeSuccess = result.conclusion === "success";
+    executionFile = result.executionFile;
 
     // Set action-level outputs
-    if (claudeResult.executionFile) {
-      core.setOutput("execution_file", claudeResult.executionFile);
+    if (result.executionFile) {
+      core.setOutput("execution_file", result.executionFile);
     }
-    if (claudeResult.sessionId) {
-      core.setOutput("session_id", claudeResult.sessionId);
+    if (result.sessionId) {
+      core.setOutput("session_id", result.sessionId);
     }
-    if (claudeResult.structuredOutput) {
-      core.setOutput("structured_output", claudeResult.structuredOutput);
-    }
-    core.setOutput("conclusion", claudeResult.conclusion);
+    core.setOutput("conclusion", result.conclusion);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     executionFile ??= setExecutionFileOutputIfPresent();
@@ -371,12 +233,9 @@ async function run() {
       prepareError = errorMessage;
     }
     core.setFailed(`Action failed with error: ${redactSecrets(errorMessage)}`);
+    core.setOutput("conclusion", "failure");
   } finally {
     // Phase 4: Cleanup (always runs)
-
-    // Stop refreshing the workload identity token file and delete the token
-    // material so it doesn't outlive this step
-    workloadIdentity?.stop();
 
     // Update tracking comment
     if (

@@ -76,7 +76,6 @@ describe("assertNoForkPullRequests", () => {
 
     test(`blocks fork ${eventName} even for an allowed actor`, async () => {
       const context = prContext(forkRepository, eventName);
-      context.inputs.allowedNonWriteUsers = "*";
       context.actor = "repository-admin";
       await expect(
         assertNoForkPullRequests(context, client().rest),

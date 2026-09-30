@@ -84,10 +84,8 @@ export function updateCommentBody(input: CommentUpdateInput): string {
   } = input;
 
   // Extract content from the original comment body
-  // First, remove the "Claude Code is working…" or "Claude Code is working..." message
-  const workingPattern = runtime.codex
-    ? /^Codex is working[…\.]{1,3}(?:\s*<img[^>]*>)?/i
-    : /Claude Code is working[…\.]{1,3}(?:\s*<img[^>]*>)?/i;
+  // Remove the initial status header while preserving model-authored content.
+  const workingPattern = /^Codex is working[…\.]{1,3}(?:\s*<img[^>]*>)?/i;
   let bodyContent = originalBody.replace(workingPattern, "").trim();
 
   // Check if there's a PR link in the content
@@ -207,9 +205,7 @@ export function updateCommentBody(input: CommentUpdateInput): string {
   // Add the cleaned body content
   newBody += bodyContent;
 
-  if (process.env.ACTION_ENGINE === "codex") {
-    newBody = newBody.replace(/<!-- codex-action:tracking -->/g, "").trim();
-    newBody += "\n\n<!-- codex-action:tracking -->";
-  }
+  newBody = newBody.replace(/<!-- codex-action:tracking -->/g, "").trim();
+  newBody += "\n\n<!-- codex-action:tracking -->";
   return newBody.trim();
 }

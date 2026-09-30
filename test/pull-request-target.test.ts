@@ -141,7 +141,7 @@ describe("pull_request_target event support", () => {
       expect(prompt).toContain(
         "Always push to the existing branch when triggered on a PR",
       );
-      expect(prompt).toContain("mcp__github_comment__update_claude_comment");
+      expect(prompt).toContain("mcp__github_comment__update_codex_comment");
 
       // Should not include commit signing tools
       expect(prompt).not.toContain("mcp__github_file_ops__commit_files");
@@ -165,10 +165,10 @@ describe("pull_request_target event support", () => {
       // Should include commit signing tools
       expect(prompt).toContain("mcp__github_file_ops__commit_files");
       expect(prompt).toContain("mcp__github_file_ops__delete_files");
-      expect(prompt).toContain("mcp__github_comment__update_claude_comment");
+      expect(prompt).toContain("mcp__github_comment__update_codex_comment");
 
       // Should not include git command instructions
-      expect(prompt).not.toContain("Use git commands via the Bash tool");
+      expect(prompt).not.toContain("Use git commands via the shell tool");
     });
 
     test("should treat pull_request_target same as pull_request in prompt generation", () => {
@@ -416,9 +416,9 @@ describe("pull_request_target event support", () => {
 
       // Should have same tool access patterns
       expect(
-        internalPrompt.includes("mcp__github_comment__update_claude_comment"),
+        internalPrompt.includes("mcp__github_comment__update_codex_comment"),
       ).toBe(
-        externalPrompt.includes("mcp__github_comment__update_claude_comment"),
+        externalPrompt.includes("mcp__github_comment__update_codex_comment"),
       );
 
       // Should have same branch handling instructions

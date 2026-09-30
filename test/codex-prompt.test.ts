@@ -80,7 +80,7 @@ describe("Codex action-owned instructions", () => {
         expect(section(prompt, tag)).toEqual(section(legacy, tag));
         expect(section(prompt, tag)).toContain(userText);
       }
-      expect(prompt).toContain("mcp__github_comment__update_claude_comment");
+      expect(prompt).toContain("mcp__github_comment__update_codex_comment");
       expect(prompt).toContain("mcp__github_file_ops__commit_files");
       expect(prompt).toContain("AGENTS.md");
       expect(prompt).not.toContain("ToolSearch");
@@ -123,7 +123,7 @@ describe("Codex action-owned instructions", () => {
         baseBranch: "main",
         commentBody: userText,
       },
-      githubContext: createMockContext({ inputs: { includeFixLinks: true } }),
+      githubContext: createMockContext(),
     };
     const prData: FetchDataResult = {
       ...data,
@@ -175,7 +175,7 @@ describe("Codex action-owned instructions", () => {
       expect(section(prompt, tag)).toEqual(section(legacy, tag));
     }
     expect(prompt).not.toContain("[Fix this →](https://claude.ai/code?q=");
-    expect(legacy).toContain("[Fix this →](https://claude.ai/code?q=");
+    expect(legacy).not.toContain("[Fix this →](https://claude.ai/code?q=");
   });
 
   test("brands initial, final and failure comments without rewriting body content", () => {
@@ -201,7 +201,7 @@ describe("Codex action-owned instructions", () => {
       expect(comment).toContain(userText);
     }
     delete process.env.ACTION_ENGINE;
-    expect(createCommentBody("job")).toStartWith("Claude Code is working…");
+    expect(createCommentBody("job")).toStartWith("Codex is working…");
     expect(
       updateCommentBody({
         currentBody: "done",
@@ -210,6 +210,6 @@ describe("Codex action-owned instructions", () => {
         jobUrl: "job",
         triggerUsername: "requester",
       }),
-    ).toStartWith("**Claude finished @requester's task**");
+    ).toStartWith("**Codex finished @requester's task**");
   });
 });

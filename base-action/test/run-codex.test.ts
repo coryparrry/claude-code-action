@@ -75,7 +75,7 @@ describe("Codex runner (offline fake CLI)", () => {
 
   async function artifact(): Promise<Record<string, any>[]> {
     return JSON.parse(
-      await readFile(join(directory, "claude-execution-output.json"), "utf8"),
+      await readFile(join(directory, "codex-execution-output.json"), "utf8"),
     );
   }
 
@@ -100,7 +100,7 @@ describe("Codex runner (offline fake CLI)", () => {
 
   test("passes both prompt files, append instructions, explicit options and API-only auth", async () => {
     await writeFile(
-      join(directory, "claude-user-request.txt"),
+      join(directory, "codex-user-request.txt"),
       "Review this PR",
     );
     const executable = await fake(output());
@@ -115,7 +115,7 @@ describe("Codex runner (offline fake CLI)", () => {
     expect(result.conclusion).toBe("success");
     expect(result.sessionId).toBe("session-test-123");
     expect(result.executionFile).toBe(
-      join(directory, "claude-execution-output.json"),
+      join(directory, "codex-execution-output.json"),
     );
     const captured = JSON.parse(await readFile(capture, "utf8"));
     expect(captured.prompt).toContain("Generated GitHub context");

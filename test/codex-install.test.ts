@@ -23,6 +23,11 @@ describe("Codex install and preflight", () => {
     delete process.env.OPENAI_API_KEY;
     expect(validateCodexInputs).toThrow("requires openai_api_key");
   });
+  test("rejects a legacy Claude engine before execution", () => {
+    process.env.ACTION_ENGINE = "claude";
+    process.env.OPENAI_API_KEY = "test-value";
+    expect(validateCodexInputs).toThrow("supports Codex only");
+  });
   test("accepts an explicit existing key and rejects incompatible options", () => {
     process.env.OPENAI_API_KEY = "test-value";
     for (const name of [
