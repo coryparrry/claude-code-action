@@ -9,7 +9,7 @@ import {
   parseHooks,
 } from "../src/agent-hooks";
 
-const workspace = "/private/tmp";
+const workspace = tmpdir();
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 const output = (value: unknown) =>
   `printf '%s' ${quote(JSON.stringify(value))}`;

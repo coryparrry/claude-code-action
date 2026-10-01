@@ -30,11 +30,11 @@ offline, with no paid model calls, merge or target installation.
 
 ## Verification
 
-- `bun test`: 1,140 passed, 0 failed, 3,478 assertions across 74 files.
+- `bun test`: 1,144 passed, 0 failed, 3,496 assertions across 75 files.
 - Root and base-action `bun run typecheck`: passed.
 - Root `bun run format:check` and `git diff --check`: passed.
 - Fresh root/base `bun install --production --frozen-lockfile --ignore-scripts`:
-  passed (156/116 packages); real SDK imports passed; no Claude, Anthropic or
+  passed (165/116 packages); real SDK imports passed; no Claude, Anthropic or
   native Codex runtime packages installed.
 - Fixtures exercise the real SDK Runner/tool loop and Responses transport,
   local HTTP/stdio MCP, plugins/hooks/workflows, shared limits, failure reports,
@@ -43,6 +43,12 @@ offline, with no paid model calls, merge or target installation.
   findings. Regressions cover budget cancellation before another request,
   isolated subagent permissions/deadlines/instructions, Stop-hook continuations,
   first-request context recovery and VM-local workflow errors.
+- Linux CI first exposed an MCP/Zod schema mismatch, a Mac-only hook fixture
+  path and filesystem-dependent ordering. Root/base MCP now both pin 1.31.0;
+  hook fixtures use the system temporary directory; file listings are stable.
+  All four production GitHub MCP servers now have real stdio schema regressions.
+  Prevention: validate production protocols against the locked dependency graph,
+  rather than relying on a different local base-action installation.
 - Live paid OpenAI/GitHub completion and an actual Windows runner remain
   unverified. The draft PR is the delivery artifact; merging is out of scope.
 

@@ -253,7 +253,7 @@ export function createAgentTools(options: AgentToolOptions): Tool[] {
       }
     }
     await walk(root);
-    return result;
+    return result.sort();
   }
 
   function startShell(
@@ -588,7 +588,9 @@ export function createAgentTools(options: AgentToolOptions): Tool[] {
       async (input) => {
         const root = await permissions.resolvePath("LS", input.path);
         const ignored = (input.ignore ?? []).map(globPattern);
-        const entries = await readdir(root, { withFileTypes: true });
+        const entries = (await readdir(root, { withFileTypes: true })).sort(
+          (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
+        );
         if (entries.length > 20_000)
           throw new Error("Directory exceeds the 20,000 entry limit");
         const output: string[] = [];
