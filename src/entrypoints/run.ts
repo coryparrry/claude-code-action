@@ -15,7 +15,7 @@ import {
   assertNoForkPullRequests,
   ForkPullRequestError,
 } from "../github/validation/forks";
-import { installCodex, validateCodexInputs } from "../codex-install";
+import { validateCodexInputs } from "../codex-install";
 import { runCodex } from "../../base-action/src/run-codex";
 import { createOctokit } from "../github/api/client";
 import type { Octokits } from "../github/api/client";
@@ -34,6 +34,7 @@ import { prepareAgentMode } from "../modes/agent";
 import { checkContainsTrigger } from "../github/validation/trigger";
 import { restoreConfigFromBase } from "../github/operations/restore-config";
 import { validateBranchName } from "../github/operations/branch";
+import { actionRuntimeOptions } from "./runtime-options";
 import { collectActionInputsPresence } from "./collect-inputs";
 import { updateCommentLink } from "./update-comment-link";
 import { formatTurnsFromData } from "./format-turns";
@@ -169,12 +170,11 @@ async function run() {
     baseBranch = prepareResult.branchInfo.baseBranch;
     prepareCompleted = true;
 
-    // Phase 2: Install Codex.
-    const executable = await installCodex();
+    // The locked OpenAI Agents SDK provides the Codex model runtime.
     process.env.INPUT_ACTION_INPUTS_PRESENT = actionInputsPresent;
 
     // PR-authored Codex configuration and instructions are attacker-controlled.
-    // Restore them from the base branch before the CLI reads them.
+    // Restore them from the base branch before configuration is loaded.
     //
     // We read pull_request.base.ref from the payload directly because agent
     // mode's branchInfo.baseBranch defaults to the repo's default branch rather
@@ -207,29 +207,9 @@ async function run() {
 
     const result: CodexRunResult = await runCodex(promptConfig.path, {
       mcpConfig: prepareResult.mcpConfig,
-      executable,
-      model: process.env.CODEX_MODEL,
-      effort: process.env.CODEX_EFFORT,
-      sandbox: process.env.CODEX_SANDBOX,
-      appendSystemPrompt: process.env.APPEND_SYSTEM_PROMPT,
+      ...actionRuntimeOptions(process.env),
       showFullOutput: process.env.INPUT_SHOW_FULL_OUTPUT,
-      compatibilityArgs: process.env.CODEX_ARGS || process.env.CLAUDE_ARGS,
-      defaultAllowedTools:
-        modeName === "tag"
-          ? [
-              "Bash",
-              ...Object.keys(JSON.parse(prepareResult.mcpConfig).mcpServers)
-                .filter((name) =>
-                  [
-                    "github_comment",
-                    "github_inline_comment",
-                    "github_file_ops",
-                    "github_ci",
-                  ].includes(name),
-                )
-                .map((name) => `mcp__${name}__*`),
-            ]
-          : undefined,
+      compatibilityArgs: prepareResult.claudeArgs,
       settings: process.env.INPUT_SETTINGS,
       plugins: process.env.INPUT_PLUGINS,
       pluginMarketplaces: process.env.INPUT_PLUGIN_MARKETPLACES,

@@ -67,16 +67,14 @@ describe("Codex-only runtime contract", () => {
     });
   }
   for (const path of ["../package.json", "../base-action/package.json"]) {
-    test(`${path} has no model-agent SDK dependency`, () => {
+    test(`${path} uses the pinned OpenAI Agents SDK without Claude`, () => {
       const manifest = JSON.parse(
         readFileSync(new URL(path, import.meta.url), "utf8"),
       );
       expect(Object.keys(manifest.dependencies)).not.toContain(
         "@anthropic-ai/claude-agent-sdk",
       );
-      expect(Object.keys(manifest.dependencies)).not.toContain(
-        "@openai/agents",
-      );
+      expect(manifest.dependencies["@openai/agents"]).toBe("0.18.0");
     });
   }
   test("the orchestrator and buffered-comment post-step cannot select or call Claude", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, spyOn } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile, chmod } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -7,6 +7,44 @@ import {
   selectCommentsToPost,
   type BufferedComment,
 } from "../src/entrypoints/post-buffered-inline-comments";
+
+type ModelRequest = {
+  model: string;
+  store: boolean;
+  tools?: unknown[];
+  text: {
+    format: {
+      type: string;
+      schema: { properties: { verdicts: { items: { type: string } } } };
+    };
+  };
+};
+
+function modelResponse(text: string): Response {
+  return Response.json({
+    id: "response-offline",
+    object: "response",
+    created_at: 1,
+    status: "completed",
+    model: "gpt-5.3-codex",
+    output: [
+      {
+        id: "message-offline",
+        type: "message",
+        role: "assistant",
+        status: "completed",
+        content: [{ type: "output_text", text, annotations: [] }],
+      },
+    ],
+    usage: {
+      input_tokens: 4,
+      output_tokens: 3,
+      total_tokens: 7,
+      input_tokens_details: { cached_tokens: 0 },
+      output_tokens_details: { reasoning_tokens: 0 },
+    },
+  });
+}
 
 const comments: BufferedComment[] = [
   { ts: "now", path: "src/a.ts", line: 1, body: "This dereferences null" },
@@ -65,111 +103,158 @@ describe("buffered inline comment classifier", () => {
     expect(await classifyComments(["review"], { env: {} })).toBeNull();
   });
 
-  it("uses the real isolated Codex adapter and preserves the main run report and Actions output", async () => {
+  it("runs the actual Agents SDK against an offline endpoint without ambient settings, tools, or report writes", async () => {
     const dir = await mkdtemp(join(tmpdir(), "inline-classifier-test-"));
+    const requests: Array<{
+      body: ModelRequest;
+      authorization: string | null;
+      path: string;
+    }> = [];
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        requests.push({
+          body: (await request.json()) as ModelRequest,
+          authorization: request.headers.get("authorization"),
+          path: new URL(request.url).pathname,
+        });
+        return modelResponse(JSON.stringify({ verdicts: [true, false] }));
+      },
+    });
     try {
-      const capturePath = join(dir, "capture.json");
-      const executable = join(dir, "fake-codex");
       const mainReport = join(dir, "codex-execution-output.json");
       const actionOutput = join(dir, "action-output.txt");
+      const marker = join(dir, "hook-ran");
       await writeFile(mainReport, "original report");
       await writeFile(actionOutput, "original output");
+      await mkdir(join(dir, ".codex"));
       await writeFile(
-        executable,
-        `#!${process.execPath}
-import { writeFileSync, readFileSync } from 'node:fs';
-const args = process.argv.slice(2);
-const prompt = await Bun.stdin.text();
-const schemaPath = args[args.indexOf('--output-schema') + 1];
-writeFileSync(${JSON.stringify(capturePath)}, JSON.stringify({args, prompt, schema: schemaPath ? JSON.parse(readFileSync(schemaPath, 'utf8')) : null, cwd: process.cwd(), env: process.env}));
-const text = JSON.stringify({verdicts: [true, false]});
-writeFileSync(args[args.indexOf('--output-last-message') + 1], text);
-console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text}}));
-console.log(JSON.stringify({type:'turn.completed'}));
-`,
+        join(dir, "AGENTS.md"),
+        "AMBIENT_USER_INSTRUCTIONS must not enter classifier",
       );
-      await chmod(executable, 0o700);
+      await writeFile(
+        join(dir, ".codex", "settings.json"),
+        JSON.stringify({
+          hooks: {
+            SessionStart: [
+              { hooks: [{ type: "command", command: `touch '${marker}'` }] },
+            ],
+          },
+          enabledPlugins: { "missing-plugin@missing-marketplace": true },
+          mcpServers: { malicious: { command: "missing-mcp-command" } },
+        }),
+      );
       const env = {
         ...process.env,
-        OPENAI_API_KEY: "fake-openai-key-for-test",
-        GITHUB_TOKEN: "github-secret-should-not-reach-cli",
+        OPENAI_API_KEY: "offline-api-key",
+        OPENAI_BASE_URL: `http://127.0.0.1:${server.port}/v1`,
+        HOME: dir,
+        CODEX_HOME: join(dir, ".codex"),
+        OPENAI_AGENTS_DISABLE_TRACING: "1",
+        GITHUB_TOKEN: "github-secret-should-not-reach-sdk",
         GITHUB_OUTPUT: actionOutput,
         RUNNER_TEMP: dir,
-        INPUT_PATH_TO_CODEX_EXECUTABLE: executable,
-        INPUT_CODEX_MODEL: "test-model",
+        INPUT_CODEX_MODEL: "",
         INPUT_CODEX_EFFORT: "low",
         INPUT_MCP_CONFIG: '{"mcpServers":{"dangerous":{"command":"bad"}}}',
+        INPUT_PLUGINS: "missing-plugin@missing-marketplace",
+        INPUT_PLUGIN_MARKETPLACES: "missing-marketplace",
+        INPUT_SETTINGS: '{"hooks":{"SessionStart":"bad"}}',
+        INPUT_CODEX_ARGS: "--tools Bash --setting-sources user",
         INPUT_PROMPT: "must not inherit the main prompt",
       };
+      const reviewComments = [
+        { ...comments[0]!, body: "This dereferences null offline-api-key" },
+        ...comments.slice(1),
+      ];
       expect(
-        await classifyComments(
-          comments.slice(0, 2).map((comment) => comment.body),
-          { env },
+        await selectCommentsToPost(reviewComments, (bodies) =>
+          classifyComments(bodies, { env }),
         ),
-      ).toEqual([true, false]);
-      const capture = JSON.parse(await readFile(capturePath, "utf8"));
-      expect(capture.args).toContain("--output-schema");
-      expect(capture.args).toContain("--skip-git-repo-check");
-      expect(capture.args).toContain("read-only");
-      expect(capture.args).toContain("test-model");
-      expect(capture.schema.properties.verdicts.items.type).toBe("boolean");
-      expect(capture.env.GITHUB_TOKEN).toBeUndefined();
-      expect(capture.env.GITHUB_OUTPUT).toBeUndefined();
-      expect(capture.env.INPUT_MCP_CONFIG).toBeUndefined();
-      expect(capture.prompt).toContain("This dereferences null");
-      expect(capture.prompt).not.toContain("must not inherit the main prompt");
-      expect(capture.cwd).not.toBe(dir);
+      ).toEqual([reviewComments[0]!]);
+      expect(requests).toHaveLength(1);
+      const request = requests[0]!;
+      expect(request.path).toBe("/v1/responses");
+      expect(request.authorization).toBe("Bearer offline-api-key");
+      expect(request.body.model).toBe("gpt-5.3-codex");
+      expect(request.body.store).toBe(false);
+      expect(request.body.tools ?? []).toEqual([]);
+      expect(request.body.text.format.type).toBe("json_schema");
+      expect(
+        request.body.text.format.schema.properties.verdicts.items.type,
+      ).toBe("boolean");
+      const input = JSON.stringify(request.body);
+      expect(input).toContain("This dereferences null");
+      for (const forbidden of [
+        "offline-api-key",
+        "Never post",
+        "AMBIENT_USER_INSTRUCTIONS",
+        "must not inherit the main prompt",
+        "github-secret-should-not-reach-sdk",
+        "missing-plugin",
+        "missing-mcp-command",
+      ])
+        expect(input).not.toContain(forbidden);
       expect(await readFile(mainReport, "utf8")).toBe("original report");
       expect(await readFile(actionOutput, "utf8")).toBe("original output");
-      expect(await Bun.file(capture.cwd).exists()).toBe(false);
+      expect(await Bun.file(marker).exists()).toBe(false);
     } finally {
+      server.stop(true);
       await rm(dir, { recursive: true, force: true });
     }
   });
 
-  it("rejects malformed model output and CLI failures without logging their secrets", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "inline-classifier-invalid-"));
+  it("falls back for invalid model output and SDK API errors without logging authentication", async () => {
+    let text = "not JSON";
+    let status = 200;
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch() {
+        return status === 200
+          ? modelResponse(text)
+          : Response.json(
+              {
+                error: {
+                  message: "offline-api-key",
+                  type: "invalid_request_error",
+                },
+              },
+              { status },
+            );
+      },
+    });
     const logs: string[] = [];
     const logging = spyOn(console, "log").mockImplementation((message) =>
       logs.push(String(message)),
     );
     try {
-      const executable = join(dir, "fake-codex");
-      for (const [text, code] of [
-        ["not JSON", 0],
-        ['{"verdicts":[true]}', 0],
-        ['{"verdicts":[1,0]}', 0],
-        ['{"verdicts":[true,false]}', 1],
+      for (const [output, code] of [
+        ["not JSON", 200],
+        ['{"verdicts":[true]}', 200],
+        ['{"verdicts":[1,0]}', 200],
+        ['{"verdicts":[true,false]}', 400],
       ] as const) {
-        await writeFile(
-          executable,
-          `#!${process.execPath}
-import { writeFileSync } from 'node:fs';
-await Bun.stdin.text();
-const args = process.argv.slice(2);
-writeFileSync(args[args.indexOf('--output-last-message') + 1], ${JSON.stringify(text)});
-console.error(process.env.CODEX_API_KEY);
-console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:${JSON.stringify(text)}}}));
-console.log(JSON.stringify({type:'turn.completed'}));
-process.exit(${code});
-`,
-        );
-        await chmod(executable, 0o700);
+        text = output;
+        status = code;
         expect(
-          await classifyComments(["review", "probe"], {
-            env: {
-              ...process.env,
-              OPENAI_API_KEY: "fake-not-a-key",
-              INPUT_PATH_TO_CODEX_EXECUTABLE: executable,
-            },
-          }),
-        ).toBeNull();
+          await selectCommentsToPost(comments, (bodies) =>
+            classifyComments(bodies, {
+              env: {
+                ...process.env,
+                OPENAI_API_KEY: "offline-api-key",
+                OPENAI_BASE_URL: `http://127.0.0.1:${server.port}/v1`,
+              },
+            }),
+          ),
+        ).toEqual(comments.slice(0, 2));
       }
-      expect(logs.join("\n")).not.toContain("fake-not-a-key");
+      expect(logs.join("\n")).not.toContain("offline-api-key");
       expect(logs).toHaveLength(4);
     } finally {
       logging.mockRestore();
-      await rm(dir, { recursive: true, force: true });
+      server.stop(true);
     }
   });
 

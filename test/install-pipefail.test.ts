@@ -1,36 +1,55 @@
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { parse } from "yaml";
 
-test("Codex installation preserves an installer failure instead of continuing", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "codex-install-failure-"));
-  const npm = join(directory, "npm");
-  await writeFile(npm, "#!/bin/sh\nexit 17\n");
-  await chmod(npm, 0o700);
-  try {
-    const source = new URL("../src/codex-install.ts", import.meta.url).href;
-    const result = spawnSync(
-      process.execPath,
-      [
-        "--eval",
-        `import { installCodex } from ${JSON.stringify(source)}; try { await installCodex(); } catch (error) { console.error(error.message); process.exit(1); }`,
-      ],
-      {
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          PATH: directory,
-          RUNNER_TEMP: directory,
-          CODEX_VERSION: "0.159.2",
-          PATH_TO_CODEX_EXECUTABLE: "",
-        },
-      },
+for (const path of ["../action.yml", "../base-action/action.yml"]) {
+  test(`${path} stops when SDK dependency installation fails`, async () => {
+    const metadata = parse(
+      await readFile(new URL(path, import.meta.url), "utf8"),
     );
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("exit code 17");
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
+    const install = metadata.runs.steps.find(
+      (step: { name?: string }) =>
+        step.name?.toLowerCase() === "install dependencies",
+    );
+    const directory = await mkdtemp(
+      join(tmpdir(), "codex-sdk-install-failure-"),
+    );
+    try {
+      const executable = join(directory, "bun");
+      await writeFile(
+        executable,
+        "#!/bin/sh\nprintf 'SDK dependency installation failed\\n' >&2\nexit 17\n",
+      );
+      await chmod(executable, 0o700);
+      const result = spawnSync(
+        "bash",
+        [
+          "--noprofile",
+          "--norc",
+          "-e",
+          "-o",
+          "pipefail",
+          "-c",
+          `${install.run}\necho RUNTIME_STARTED`,
+        ],
+        {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: `${directory}:${process.env.PATH}`,
+            GITHUB_ACTION_PATH: directory,
+          },
+        },
+      );
+      expect(install.shell).toBe("bash");
+      expect(result.status).toBe(17);
+      expect(result.stderr).toContain("SDK dependency installation failed");
+      expect(result.stdout).not.toContain("RUNTIME_STARTED");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}

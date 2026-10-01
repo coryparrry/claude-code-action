@@ -1,130 +1,57 @@
-# Codex port worklog
+# Codex action port worklog
 
-## Outcome
+## Goal and scope
 
-Adapt the MIT-licensed Claude Code Action in its own fork to use Codex and an
-existing OpenAI API key, preserving GitHub issue/PR automation and rejecting fork
-PRs. Keep the Intents checkout untouched until the adapted action is verified.
+Port the MIT-licensed Claude Code Action in `coryparrry/claude-code-action`
+to an OpenAI Codex model, preserving headless GitHub automation and the
+original action controls. Reject fork PRs before preparation. Leave Intents
+untouched. The selected backend is the OpenAI Agents SDK; verification is
+offline, with no paid model calls, merge or target installation.
 
-## Acceptance
+## Implementation
 
-- Codex is the only engine; no Claude runtime, SDK, credentials, or provider backend remains.
-- Mention tasks and automated prompts retain GitHub context, comments, branches,
-  signing, cleanup, and execution status.
-- Fork PRs are rejected before preparation for direct, comment, review, and
-  workflow-run triggers. Incomplete source identity fails closed.
-- The actual request sidecar is consumed. MCP servers work through isolated Codex
-  configuration. Unsupported Claude options fail clearly.
-- API credentials are masked and excluded from tool subprocess environments and
-  saved execution reports. PR-authored Codex config/instructions are restored
-  from the trusted base before execution.
-- Preserve the upstream MIT notices and document how to use the fork.
-- Run adapter integration/regression tests, relevant upstream suites, typecheck,
-  formatting, and diff checks. Review the stable diff independently.
+- Branch `codex/openai-runtime`, existing draft PR #1.
+- `@openai/agents` 0.18.0 and the Responses API run `gpt-5.3-codex` by default.
+  No Claude SDK, Claude CLI, Anthropic provider or native Codex CLI dependency.
+- The original GitHub preparation, modes, comments, file operations, actor
+  controls, branch/signing behavior, reports and inline classifier remain.
+  Tag-mode permission rules are forwarded without granting unrestricted Bash.
+- The adapter supplies coding tools, scoped allow/deny/ask permissions, MCP
+  transports, settings, hooks, plugins, commands, skills, nested/background
+  tasks, workflows, LSP, sessions, compaction, schema output and fallback.
+- Main model-turn limits stay separate from subagent limits. Dollar estimates
+  share one budget across all model calls, including compaction and hosted
+  search. Custom/fallback token rates can be supplied in `settings.modelPrices`.
+- Provider authentication uses an OpenAI API key. Original configuration names
+  remain compatible inputs; Anthropic provider authentication is historical.
+- Baseline audited: upstream `12dd8d74`, Claude CLI 2.1.286 and Agent SDK
+  `^0.3.286`. Earlier broad deletion was rejected: controls and integrations
+  must be exercised through the replacement SDK before declaring completion.
 
-## Progress
+## Verification
 
-- Created `coryparrry/claude-code-action`; isolated branch `codex/openai-runtime`.
-- Inspected upstream preparation, MCP, runner, reporting, and cleanup contracts.
-- Installed temporary Bun and the fork's locked dependencies.
-- No OpenAI key is present in this environment or Intents Actions secrets.
-  Live API execution remains unverified pending the user's existing key.
+- `bun test`: 1,140 passed, 0 failed, 3,478 assertions across 74 files.
+- Root and base-action `bun run typecheck`: passed.
+- Root `bun run format:check` and `git diff --check`: passed.
+- Fresh root/base `bun install --production --frozen-lockfile --ignore-scripts`:
+  passed (156/116 packages); real SDK imports passed; no Claude, Anthropic or
+  native Codex runtime packages installed.
+- Fixtures exercise the real SDK Runner/tool loop and Responses transport,
+  local HTTP/stdio MCP, plugins/hooks/workflows, shared limits, failure reports,
+  sessions, compaction and the isolated inline classifier without paid calls.
+- Independent GitHub, runtime and sandbox reviews have no open material
+  findings. Regressions cover budget cancellation before another request,
+  isolated subagent permissions/deadlines/instructions, Stop-hook continuations,
+  first-request context recovery and VM-local workflow errors.
+- Live paid OpenAI/GitHub completion and an actual Windows runner remain
+  unverified. The draft PR is the delivery artifact; merging is out of scope.
 
-## Completed verification
+## Credential scan
 
-- `bun test`: 1,033 passed, 0 failed (2,434 assertions).
-- `bun test base-action/test/run-codex.test.ts`: 21 passed, 0 failed
-  (80 assertions), using fake CLI processes and test credentials.
-- `bun run typecheck`: passed.
-- `bun run format:check`: passed.
-- Installed the pinned public Codex CLI `0.159.2`; `codex mcp list --json`
-  accepted the adapter's isolated configuration and MCP registration without
-  invoking a model or MCP server. Strict configuration mode is unsupported for
-  this MCP-list command; the check establishes parsing, not full execution.
-- Independent GitHub integration and runner reviews completed. Fixed workflow
-  token revocation, Codex sticky-comment reuse, timing-test readiness, and the
-  stderr-redaction test's unreachable diagnostic. Recheck passed.
-- Buffered-comment postprocessing skips fork/unresolved executions and only
-  supplies Anthropic classification credentials for the explicit Claude engine.
-- The user chose offline verification. Live OpenAI and GitHub task execution
-  remain unverified; the adapted action is prepared for review in its own fork.
-
-## Fork CI reconciliation
-
-The inherited CI pinned Bun 1.2.12, whose TOML parser decoded an escaped tab as
-form feed in the new round-trip regression. Local tests passed under Bun 1.4.2;
-the action and CI now pin that same runtime. The full 1,033-case suite already
-includes the adapter tests; the separate 21-case command is an additional
-focused run, not an additional set of unique cases.
-
-Inherited live-Claude tests, review/triage bots, and upstream artifact publishing
-workflows are preserved under `examples/upstream-workflows` so they no longer
-execute in this fork. Fork CI retains offline tests, formatting, type checking,
-and workflow security checks. In-flight inherited live-test runs were cancelled.
-
-## Codex-only follow-up
-
-User requested removal of Claude compatibility. Removing Claude runners/SDK,
-provider authentication/settings/plugins, App token exchange, classifier calls,
-legacy examples, and obsolete provider-specific CI. GitHub tools now derive from
-task context rather than Claude argument parsing. Queued inline comments require
-no model classifier. Historical verification above predates this follow-up;
-updated checks will be recorded after integration. Offline-only preference remains.
-
-### Follow-up verification
-
-- `bun test`: 834 passed, 0 failed, 2,044 assertions; process exited 0.
-  Removed suites exclusively covered deleted Claude functionality.
-- `bun run typecheck`: passed.
-- `bun run format:check` and `git diff --check`: passed.
-- Fresh frozen-lock production installs passed for root (132 packages) and base
-  (7 packages), with no Anthropic SDK or OpenAI Agents SDK installed.
-- Two independent scoped reviews completed. Added the missing standalone base
-  Bun config and its regression; removed a redundant explicit exit-code write
-  that contaminated Bun's in-process negative tests (Actions core still marks
-  real executions failed).
-- Fork rejection, actual entity/workflow-run actor write checks, trusted Codex
-  configuration restoration, credential redaction, and fake-CLI process
-  timeout/cancellation contracts remain covered.
-- No live model calls, credentials, or target-repository installation performed.
-
-## Scope correction: preserve the action and swap the backend
-
-The user rejected the broad deletion in 7d590e8. Restore the original GitHub
-automation/tool selection, inline classifier, workflow options, examples and
-documentation. Adapt runtime calls/options/commands to Codex instead of removing
-features. Keep Codex-only execution and the original requested fork block.
-Previous follow-up counts are historical, not evidence of behavioral parity.
-Acceptance now includes schema output, configured GitHub/custom MCP tools,
-slash commands, and classifier behavior with fake processes; unsupported
-provider-specific semantics must be disclosed precisely, not silently removed.
-
-## Corrected adaptation verified
-
-- Restored GitHub Docker MCP/tool selection, non-write-user exceptions,
-  inline classification, fix links, permission helpers, preparation entrypoint,
-  documentation, examples, and local MCP/test harnesses.
-- Adapted settings, supported legacy args, schema output, slash commands,
-  native plugins, and stdio/streamable HTTP MCP to Codex CLI. Ordinary build/test
-  environment reaches tools; OpenAI and MCP authentication values and aliases
-  remain filtered from shell configuration and redacted from reports.
-- Codex remains the only runtime. Claude runtime/provider modules and their
-  SDK-specific tests are replaced by Codex adapters and regressions.
-- `bun test`: **949 passed, 0 failed, 2,396 assertions**, across 61 files.
-- `bun run typecheck`, `bun run format:check`, and `git diff --check`: passed.
-- `python3 .github/scripts/check_workflow_hardening.py`: passed; no active
-  workflow invokes the historical Claude action.
-- Fresh `bun install --frozen-lockfile --production --ignore-scripts` for both
-  action manifests passed; neither Anthropic nor OpenAI Agents SDK was installed.
-- Pinned Codex 0.159.2 accepted generated stdio and HTTP configuration offline.
-  Restored MCP harness completed a real offline handshake/list/tool call.
-- Independent runtime and GitHub reviews completed. Fixed empty-arg alias
-  precedence, tracking-tool defaults, argument comments, classifier flags,
-  build environment preservation, and HTTP authentication alias/cookie masking.
-  The affected regression checks pass.
-- Claude cloud/OAuth/WIF authentication, Claude-format plugin manifests/hooks,
-  `--max-turns`, fine-grained Claude file/Bash permission syntax, and legacy SSE
-  transport do not have matching native Codex semantics. Unsupported runtime
-  controls fail clearly; historical provider documentation is identified.
-- Offline-only verification remains the user's choice. No live model calls,
-  target-repository installation, merge, or Intents edits were performed.
+Commit `0574bb0` introduced no new PAT-shaped strings compared with upstream;
+all matches were inherited sanitizer examples/tests. A silent exact-value scan
+found no signed-in GitHub credential in any blob of that commit. Published port
+commits also introduce no new distinct PAT patterns. GitGuardian's precise
+flagged line is unavailable, so this is evidence of inherited fixtures rather
+than a definitive classification of its alert. No credential values were
+printed and no history rewrite or credential revocation was performed.

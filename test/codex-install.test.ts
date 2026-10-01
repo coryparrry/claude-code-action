@@ -1,24 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { codexInstallArgs, validateCodexInputs } from "../src/codex-install";
+import { validateCodexInputs } from "../src/codex-install";
 
 const originalEnv = { ...process.env };
 afterEach(() => {
   process.env = { ...originalEnv };
 });
 
-describe("Codex install and preflight", () => {
-  test("pins an exact version and passes paths as separate arguments", () => {
-    expect(codexInstallArgs("0.159.2", "/tmp/path with spaces")).toEqual([
-      "install",
-      "--prefix",
-      "/tmp/path with spaces",
-      "--no-audit",
-      "--no-fund",
-      "@openai/codex@0.159.2",
-    ]);
-    expect(() => codexInstallArgs("latest; echo bad", "/tmp/cli")).toThrow();
-    expect(() => codexInstallArgs("latest", "/tmp/cli")).toThrow();
-  });
+describe("Codex preflight", () => {
   test("fails before preparation without an API key", () => {
     delete process.env.OPENAI_API_KEY;
     expect(validateCodexInputs).toThrow("requires openai_api_key");

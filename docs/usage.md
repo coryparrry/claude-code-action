@@ -1,6 +1,6 @@
 # Usage
 
-> This fork runs Codex with `OPENAI_API_KEY`. GitHub triggers, tracking comments, branch handling, signing, and MCP integrations retain the upstream workflow shape. `claude_args` is a compatibility alias; use the preferred `codex_args` name for the same supported argument subset. Legacy `--allowedTools` / `--disallowedTools` support MCP names and simple Bash rules, not the full Claude permission language. Use a supported OpenAI model; there is no native `--max-turns`, Anthropic OAuth, WIF, Bedrock, or Vertex backend. Fork pull requests are rejected. See [configuration](./configuration.md) and [the action inputs](../action.yml).
+> The runtime uses `@openai/agents` pinned to `0.18.0` with the OpenAI Responses API and `gpt-5.3-codex` by default. The Agents SDK owns the model/tool loop; this action does not install or run the Codex CLI, Claude Code, or the Claude Agent SDK. Legacy configuration names remain adapter inputs; Anthropic provider authentication is historical only. Fork pull requests are rejected before execution.
 
 Add a workflow file to your repository (e.g., `.github/workflows/claude.yml`):
 
@@ -29,14 +29,14 @@ jobs:
           # Optional: provide a prompt for automation workflows
           # prompt: "Review this PR for security issues"
 
-          # Optional: pass advanced arguments to Codex CLI
+          # Optional: pass advanced arguments to Agents SDK runner
           # claude_args: |
-          #   # No Codex turn limit; use the job timeout-minutes for a time bound.
-          #   --model gpt-5.4
+          #   --max-turns 10
+          #   --model gpt-5.3-codex
 
           # Optional: add custom plugin marketplaces
           # plugin_marketplaces: "https://github.com/user/marketplace1.git\nhttps://github.com/user/marketplace2.git"
-          # Optional: install plugins from a native Codex marketplace manifest
+          # Optional: install plugins from a supported plugin marketplace manifest
           # plugins: "my-plugin@my-codex-marketplace"
 
           # Optional: add custom trigger phrase (default: @codex)
@@ -54,7 +54,7 @@ jobs:
 
 ## Inputs
 
-Additional native inputs are `codex_model`, `codex_effort`, `codex_sandbox`, `codex_version`, and `codex_args`. See [action.yml](../action.yml) for exact defaults. `codex_args` and the legacy `claude_args` name use the same compatibility parser; arbitrary native CLI flags are not accepted.
+Additional SDK runtime inputs are `codex_model`, `codex_effort`, `codex_sandbox`, and `codex_args`. See [action.yml](../action.yml) for exact defaults. The SDK also owns `max_turns`, `max_budget_usd`, tool permission controls, hooks, task/workflow tools, fallback, and session continuation. Offline verification does not establish live model/GitHub completion. `codex_args` and the legacy `claude_args` name use the same compatibility parser; these inputs configure the SDK loop and do not launch a CLI.
 
 | Input                       | Description                                                                                                                                                                                                                        | Required          | Default        |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | -------------- |
@@ -62,7 +62,7 @@ Additional native inputs are `codex_model`, `codex_effort`, `codex_sandbox`, `co
 | `prompt`                    | Instructions for Codex. Can be a direct prompt or custom template for automation workflows                                                                                                                                         | No                | -              |
 | `track_progress`            | Force tag mode with tracking comments. Only works with specific PR/issue events. Preserves GitHub context                                                                                                                          | No                | `false`        |
 | `include_fix_links`         | Include 'Fix this' links in PR code review feedback that open Codex with context to fix the identified issue                                                                                                                       | No                | `true`         |
-| `claude_args`               | Compatibility arguments: model, effort, MCP, schema, appended instructions, simple tool filters                                                                                                                                    | No                | ""             |
+| `claude_args`               | Compatibility arguments: model, effort, MCP, schema, appended instructions, registered tool rules and run limits                                                                                                                   | No                | ""             |
 | `base_branch`               | The base branch to use for creating new branches (e.g., 'main', 'develop')                                                                                                                                                         | No                | -              |
 | `use_sticky_comment`        | Use just one comment to deliver PR comments (only applies for pull_request event workflows)                                                                                                                                        | No                | `false`        |
 | `classify_inline_comments`  | Classify queued inline comments with Codex before posting; set false to skip classification                                                                                                                                        | No                | `true`         |
@@ -81,9 +81,8 @@ Additional native inputs are `codex_model`, `codex_effort`, `codex_sandbox`, `co
 | `exclude_comments_by_actor` | Comma-separated list of actor usernames to EXCLUDE from comments. Supports the `*[bot]` wildcard to match all bot accounts. If an actor matches both lists, exclusion takes priority                                               | No                | ""             |
 | `allowed_bots`              | Comma-separated list of allowed bot usernames, or '\*' to allow all bots. Empty string (default) allows no bots. **⚠️ On public repos with `'*'`, external Apps may be able to invoke this action.** See [Security](./security.md) | No                | ""             |
 | `allowed_non_write_users`   | **⚠️ RISKY**: Comma-separated list of usernames to allow without write permissions, or '\*' for all users. Only works with `github_token` input. See [Security](./security.md)                                                     | No                | ""             |
-| `path_to_codex_executable`  | Optional path to a custom Codex executable. Skips automatic installation. Useful for Nix, custom containers, or specialized environments                                                                                           | No                | ""             |
 | `path_to_bun_executable`    | Optional path to a custom Bun executable. Skips automatic Bun installation. Useful for Nix, custom containers, or specialized environments                                                                                         | No                | ""             |
-| `plugin_marketplaces`       | Newline-separated Git URLs with native Codex marketplace manifests; Claude marketplace manifests are unsupported                                                                                                                   | No                | ""             |
+| `plugin_marketplaces`       | Newline-separated Git URLs with supported plugin marketplace manifests; supported legacy and Codex manifests are interpreted by this action                                                                                        | No                | ""             |
 | `plugins`                   | Newline-separated list of Codex plugin names to install (e.g., see example in workflow above). Plugins are installed before Codex execution                                                                                        | No                | ""             |
 
 <details>
@@ -103,32 +102,24 @@ Additional native inputs are `codex_model`, `codex_effort`, `codex_sandbox`, `co
 
 </details>
 
-<details>
-<summary>Historical upstream deprecated inputs — review compatibility before migrating</summary>
+## Migrating upstream inputs
 
-### Historical Deprecated Inputs
+Use `openai_api_key` instead of Anthropic authentication. The action retains `claude_args` as an alias for `codex_args` and accepts the original settings, hooks, plugins, commands, skills and MCP configuration formats.
 
-These are upstream migration references, not accepted inputs in this fork. Do not use the old turn-limit mappings; use the job timeout instead.
+| Upstream control                             | Codex equivalent                                                                        |
+| -------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `--model`                                    | `codex_model` or `codex_args: '--model gpt-5.3-codex'`                                  |
+| `--max-turns`                                | `max_turns` or the same argument in `codex_args`; elapsed time is controlled separately |
+| `--max-budget-usd`                           | `max_budget_usd` or the same argument; custom model rates use `settings.modelPrices`    |
+| `--fallback-model`                           | `fallback_model` or the same argument in `codex_args`                                   |
+| `--allowedTools` / `--disallowedTools`       | `allowed_tools` / `disallowed_tools` or the same arguments in `codex_args`              |
+| `--append-system-prompt` / `--system-prompt` | `append_system_prompt` / `system_prompt` or the same arguments in `codex_args`          |
+| `--mcp-config`                               | The same argument in `codex_args`; the base action also accepts `mcp_config`            |
+| `--continue` / `--resume`                    | `continue_session` / `resume_session` or the same arguments in `codex_args`             |
+| `direct_prompt` / `override_prompt`          | `prompt`                                                                                |
+| `claude_env`                                 | Workflow step `env` or supported `settings.env`                                         |
 
-| Input                 | Description                                                                                         | Migration Path                                                 |
-| --------------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `mode`                | **DEPRECATED**: Mode is now automatically detected based on workflow context                        | Remove this input; the action auto-detects the correct mode    |
-| `direct_prompt`       | **DEPRECATED**: Use `prompt` instead                                                                | Replace with `prompt`                                          |
-| `override_prompt`     | **DEPRECATED**: Use `prompt` with template variables or `claude_args` with `--append-system-prompt` | Use `prompt` for templates or `claude_args` for system prompts |
-| `custom_instructions` | **DEPRECATED**: Use `claude_args` with `--append-system-prompt` or include in `prompt`              | Move instructions to `prompt` or use `claude_args`             |
-| `max_turns`           | Unsupported; no native turn-limit equivalent                                                        | Use job timeout for elapsed time                               |
-| `model`               | **DEPRECATED**: Use `claude_args` with `--model` instead                                            | Use `claude_args: "--model gpt-5.4"`                           |
-| `fallback_model`      | **DEPRECATED**: Use `claude_args` with fallback configuration                                       | Configure fallback in `claude_args` or `settings`              |
-| `allowed_tools`       | **DEPRECATED**: Use `claude_args` with `--allowedTools` instead                                     | Use `claude_args: "--allowedTools Edit,Read,Write"`            |
-| `disallowed_tools`    | **DEPRECATED**: Use `claude_args` with `--disallowedTools` instead                                  | Use `claude_args: "--disallowedTools WebSearch"`               |
-| `mcp_config`          | **DEPRECATED**: Use `claude_args` with `--mcp-config` instead                                       | Use `claude_args: "--mcp-config '{...}'"`                      |
-| `claude_env`          | **DEPRECATED**: Use workflow step `env`                                                             | Configure environment on the workflow step                     |
-
-An OpenAI API key is required when running Codex. No Anthropic provider inputs are accepted.
-
-> **Note**: This action is currently in beta. Features and APIs may change as we continue to improve the integration.
-
-</details>
+Mode selection remains automatic. Anthropic OAuth, federation, Bedrock, Vertex and Foundry credentials are historical provider references; execution requires an OpenAI API key.
 
 <details>
 <summary>Upstream v0.x migration patterns — historical reference</summary>
@@ -287,7 +278,7 @@ See `examples/test-failure-analysis.yml` for a working example that:
 ### Documentation
 
 For complete details on JSON Schema syntax and Agent SDK structured outputs:
-https://docs.claude.com/en/docs/agent-sdk/structured-outputs
+[base-action structured output reference](../base-action/README.md#outputs)
 
 ## Ways to Tag @codex
 

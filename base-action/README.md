@@ -1,6 +1,6 @@
 # Codex Base Action
 
-Run OpenAI Codex with an inline prompt or a prompt file. This base action skips the GitHub trigger and comment orchestration in the repository's main action.
+Run a Codex model through the OpenAI Agents SDK with an inline prompt or a prompt file. This base action skips the GitHub trigger and comment orchestration in the repository's main action.
 
 Use the base action from your copy of this fork:
 
@@ -13,68 +13,71 @@ Use the base action from your copy of this fork:
     codex_sandbox: read-only
 ```
 
-API key authentication is required. Codex runs with a temporary home, ephemeral sessions, disabled approval prompts, and either read-only or workspace-write access. The runtime restricts inherited environment variables and redacts known credentials from logs and execution reports. Workspace-write permits repository changes; review those changes before publishing them.
+API key authentication is required. The runtime uses `@openai/agents` pinned to `0.18.0` with the OpenAI Responses API and `gpt-5.3-codex` by default. The Agents SDK owns the model/tool loop; this action does not install or run the Codex CLI, Claude Code, or the Claude Agent SDK. Agent tools enforce the configured read-only or workspace-write policy; unattended permission decisions follow the supplied tool policy. The runtime restricts inherited environment variables and redacts known credentials from logs and execution reports. Workspace-write permits repository changes; review those changes before publishing them.
 
 ## Inputs
 
-| Input                      | Description                                                                 | Default         |
-| -------------------------- | --------------------------------------------------------------------------- | --------------- |
-| `prompt`                   | Inline prompt; specify exactly one prompt input.                            | Empty           |
-| `prompt_file`              | Path to a non-empty prompt file.                                            | Empty           |
-| `openai_api_key`           | Required OpenAI API key.                                                    | Required        |
-| `codex_model`              | Optional model name.                                                        | CLI default     |
-| `codex_effort`             | none, minimal, low, medium, high, or xhigh.                                 | CLI default     |
-| `codex_sandbox`            | read-only or workspace-write.                                               | workspace-write |
-| `codex_version`            | Exact CLI version installed when no custom executable is provided.          | 0.159.2         |
-| `codex_timeout_minutes`    | Positive integer process timeout in minutes.                                | 30              |
-| `mcp_config`               | JSON with an mcpServers object containing stdio or streamable HTTP servers. | Empty servers   |
-| `append_system_prompt`     | Additional instructions appended to the prompt.                             | Empty           |
-| `path_to_codex_executable` | Custom Codex CLI path; skips installation.                                  | Empty           |
-| `path_to_bun_executable`   | Custom Bun executable path; skips installation.                             | Empty           |
-| `show_full_output`         | Log redacted JSON events when true.                                         | false           |
-
-| `codex_args` | Supported Codex/legacy runtime arguments. | Empty |
-| `claude_args` | Compatibility alias for codex_args. | Empty |
-| `settings` | Supported TOML/JSON or settings file. | Empty |
-| `plugins` | Native Codex plugin names. | Empty |
-| `plugin_marketplaces` | Native Codex marketplace sources. | Empty |
+| Input                    | Description                                                           | Default             |
+| ------------------------ | --------------------------------------------------------------------- | ------------------- |
+| `prompt`                 | Inline prompt; specify exactly one of prompt or prompt_file           | Empty               |
+| `prompt_file`            | Path to a non-empty prompt file                                       | Empty               |
+| `openai_api_key`         | OpenAI API key used by Codex                                          | Required            |
+| `codex_model`            | OpenAI model used by the Agents SDK; defaults to gpt-5.3-codex        | Empty               |
+| `codex_effort`           | Optional reasoning effort: none, minimal, low, medium, high, or xhigh | Empty               |
+| `codex_sandbox`          | Codex sandbox: read-only or workspace-write                           | `workspace-write`   |
+| `codex_timeout_minutes`  | Positive integer timeout for the agent run                            | `30`                |
+| `mcp_config`             | JSON object with stdio or streamable HTTP mcpServers                  | `{"mcpServers":{}}` |
+| `append_system_prompt`   | Additional instructions appended to the prompt                        | Empty               |
+| `path_to_bun_executable` | Use an existing Bun executable instead of installing Bun              | Empty               |
+| `show_full_output`       | Show redacted Codex events in the Actions log                         | `false`             |
+| `codex_args`             | Codex and supported legacy CLI arguments                              | Empty               |
+| `claude_args`            | Compatibility alias for codex_args                                    | Empty               |
+| `settings`               | Codex configuration or supported legacy settings                      | Empty               |
+| `plugins`                | Newline-separated Codex plugin names                                  | Empty               |
+| `plugin_marketplaces`    | Newline-separated Codex plugin marketplace sources                    | Empty               |
+| `max_turns`              | Maximum model turns before execution fails                            | Empty               |
+| `max_budget_usd`         | Maximum estimated API cost in USD before execution fails              | Empty               |
+| `allowed_tools`          | Comma-separated allowed tool rules                                    | Empty               |
+| `disallowed_tools`       | Comma-separated denied tool rules                                     | Empty               |
+| `system_prompt`          | Replacement trusted system instructions                               | Empty               |
+| `fallback_model`         | Fallback model for eligible API failures                              | Empty               |
+| `additional_directories` | Newline-separated additional workspace directories                    | Empty               |
+| `setting_sources`        | Comma-separated settings sources: user, project, local                | Empty               |
+| `permission_mode`        | Tool permission mode for this unattended run                          | Empty               |
+| `continue_session`       | Continue the latest saved session when true                           | Empty               |
+| `resume_session`         | Saved session ID to resume                                            | Empty               |
+| `use_node_cache`         | Enable the Node npm cache when true                                   | `false`             |
 
 ## Outputs
 
-| Output           | Description                                                                   |
-| ---------------- | ----------------------------------------------------------------------------- |
-| `conclusion`     | success or failure.                                                           |
-| `execution_file` | Redacted JSON report at RUNNER_TEMP/codex-execution-output.json.              |
-| `session_id`     | Codex thread ID for report correlation. Ephemeral sessions cannot be resumed. |
+| Output              | Description                                                      |
+| ------------------- | ---------------------------------------------------------------- |
+| `conclusion`        | success or failure.                                              |
+| `structured_output` | JSON result when an output schema is supplied.                   |
+| `execution_file`    | Redacted JSON report at RUNNER_TEMP/codex-execution-output.json. |
+| `session_id`        | Agent session ID for report correlation or explicit resume.      |
 
-The report keeps assistant messages, terminal status, and available token usage in the shape used by the main action's execution tracker. Failure transcripts are also written when the process fails, times out, emits invalid output, or is cancelled. MCP servers preserve stdio command/args/env configuration or streamable HTTP URL, headers, and bearer token environment authentication. Unsupported transports or fields fail clearly.
+The report keeps assistant messages, terminal status, and available token usage in the shape used by the main action's execution tracker. Failure transcripts are also written when the process fails, times out, emits invalid output, or is cancelled. MCP servers preserve stdio command/args/env configuration or streamable HTTP URL, headers, and bearer token environment authentication through SDK integrations. Unsupported transports or fields fail clearly.
 
 For a custom working directory, set CODEX_WORKING_DIR in the step environment. Additional request text can be placed in codex-user-request.txt alongside a supplied prompt file.
 
 ## Development
 
-Run `bun install`, `bun test`, and `bun run typecheck` in this directory. Tests use a local fake CLI and require no API key or live model calls.
+Run `bun install`, `bun test`, and `bun run typecheck` in this directory. Tests use offline model/transport fixtures and require no API key or live model calls. Their results do not establish a complete live GitHub task.
 
 The original MIT license and attribution are preserved in LICENSE.
 
 ## Adapted configuration inputs
 
-The base action preserves prompt/file execution, custom MCP servers, appended
-instructions, and structured output. `codex_args` accepts translated model,
-effort, MCP, schema, and tool options; `claude_args` remains a compatibility
-alias. `settings` accepts supported Codex TOML/JSON (inline or a file) and
-supported legacy model/env/permission settings. `plugins` and
-`plugin_marketplaces` install native Codex plugins into the disposable home.
-Plugin manifests must match Codex; Claude-specific plugin manifests are not
-claimed compatible. Explicit `.claude/commands` and `.codex/commands` slash
-commands are expanded as instructions before execution.
+The Agents SDK owns the execution loop. The action registers tools, permission checks, hooks, MCP servers, commands, skills, Task subagents, and Workflow handling with that loop. `settings` and plugin/command formats are interpreted by this action. Legacy `.claude` names are accepted configuration compatibility, not a Claude runtime. No native Codex CLI is installed for execution.
 
-`structured_output` contains the JSON final result requested by
-`--json-schema` or `--output-schema`. Unsupported controls such as Claude's
-`--max-turns` and patterned Bash/individual Read/Edit/Write permission policies
-fail clearly because Codex exec has no equivalent.
+`codex_args` and its `claude_args` alias accept supported action controls including model, effort, MCP, schema, tool rules, hooks/settings, and run limits. `system_prompt` replaces trusted system instructions; `append_system_prompt` appends guidance. `structured_output` contains validated JSON requested by `--json-schema` or `--output-schema`.
 
-Nonsecret build/test variables from the workflow environment and `settings.env` reach Codex tools. Reserved runtime controls and credential variables remain excluded.
+## Run limits, costs, and sessions
+
+`max_turns` limits model turns; `codex_timeout_minutes` limits elapsed time. `max_budget_usd` checks an estimate from reported model token usage and the configured token-rate table after model responses. This is not an account spending cap: a response can cross the estimate before execution stops. Cached input, output tokens and standard hosted web-search call charges are included. Other separately billed tools, pricing tiers, and actual invoiced charges are not included. With a USD limit, models without a configured rate fail before a request. For a custom or fallback model, supply its rates in `settings.modelPrices`, keyed by model name, with `input`, `cachedInput`, and `output` rates in USD per million tokens; for example, `{"modelPrices":{"custom-codex":{"input":1,"cachedInput":0.1,"output":2}}}`.
+
+`continue_session` selects the latest saved session, and `resume_session` selects a specific saved ID. History is stored on the runner and scoped to the workspace. It survives repeated runs only while that storage exists; persistence across Actions jobs requires a suitable Actions cache or other explicit storage. Protect session history as repository data and restore it only for the same trusted workspace.
 
 ## Trust model
 
@@ -82,7 +85,7 @@ The base action runs the supplied prompt in the caller's working directory. It d
 
 ## Runtime Environment
 
-Use `CODEX_WORKING_DIR` for an explicit working directory. Nonsecret build/test variables from the workflow step and supported `settings.env` reach the model's tools; runtime controls and credentials are excluded. The former `NODE_VERSION` runtime selector is not used by this Codex action. Set `codex_version` or supply `path_to_codex_executable` instead.
+Use `CODEX_WORKING_DIR` for an explicit working directory. Nonsecret build/test variables from the workflow step and supported `settings.env` reach the model's tools; runtime controls and credentials are excluded. `NODE_VERSION` selects the Node setup version. `use_node_cache` enables its npm cache; it does not persist agent sessions. No Codex CLI executable/version input is needed.
 
 ## Usage
 
@@ -105,7 +108,7 @@ Add the following to your workflow file:
     codex_args: '--allowedTools "Bash(git:*),Read,Glob,Grep"'
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
 
-# Bound execution time (Codex has no turn-limit equivalent)
+# Bound execution time separately from max_turns
 - name: Run Codex with a time limit
   uses: coryparrry/claude-code-action/base-action@codex/openai-runtime
   with:
@@ -181,7 +184,7 @@ Reserved runtime controls and credential-like variables are excluded from tool e
 
 ## Using Settings Configuration
 
-`settings` accepts supported inline TOML, JSON, or a file. Native fields include model, reasoning effort/summary, verbosity, developer instructions, web search, supported tool features, and MCP servers. Legacy `model`, `env`, and simple `permissions.allow` / `permissions.deny` are adapted. Claude hooks, arbitrary Claude settings, and full patterned permission policies are unsupported and fail clearly.
+`settings` accepts supported inline TOML, JSON, or a file. Fields include model, reasoning effort/summary, verbosity, developer instructions, web search, supported tool features, and MCP servers. Original `model`, `env`, `permissions.allow`, `permissions.deny`, `permissions.ask`, hooks, and permission modes are interpreted by this adapter. Unsupported configuration fields or policies fail clearly; accepting a legacy format does not invoke Claude.
 
 ```yaml
 - uses: coryparrry/claude-code-action/base-action@codex/openai-runtime
@@ -352,7 +355,7 @@ Check out additional examples in [`./examples`](./examples).
 
 **⚠️ IMPORTANT: Never commit API keys directly to your repository! Always use GitHub Actions secrets.**
 
-To securely use your Anthropic API key:
+To securely use your OpenAI API key:
 
 1. Add your API key as a repository secret:
 
@@ -386,10 +389,10 @@ We also recommend that you always use short-lived tokens when possible
 
 ## Historical upstream configuration
 
-The following original examples document Anthropic upstream behavior. OAuth, WIF, Bedrock, Vertex, fallback models, hooks, and `--max-turns` are not working Codex controls. OpenAI API keys authenticate this fork; `codex_timeout_minutes` bounds elapsed time, not turns or spend.
+The following original examples document Anthropic upstream behavior. OAuth, WIF, Bedrock, and Vertex are historical provider authentication references and are not supported by this fork. Hooks, settings, fallback models, and turn limits are now handled by the Agents SDK adapter; use current inputs above rather than upstream provider model names. `codex_timeout_minutes` bounds elapsed time separately from model turns.
 
 <details>
-<summary>Original provider and settings examples (historical only)</summary>
+<summary>Original upstream provider examples and configuration formats</summary>
 
 ```yaml
 # Using fallback model for handling API errors

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import * as core from "@actions/core";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "../src/index";
@@ -41,27 +41,125 @@ describe("base action entrypoint (offline)", () => {
     await rm(directory, { recursive: true, force: true });
   });
 
-  test("runs the configured Codex executable and exposes its report and session", async () => {
-    const executable = join(directory, "fake-codex.cjs");
-    const capture = join(directory, "prompt-capture.txt");
-    await writeFile(
-      executable,
-      `#!/usr/bin/env node\nconst fs = require('node:fs');\nlet prompt = '';\nprocess.stdin.setEncoding('utf8');\nprocess.stdin.on('data', chunk => prompt += chunk);\nprocess.stdin.on('end', () => {\nfs.writeFileSync(${JSON.stringify(capture)}, prompt);\nconst events = [{type:'thread.started',thread_id:'entrypoint-session'}, {type:'item.completed',item:{type:'agent_message',text:'Reviewed'}}, {type:'turn.completed'}];\nfor (const event of events) console.log(JSON.stringify(event));\n});\n`,
-    );
-    await chmod(executable, 0o700);
-    process.env.INPUT_PATH_TO_CODEX_EXECUTABLE = executable;
-    process.env.INPUT_APPEND_SYSTEM_PROMPT = "Follow the repository rules";
+  test.each(["default", "compatibility"])(
+    "runs the real Agents SDK through an offline HTTP fixture (%s)",
+    async (mode) => {
+      let captured: Record<string, unknown> | undefined;
+      let path: string | undefined;
+      const fetch = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+          async (...args: Parameters<typeof globalThis.fetch>) => {
+            const [input, init] = args;
+            const request =
+              input instanceof Request
+                ? new Request(input, init)
+                : new Request(String(input), init);
+            path = request.url;
+            captured = JSON.parse(await request.text());
+            expect(request.headers.get("authorization")).toBe(
+              "Bearer offline-fake-key",
+            );
+            return new Response(
+              JSON.stringify({
+                id: "offline-entrypoint-response",
+                object: "response",
+                created_at: 1,
+                status: "completed",
+                model: "gpt-5.3-codex",
+                output: [
+                  {
+                    id: "offline-entrypoint-message",
+                    type: "message",
+                    role: "assistant",
+                    status: "completed",
+                    content: [
+                      {
+                        type: "output_text",
+                        text: "Reviewed",
+                        annotations: [],
+                      },
+                    ],
+                  },
+                ],
+                usage: {
+                  input_tokens: 4,
+                  output_tokens: 3,
+                  total_tokens: 7,
+                  input_tokens_details: { cached_tokens: 0 },
+                  output_tokens_details: { reasoning_tokens: 0 },
+                },
+              }),
+              { headers: { "content-type": "application/json" } },
+            );
+          },
+          { preconnect: globalThis.fetch.preconnect },
+        ),
+      );
+      process.env.OPENAI_BASE_URL = "http://offline-entrypoint.test/v1";
+      process.env.INPUT_SYSTEM_PROMPT = "Trusted replacement instructions";
+      process.env.INPUT_APPEND_SYSTEM_PROMPT = "Follow the repository rules";
+      const expectedModel =
+        mode === "compatibility" ? "compatibility-model" : "gpt-5.3-codex";
+      if (mode === "compatibility") {
+        process.env.INPUT_CODEX_MODEL = "";
+        process.env.INPUT_CODEX_EFFORT = "";
+        process.env.INPUT_SYSTEM_PROMPT = "";
+        process.env.INPUT_APPEND_SYSTEM_PROMPT = "";
+        process.env.INPUT_CODEX_ARGS =
+          '--model compatibility-model --effort high --system-prompt "Trusted replacement instructions" --append-system-prompt "Follow the repository rules"';
+      }
+      process.env.INPUT_SETTING_SOURCES = "project";
+      process.env.INPUT_MAX_TURNS = "3";
+      process.env.INPUT_MAX_BUDGET_USD = mode === "default" ? "1" : "";
+      process.env.INPUT_PERMISSION_MODE = "acceptEdits";
+      process.env.INPUT_CONTINUE_SESSION = "false";
+      try {
+        await run();
+        expect(failed.mock.calls).toEqual([]);
+        expect(path).toBe("http://offline-entrypoint.test/v1/responses");
+        expect(captured?.model).toBe(expectedModel);
+        if (mode === "compatibility")
+          expect((captured?.reasoning as Record<string, unknown>)?.effort).toBe(
+            "high",
+          );
+        expect(captured?.store).toBe(false);
+        expect(captured?.instructions).toContain(
+          "Trusted replacement instructions",
+        );
+        expect(captured?.instructions).toContain("Follow the repository rules");
+        expect(JSON.stringify(captured?.input)).toContain("Review these files");
+        expect(output).toHaveBeenCalledWith("conclusion", "success");
+        expect(
+          output.mock.calls.some(
+            (call: unknown[]) =>
+              call[0] === "session_id" && typeof call[1] === "string",
+          ),
+        ).toBe(true);
+        expect(output).toHaveBeenCalledWith(
+          "execution_file",
+          join(directory, "codex-execution-output.json"),
+        );
+        const report = JSON.parse(
+          await readFile(
+            join(directory, "codex-execution-output.json"),
+            "utf8",
+          ),
+        );
+        expect(report.at(-1).is_error).toBe(false);
+        expect(JSON.stringify(report)).toContain("Reviewed");
+      } finally {
+        fetch.mockRestore();
+      }
+    },
+  );
+
+  test("rejects malformed continue_session before any model request", async () => {
+    process.env.INPUT_CONTINUE_SESSION = "sometimes";
     await run();
-    expect(failed).not.toHaveBeenCalled();
-    expect(output).toHaveBeenCalledWith("conclusion", "success");
-    expect(output).toHaveBeenCalledWith("session_id", "entrypoint-session");
-    expect(output).toHaveBeenCalledWith(
-      "execution_file",
-      join(directory, "codex-execution-output.json"),
+    expect(failed.mock.calls[0]?.[0]).toContain(
+      "continue_session must be true or false",
     );
-    expect(await readFile(capture, "utf8")).toContain(
-      "Follow the repository rules",
-    );
+    expect(output).toHaveBeenCalledWith("conclusion", "failure");
   });
 
   test("fails before launch when the OpenAI key is missing", async () => {

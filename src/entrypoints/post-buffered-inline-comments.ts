@@ -61,7 +61,7 @@ export async function classifyComments(
         bodies
           .map(
             (body, index) =>
-              `${index + 1}. ${JSON.stringify(redactSecrets(body))}`,
+              `${index + 1}. ${JSON.stringify(redactSecrets(body).split(env.OPENAI_API_KEY!).join("[REDACTED]"))}`,
           )
           .join("\n"),
       { mode: 0o600 },
@@ -77,14 +77,10 @@ export async function classifyComments(
     const childEnv: NodeJS.ProcessEnv = {};
     for (const name of [
       "PATH",
-      "HOME",
       "TMPDIR",
       "TEMP",
       "TMP",
       "SYSTEMROOT",
-      "HTTP_PROXY",
-      "HTTPS_PROXY",
-      "NO_PROXY",
       "SSL_CERT_FILE",
       "SSL_CERT_DIR",
     ]) {
@@ -92,24 +88,22 @@ export async function classifyComments(
     }
     Object.assign(childEnv, {
       OPENAI_API_KEY: env.OPENAI_API_KEY,
+      ...(env.OPENAI_BASE_URL ? { OPENAI_BASE_URL: env.OPENAI_BASE_URL } : {}),
+      HOME: directory,
+      USERPROFILE: directory,
+      CODEX_HOME: join(directory, ".codex"),
       RUNNER_TEMP: directory,
       INPUT_PROMPT_FILE: promptPath,
       INPUT_MCP_CONFIG: '{"mcpServers":{}}',
-      INPUT_PATH_TO_CODEX_EXECUTABLE:
-        env.INPUT_PATH_TO_CODEX_EXECUTABLE || "codex",
-      INPUT_CODEX_MODEL: env.INPUT_CODEX_MODEL || "",
+      INPUT_CODEX_MODEL: env.INPUT_CODEX_MODEL || "gpt-5.3-codex",
       INPUT_CODEX_EFFORT: env.INPUT_CODEX_EFFORT || "",
       INPUT_CODEX_SANDBOX: "read-only",
       INPUT_CODEX_TIMEOUT_MINUTES: "2",
       INPUT_SHOW_FULL_OUTPUT: "false",
-      INPUT_SETTINGS: JSON.stringify({
-        features: {
-          shell_tool: false,
-          unified_exec: false,
-          apply_patch_freeform: false,
-        },
-      }),
-      INPUT_CODEX_ARGS: `--skip-git-repo-check --json-schema '${schema}'`,
+      INPUT_SETTINGS: "{}",
+      INPUT_PLUGINS: "",
+      INPUT_PLUGIN_MARKETPLACES: "",
+      INPUT_CODEX_ARGS: `--tools "" --setting-sources "" --json-schema '${schema}'`,
     });
     const adapterPath = fileURLToPath(
       new URL("../../base-action/src/index.ts", import.meta.url),
