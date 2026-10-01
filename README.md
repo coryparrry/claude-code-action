@@ -1,6 +1,6 @@
 # Codex GitHub Action
 
-A fork of [Anthropic's Claude Code Action](https://github.com/anthropics/claude-code-action) that uses **the OpenAI Agents SDK with a Codex model and your OpenAI API key**. It retains the GitHub issue/PR context, mention triggers, tracking comments, branch handling, tools, and cleanup. The runtime uses `@openai/agents` pinned to `0.18.0` with the OpenAI Responses API and `gpt-5.3-codex` by default. The Agents SDK owns the model/tool loop; this action does not install or run the Codex CLI, Claude Code, or the Claude Agent SDK.
+A fork of [Anthropic's Claude Code Action](https://github.com/anthropics/claude-code-action) that uses **the OpenAI Agents SDK with a Codex model and your OpenAI API key**. It retains the GitHub issue/PR context, mention triggers, tracking comments, branch handling, tools, and cleanup. The runtime uses `@openai/agents` pinned to `0.18.0` with the OpenAI Responses API and `gpt-6.1-sol` by default. The Agents SDK owns the model/tool loop; this action does not install or run the Codex CLI, Claude Code, or the Claude Agent SDK.
 
 This is an independent adaptation, not an official OpenAI or Anthropic release. The upstream MIT copyright and license notices are retained in [LICENSE](LICENSE).
 
@@ -65,13 +65,13 @@ jobs:
 
 ## Runtime and configuration
 
-The runtime uses `@openai/agents` pinned to `0.18.0` with the OpenAI Responses API and `gpt-5.3-codex` by default. The Agents SDK owns the model/tool loop; this action does not install or run the Codex CLI, Claude Code, or the Claude Agent SDK.
+The runtime uses `@openai/agents` pinned to `0.18.0` with the OpenAI Responses API and `gpt-6.1-sol` by default. The Agents SDK owns the model/tool loop; this action does not install or run the Codex CLI, Claude Code, or the Claude Agent SDK.
 
 Preparation builds the GitHub context and scoped MCP configuration. The SDK then executes the agent with registered file, shell, MCP, task, and workflow tools and adapts completed messages into the action's execution report. An incomplete or failed agent run fails the action.
 
 | Input or feature                                       | Agents SDK adaptation                                                                                                       |
 | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| `codex_model`, `codex_effort`                          | OpenAI model selection and reasoning effort; default model is `gpt-5.3-codex`.                                              |
+| `codex_model`, `codex_effort`                          | OpenAI model selection and reasoning effort; default model is `gpt-6.1-sol`.                                                |
 | `max_turns`, `max_budget_usd`, `fallback_model`        | SDK-owned turn limits, estimated token budget, and eligible model-request fallback.                                         |
 | `allowed_tools`, `disallowed_tools`, `permission_mode` | Tool permission policy applied to registered tools before execution.                                                        |
 | `system_prompt`, appended instructions                 | Trusted system instructions and additional task guidance.                                                                   |

@@ -145,6 +145,22 @@ describe("SDK context compaction", () => {
     expect(await compact.session.runCompaction()).toBeNull();
   });
 
+  test("Sol uses its larger context window and the selected model for actual compaction", async () => {
+    const requests = fakeCompact();
+    const compact = createAgentCompaction({
+      apiKey: "offline-key",
+      model: "gpt-6.1-sol",
+      signal: new AbortController().signal,
+    });
+    await compact.session.addItems([{ role: "user", content: "request" }]);
+    compact.observeResponse(response(320_000));
+    expect(await compact.session.runCompaction()).toBeNull();
+    compact.observeResponse(response(840_001));
+    await compact.session.runCompaction();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.model).toBe("gpt-6.1-sol");
+  });
+
   test("does not guess custom model context windows and uses the actual fallback model", async () => {
     const requests = fakeCompact();
     const compact = createAgentCompaction({

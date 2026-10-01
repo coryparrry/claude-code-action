@@ -18,9 +18,48 @@ test("configured model rates require all three finite nonnegative token prices",
     { custom: {} },
     { custom: { input: -1, cachedInput: 0, output: 2 } },
     { custom: { input: 1, cachedInput: 0, output: Infinity } },
+    { custom: { input: 1, cachedInput: 0, output: 1, cacheWrite: -1 } },
+    {
+      custom: {
+        input: 1,
+        cachedInput: 0,
+        output: 1,
+        longContext: { threshold: 0, input: 2, cachedInput: 0, output: 2 },
+      },
+    },
   ]) {
     expect(() => configuredModelPrices(invalid)).toThrow();
   }
+});
+test("Sol prices separate cache reads/writes and apply the full-request long-context tier", () => {
+  const short = new AgentBudget();
+  short.accept(
+    new Usage({
+      inputTokens: 1000,
+      outputTokens: 10,
+      inputTokensDetails: { cached_tokens: 100, cache_write_tokens: 200 },
+    }),
+    "gpt-6.1-sol",
+  );
+  expect(short.cost).toBeCloseTo(0.00201, 9);
+  const boundary = new AgentBudget();
+  boundary.accept(
+    new Usage({ inputTokens: 272_000, outputTokens: 1 }),
+    "gpt-6.1-sol",
+  );
+  expect(boundary.cost).toBeCloseTo(0.54401, 9);
+  const long = new AgentBudget(1);
+  expect(() =>
+    long.accept(
+      new Usage({
+        inputTokens: 272_001,
+        outputTokens: 10,
+        inputTokensDetails: { cached_tokens: 100, cache_write_tokens: 200 },
+      }),
+      "gpt-6.1-sol",
+    ),
+  ).toThrow("USD budget");
+  expect(long.cost).toBeCloseTo(1.087974, 9);
 });
 test("budget accounts cached tokens and stops after the response that reaches the limit", () => {
   const usage = new Usage({

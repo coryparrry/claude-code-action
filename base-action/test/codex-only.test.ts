@@ -39,7 +39,7 @@ describe("Codex-only base action", () => {
     expect(metadata).toContain('name: "Codex Base Action"');
     expect(metadata).not.toContain("npm install --global");
     expect(metadata).not.toContain("Install Codex CLI");
-    expect(metadata).toContain("defaults to gpt-5.3-codex");
+    expect(metadata).toContain("defaults to gpt-6.1-sol");
     expect(metadata).toContain("bun-version: 1.4.2");
     expect(metadata).toContain("OPENAI_API_KEY: ${{ inputs.openai_api_key }}");
     expect(metadata).toContain("claude_args:");

@@ -5,11 +5,19 @@ import { join } from "node:path";
 import {
   resolveCompatibility,
   splitCompatibilityArgs,
+  normalizeCodexEffort,
 } from "../src/codex-compat";
 import { expandCommand } from "../src/codex-commands";
 import { pluginSetupCommands } from "../src/codex-plugins";
 
 const empty = '{"mcpServers":{}}';
+test("legacy efforts use supported Sol values while explicit older models retain their limits", () => {
+  expect(normalizeCodexEffort("none")).toBe("low");
+  expect(normalizeCodexEffort("minimal")).toBe("low");
+  expect(normalizeCodexEffort("ultra")).toBe("max");
+  expect(normalizeCodexEffort("max")).toBe("max");
+  expect(normalizeCodexEffort("max", "gpt-5.3-codex")).toBe("xhigh");
+});
 describe("Codex compatibility controls", () => {
   let directory: string;
   beforeEach(async () => {
@@ -438,9 +446,9 @@ describe("Codex compatibility controls", () => {
       ).resumeThreadId,
     ).toBe("retained-session");
   });
-  test("maps max/ultra effort to xhigh for the default Codex model", async () => {
+  test("maps max/ultra effort to the selected model's supported API value", async () => {
     expect((await resolveCompatibility("--effort max", "", empty)).effort).toBe(
-      "xhigh",
+      "max",
     );
     expect(
       (

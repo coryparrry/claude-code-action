@@ -13,7 +13,7 @@ Use the base action from your copy of this fork:
     codex_sandbox: read-only
 ```
 
-API key authentication is required. The runtime uses `@openai/agents` pinned to `0.18.0` with the OpenAI Responses API and `gpt-5.3-codex` by default. The Agents SDK owns the model/tool loop; this action does not install or run the Codex CLI, Claude Code, or the Claude Agent SDK. Agent tools enforce the configured read-only or workspace-write policy; unattended permission decisions follow the supplied tool policy. The runtime restricts inherited environment variables and redacts known credentials from logs and execution reports. Workspace-write permits repository changes; review those changes before publishing them.
+API key authentication is required. The runtime uses `@openai/agents` pinned to `0.18.0` with the OpenAI Responses API and `gpt-6.1-sol` by default. The Agents SDK owns the model/tool loop; this action does not install or run the Codex CLI, Claude Code, or the Claude Agent SDK. Agent tools enforce the configured read-only or workspace-write policy; unattended permission decisions follow the supplied tool policy. The runtime restricts inherited environment variables and redacts known credentials from logs and execution reports. Workspace-write permits repository changes; review those changes before publishing them.
 
 ## Inputs
 
@@ -22,7 +22,7 @@ API key authentication is required. The runtime uses `@openai/agents` pinned to 
 | `prompt`                 | Inline prompt; specify exactly one of prompt or prompt_file           | Empty               |
 | `prompt_file`            | Path to a non-empty prompt file                                       | Empty               |
 | `openai_api_key`         | OpenAI API key used by Codex                                          | Required            |
-| `codex_model`            | OpenAI model used by the Agents SDK; defaults to gpt-5.3-codex        | Empty               |
+| `codex_model`            | OpenAI model used by the Agents SDK; defaults to gpt-6.1-sol          | Empty               |
 | `codex_effort`           | Optional reasoning effort: none, minimal, low, medium, high, or xhigh | Empty               |
 | `codex_sandbox`          | Codex sandbox: read-only or workspace-write                           | `workspace-write`   |
 | `codex_timeout_minutes`  | Positive integer timeout for the agent run                            | `30`                |
@@ -75,7 +75,7 @@ The Agents SDK owns the execution loop. The action registers tools, permission c
 
 ## Run limits, costs, and sessions
 
-`max_turns` limits model turns; `codex_timeout_minutes` limits elapsed time. `max_budget_usd` checks an estimate from reported model token usage and the configured token-rate table after model responses. This is not an account spending cap: a response can cross the estimate before execution stops. Cached input, output tokens and standard hosted web-search call charges are included. Other separately billed tools, pricing tiers, and actual invoiced charges are not included. With a USD limit, models without a configured rate fail before a request. For a custom or fallback model, supply its rates in `settings.modelPrices`, keyed by model name, with `input`, `cachedInput`, and `output` rates in USD per million tokens; for example, `{"modelPrices":{"custom-codex":{"input":1,"cachedInput":0.1,"output":2}}}`.
+`max_turns` limits model turns; `codex_timeout_minutes` limits elapsed time. `max_budget_usd` checks an estimate from reported model token usage and the configured token-rate table after model responses. This is not an account spending cap: a response can cross the estimate before execution stops. Cached reads, reported cache writes, output tokens and standard hosted web-search call charges are included. The default Sol model uses the standard long-context rates when input exceeds 272K tokens. Other separately billed tools, processing tiers, and actual invoiced charges are not included. With a USD limit, models without a configured rate fail before a request. For a custom or fallback model, supply its rates in `settings.modelPrices`, keyed by model name, with `input`, `cachedInput`, and `output` rates in USD per million tokens; for example, `{"modelPrices":{"custom-codex":{"input":1,"cachedInput":0.1,"output":2}}}`. Optional `cacheWrite` sets the rate for reported cache-write tokens; otherwise those tokens use the input rate. Optional `longContext` supplies a positive integer token `threshold` plus the rates to apply to the full request above that threshold.
 
 `continue_session` selects the latest saved session, and `resume_session` selects a specific saved ID. History is stored on the runner and scoped to the workspace. It survives repeated runs only while that storage exists; persistence across Actions jobs requires a suitable Actions cache or other explicit storage. Protect session history as repository data and restore it only for the same trusted workspace.
 

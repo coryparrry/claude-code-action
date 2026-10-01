@@ -65,7 +65,7 @@ describe("base action entrypoint (offline)", () => {
                 object: "response",
                 created_at: 1,
                 status: "completed",
-                model: "gpt-5.3-codex",
+                model: "gpt-6.1-sol",
                 output: [
                   {
                     id: "offline-entrypoint-message",
@@ -99,7 +99,7 @@ describe("base action entrypoint (offline)", () => {
       process.env.INPUT_SYSTEM_PROMPT = "Trusted replacement instructions";
       process.env.INPUT_APPEND_SYSTEM_PROMPT = "Follow the repository rules";
       const expectedModel =
-        mode === "compatibility" ? "compatibility-model" : "gpt-5.3-codex";
+        mode === "compatibility" ? "compatibility-model" : "gpt-6.1-sol";
       if (mode === "compatibility") {
         process.env.INPUT_CODEX_MODEL = "";
         process.env.INPUT_CODEX_EFFORT = "";

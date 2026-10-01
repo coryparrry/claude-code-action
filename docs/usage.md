@@ -1,6 +1,6 @@
 # Usage
 
-> The runtime uses `@openai/agents` pinned to `0.18.0` with the OpenAI Responses API and `gpt-5.3-codex` by default. The Agents SDK owns the model/tool loop; this action does not install or run the Codex CLI, Claude Code, or the Claude Agent SDK. Legacy configuration names remain adapter inputs; Anthropic provider authentication is historical only. Fork pull requests are rejected before execution.
+> The runtime uses `@openai/agents` pinned to `0.18.0` with the OpenAI Responses API and `gpt-6.1-sol` by default. The Agents SDK owns the model/tool loop; this action does not install or run the Codex CLI, Claude Code, or the Claude Agent SDK. Legacy configuration names remain adapter inputs; Anthropic provider authentication is historical only. Fork pull requests are rejected before execution.
 
 Add a workflow file to your repository (e.g., `.github/workflows/claude.yml`):
 
@@ -32,7 +32,7 @@ jobs:
           # Optional: pass advanced arguments to Agents SDK runner
           # claude_args: |
           #   --max-turns 10
-          #   --model gpt-5.3-codex
+          #   --model gpt-6.1-sol
 
           # Optional: add custom plugin marketplaces
           # plugin_marketplaces: "https://github.com/user/marketplace1.git\nhttps://github.com/user/marketplace2.git"
@@ -108,7 +108,7 @@ Use `openai_api_key` instead of Anthropic authentication. The action retains `cl
 
 | Upstream control                             | Codex equivalent                                                                        |
 | -------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `--model`                                    | `codex_model` or `codex_args: '--model gpt-5.3-codex'`                                  |
+| `--model`                                    | `codex_model` or `codex_args: '--model gpt-6.1-sol'`                                    |
 | `--max-turns`                                | `max_turns` or the same argument in `codex_args`; elapsed time is controlled separately |
 | `--max-budget-usd`                           | `max_budget_usd` or the same argument; custom model rates use `settings.modelPrices`    |
 | `--fallback-model`                           | `fallback_model` or the same argument in `codex_args`                                   |

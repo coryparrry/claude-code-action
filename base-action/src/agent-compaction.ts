@@ -12,8 +12,10 @@ import {
 import OpenAI from "openai";
 
 // https://developers.openai.com/api/docs/models/gpt-5.3-codex
+// https://developers.openai.com/api/docs/models/gpt-6.1-sol
 const DEFAULT_CONTEXT_WINDOWS: Record<string, number> = {
   "gpt-5.3-codex": 400_000,
+  "gpt-6.1-sol": 1_050_000,
 };
 
 export type AgentCompactionOptions = {

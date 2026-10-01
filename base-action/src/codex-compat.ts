@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { tomlString } from "./codex-config";
 import { permittedToolVariable } from "./codex-tool-environment";
+import { DEFAULT_CODEX_MODEL } from "./codex-model";
 
 type ObjectValue = Record<string, unknown>;
 const isObject = (value: unknown): value is ObjectValue =>
@@ -120,11 +121,15 @@ export type DirectCompatibilityOptions = {
   askTools?: string | string[];
 };
 
-/** The default Codex model exposes xhigh as its highest supported API effort. */
+/** Adapt legacy effort controls to the selected model's supported API values. */
 export function normalizeCodexEffort(
   effort?: string,
-  model = "gpt-5.3-codex",
+  model = DEFAULT_CODEX_MODEL,
 ): string | undefined {
+  if (model === "gpt-6.1-sol" || model.startsWith("gpt-6.1-sol-")) {
+    if (effort === "none" || effort === "minimal") return "low";
+    if (effort === "ultra") return "max";
+  }
   return (effort === "max" || effort === "ultra") &&
     (model === "gpt-5.3-codex" || model.startsWith("gpt-5.3-codex-"))
     ? "xhigh"

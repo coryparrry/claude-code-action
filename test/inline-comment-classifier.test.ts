@@ -26,7 +26,7 @@ function modelResponse(text: string): Response {
     object: "response",
     created_at: 1,
     status: "completed",
-    model: "gpt-5.3-codex",
+    model: "gpt-6.1-sol",
     output: [
       {
         id: "message-offline",
@@ -177,7 +177,7 @@ describe("buffered inline comment classifier", () => {
       const request = requests[0]!;
       expect(request.path).toBe("/v1/responses");
       expect(request.authorization).toBe("Bearer offline-api-key");
-      expect(request.body.model).toBe("gpt-5.3-codex");
+      expect(request.body.model).toBe("gpt-6.1-sol");
       expect(request.body.store).toBe(false);
       expect(request.body.tools ?? []).toEqual([]);
       expect(request.body.text.format.type).toBe("json_schema");
