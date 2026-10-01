@@ -2,7 +2,10 @@ import { describe, test, expect, beforeEach, afterEach, spyOn } from "bun:test";
 import { prepareMcpConfig } from "../src/mcp/install-mcp-server";
 import * as core from "@actions/core";
 import type { ParsedGitHubContext } from "../src/github/context";
-import { CLAUDE_APP_BOT_ID, CLAUDE_BOT_LOGIN } from "../src/github/constants";
+import {
+  GITHUB_ACTIONS_BOT_ID,
+  GITHUB_ACTIONS_BOT_LOGIN,
+} from "../src/github/constants";
 
 describe("prepareMcpConfig", () => {
   let consoleInfoSpy: any;
@@ -27,16 +30,17 @@ describe("prepareMcpConfig", () => {
     isPR: false,
     inputs: {
       prompt: "",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       assigneeTrigger: "",
       labelTrigger: "",
       branchPrefix: "",
       useStickyComment: false,
+      bufferInlineComments: true,
       classifyInlineComments: true,
       useCommitSigning: false,
       sshSigningKey: "",
-      botId: String(CLAUDE_APP_BOT_ID),
-      botName: CLAUDE_BOT_LOGIN,
+      botId: String(GITHUB_ACTIONS_BOT_ID),
+      botName: GITHUB_ACTIONS_BOT_LOGIN,
       allowedBots: "",
       allowedNonWriteUsers: "",
       trackProgress: false,
@@ -87,6 +91,33 @@ describe("prepareMcpConfig", () => {
     fetchSpy.mockRestore();
   });
 
+  test("legacy classify=false posts immediately even with default buffering enabled", async () => {
+    const config = JSON.parse(
+      await prepareMcpConfig({
+        githubToken: "test-token",
+        owner: "test-owner",
+        repo: "test-repo",
+        branch: "test-branch",
+        baseBranch: "main",
+        allowedTools: ["mcp__github_inline_comment"],
+        mode: "agent",
+        context: {
+          ...mockPRContext,
+          inputs: {
+            ...mockPRContext.inputs,
+            bufferInlineComments: true,
+            classifyInlineComments: false,
+          },
+        },
+      }),
+    );
+    expect(
+      config.mcpServers.github_inline_comment.env.BUFFER_INLINE_COMMENTS,
+    ).toBe("false");
+    expect(
+      config.mcpServers.github_inline_comment.env.CLASSIFY_INLINE_COMMENTS,
+    ).toBe("false");
+  });
   test("should return comment server when commit signing is disabled", async () => {
     const result = await prepareMcpConfig({
       githubToken: "test-token",

@@ -1,18 +1,34 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Install act if not already installed
-if ! command -v act &> /dev/null; then
-    echo "Installing act..."
-    brew install act
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+project_root="$(cd -- "$script_dir/.." && pwd)"
+bun_binary="${BUN_EXECUTABLE:-bun}"
+
+if [[ "${CODEX_TEST_LIVE:-0}" == "1" ]]; then
+  # Same explicit workflow/key opt-in as the general local test entrypoint.
+  exec "$script_dir/test-local.sh"
 fi
 
-# Check if ANTHROPIC_API_KEY is set
-if [ -z "$ANTHROPIC_API_KEY" ]; then
-    echo "Error: ANTHROPIC_API_KEY environment variable is not set"
-    echo "Please export your API key: export ANTHROPIC_API_KEY='your-key-here'"
-    exit 1
-fi
+cd "$project_root"
+# Tests cover fake CLI execution, MCP translation, tool filters and environment.
+"$bun_binary" test base-action/test/codex-compat.test.ts base-action/test/run-codex.test.ts base-action/test/codex-tool-environment.test.ts
 
-# Run the MCP test workflow locally
-echo "Running MCP server test locally with act..."
-act push --secret ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" -W .github/workflows/test-mcp-servers.yml --container-architecture linux/amd64
+# Exercise the restored stdio fixture through the actual MCP client protocol.
+# Dependencies must already be installed; do not install software or call models.
+"$bun_binary" -e '
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+const client = new Client({ name: "offline-harness", version: "1.0.0" });
+const transport = new StdioClientTransport({ command: process.execPath, args: ["base-action/test/mcp-test/simple-mcp-server.ts"] });
+try {
+  await client.connect(transport);
+  const tools = await client.listTools();
+  if (!tools.tools.some(tool => tool.name === "test_tool")) throw new Error("Missing fixture tool");
+  const result = await client.callTool({ name: "test_tool", arguments: {} });
+  if (result.isError || !JSON.stringify(result.content).includes("Test tool response")) throw new Error("Unexpected fixture response");
+  console.log("Offline MCP handshake, tool listing and tool call passed.");
+} finally {
+  await client.close();
+}
+'

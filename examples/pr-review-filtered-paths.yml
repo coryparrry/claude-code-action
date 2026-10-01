@@ -1,4 +1,4 @@
-name: Claude Review - Path Specific
+name: Codex Review - Path Specific
 
 on:
   pull_request:
@@ -11,22 +11,22 @@ on:
       # You can add more specific patterns as needed
 
 jobs:
-  claude-review-paths:
+  codex-review-paths:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
-      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
-      - name: Claude Code Review
-        uses: anthropics/claude-code-action@v1
+      - name: Codex Review
+        uses: coryparrry/claude-code-action@codex/openai-runtime
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}

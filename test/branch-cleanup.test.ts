@@ -80,7 +80,7 @@ describe("checkAndCommitOrDeleteBranch", () => {
     expect(result.shouldDeleteBranch).toBe(true);
     expect(result.branchLink).toBe("");
     expect(consoleLogSpy).toHaveBeenCalledWith(
-      "Branch claude/issue-123-20240101-1234 has no commits from Claude, will delete it",
+      "Branch claude/issue-123-20240101-1234 has no commits from Codex, will delete it",
     );
   });
 
@@ -133,7 +133,7 @@ describe("checkAndCommitOrDeleteBranch", () => {
       `\n[View branch](${GITHUB_SERVER_URL}/owner/repo/tree/claude/issue-123-20240101-1234)`,
     );
     expect(consoleErrorSpy).toHaveBeenCalledWith(
-      "Error comparing commits on Claude branch:",
+      "Error comparing commits on Codex branch:",
       expect.any(Error),
     );
   });

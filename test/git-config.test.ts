@@ -116,7 +116,7 @@ describe("git-config", () => {
   });
 
   describe("replaceCheckoutCredentials", () => {
-    test("removes the checkout extraheader and sets a token remote URL", async () => {
+    test("removes the checkout extraheader and uses a token-free remote URL", async () => {
       expect(gitConfigGetAll(EXTRAHEADER_KEY)).toContain("AUTHORIZATION");
 
       await replaceCheckoutCredentials(
@@ -126,13 +126,13 @@ describe("git-config", () => {
 
       expect(gitConfigGetAll(EXTRAHEADER_KEY)).toBe("");
       expect(remoteUrl()).toBe(
-        `https://x-access-token:test-token@${SERVER.host}/test-owner/test-repo.git`,
+        `https://${SERVER.host}/test-owner/test-repo.git`,
       );
       // Only the credential is touched — the git identity is left alone
       expect(gitConfigGetAll("user.name")).toBe("pre-existing");
     });
 
-    test("uses a credential helper when non-write users are allowed", async () => {
+    test("uses an executable credential helper", async () => {
       process.env.ALLOWED_NON_WRITE_USERS = "someone";
 
       await replaceCheckoutCredentials(
@@ -157,7 +157,7 @@ describe("git-config", () => {
         replaceCheckoutCredentials("test-token", createMockAutomationContext()),
       ).resolves.toBeUndefined();
 
-      expect(remoteUrl()).toContain("x-access-token:test-token@");
+      expect(remoteUrl()).not.toContain("test-token");
     });
   });
 
@@ -174,7 +174,7 @@ describe("git-config", () => {
       );
       expect(gitConfigGetAll(EXTRAHEADER_KEY)).toBe("");
       expect(remoteUrl()).toBe(
-        `https://x-access-token:test-token@${SERVER.host}/test-owner/test-repo.git`,
+        `https://${SERVER.host}/test-owner/test-repo.git`,
       );
     });
   });

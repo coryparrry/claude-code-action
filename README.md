@@ -1,71 +1,109 @@
-![Claude Code Action responding to a comment](https://github.com/user-attachments/assets/1d60c2e9-82ed-4ee5-b749-f9e021c85f4d)
+# Codex GitHub Action
 
-# Claude Code Action
+A fork of [Anthropic's Claude Code Action](https://github.com/anthropics/claude-code-action) that uses **the OpenAI Agents SDK with a Codex model and your OpenAI API key**. It retains the GitHub issue/PR context, mention triggers, tracking comments, branch handling, tools, and cleanup. The runtime uses `@openai/agents` pinned to `0.18.0` with the OpenAI Responses API and `gpt-5.3-codex` by default. The Agents SDK owns the model/tool loop; this action does not install or run the Codex CLI, Claude Code, or the Claude Agent SDK.
 
-A general-purpose [Claude Code](https://claude.ai/code) action for GitHub PRs and issues that can answer questions and implement code changes. This action intelligently detects when to activate based on your workflow context—whether responding to @claude mentions, issue assignments, or executing automation tasks with explicit prompts. It supports multiple authentication methods including Anthropic direct API (API key or workload identity federation), Amazon Bedrock, Google Vertex AI, and Microsoft Foundry.
-
-## Features
-
-- 🎯 **Intelligent Mode Detection**: Automatically selects the appropriate execution mode based on your workflow context—no configuration needed
-- 🤖 **Interactive Code Assistant**: Claude can answer questions about code, architecture, and programming
-- 🔍 **Code Review**: Analyzes PR changes and suggests improvements
-- ✨ **Code Implementation**: Can implement simple fixes, refactoring, and even new features
-- 💬 **PR/Issue Integration**: Works seamlessly with GitHub comments and PR reviews
-- 🛠️ **Flexible Tool Access**: Access to GitHub APIs and file operations (additional tools can be enabled via configuration)
-- 📋 **Progress Tracking**: Visual progress indicators with checkboxes that dynamically update as Claude completes tasks
-- 📊 **Structured Outputs**: Get validated JSON results that automatically become GitHub Action outputs for complex automations
-- 🏃 **Runs on Your Infrastructure**: The action executes entirely on your own GitHub runner (Anthropic API calls go to your chosen provider)
-- ⚙️ **Simplified Configuration**: Unified `prompt` and `claude_args` inputs provide clean, powerful configuration aligned with Claude Code SDK
-
-## 📦 Upgrading from v0.x?
-
-**See our [Migration Guide](./docs/migration-guide.md)** for step-by-step instructions on updating your workflows to v1.0. The new version simplifies configuration while maintaining compatibility with most existing setups.
+This is an independent adaptation, not an official OpenAI or Anthropic release. The upstream MIT copyright and license notices are retained in [LICENSE](LICENSE).
 
 ## Quickstart
 
-The easiest way to set up this action is through [Claude Code](https://claude.ai/code) in the terminal. Just open `claude` and run `/install-github-app`.
+Add your existing OpenAI key as the repository Actions secret `OPENAI_API_KEY`. Save this workflow in the repository where you want the action to operate. The workflow must be on the default branch for `issue_comment` events.
 
-This command will guide you through setting up the GitHub app and required secrets.
+```yaml
+name: Codex tasks
+on:
+  issue_comment:
+    types: [created]
+  issues:
+    types: [opened]
 
-**Note**:
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
 
-- You must be a repository admin to install the GitHub app and add secrets
-- This quickstart method is only available for direct Anthropic API users. For AWS Bedrock, Google Vertex AI, or Microsoft Foundry setup, see [docs/cloud-providers.md](./docs/cloud-providers.md).
+jobs:
+  codex:
+    if: >-
+      contains(github.event.comment.body || github.event.issue.body, '@codex')
+      && github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: coryparrry/claude-code-action@codex/openai-runtime
+        with:
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+```
 
-## 📚 Solutions & Use Cases
+Mention `@codex` in an issue or PR comment to ask a question, review code, or request a change. For a shared repository, adjust the workflow's actor restriction for trusted collaborators; the action also verifies repository write access.
 
-Looking for specific automation patterns? Check our **[Solutions Guide](./docs/solutions.md)** for complete working examples including:
+Use an immutable commit SHA in `uses:` when adopting a reviewed version. The development branch above is for reviewing this port. The action uses the workflow GitHub token. A repository-scoped `github_token` can be supplied when a custom bot or additional permissions are needed. Set `bot_name` to that token's comment author login for sticky comments. Changes pushed with the default workflow token follow GitHub's normal restrictions on triggering other workflows.
 
-- **🔍 Automatic PR Code Review** - Full review automation
-- **📂 Path-Specific Reviews** - Trigger on critical file changes
-- **👥 External Contributor Reviews** - Special handling for new contributors
-- **📝 Custom Review Checklists** - Enforce team standards
-- **🔄 Scheduled Maintenance** - Automated repository health checks
-- **🏷️ Issue Triage & Labeling** - Automatic categorization
-- **📖 Documentation Sync** - Keep docs updated with code changes
-- **🔒 Security-Focused Reviews** - OWASP-aligned security analysis
-- **📊 DIY Progress Tracking** - Create tracking comments in automation mode
+## Automated prompts
 
-Each solution includes complete working examples, configuration details, and expected outcomes.
+The upstream `prompt` input supports non-interactive automation, for example a manually dispatched code review:
 
-## Documentation
+```yaml
+name: Codex review
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: coryparrry/claude-code-action@codex/openai-runtime
+        with:
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          codex_sandbox: read-only
+          prompt: Review the repository and report concrete bugs without editing files.
+```
 
-- **[Solutions Guide](./docs/solutions.md)** - **🎯 Ready-to-use automation patterns**
-- **[Migration Guide](./docs/migration-guide.md)** - **⭐ Upgrading from v0.x to v1.0**
-- [Setup Guide](./docs/setup.md) - Manual setup, custom GitHub apps, and security best practices
-- [Usage Guide](./docs/usage.md) - Basic usage, workflow configuration, and input parameters
-- [Custom Automations](./docs/custom-automations.md) - Examples of automated workflows and custom prompts
-- [Configuration](./docs/configuration.md) - MCP servers, permissions, environment variables, and advanced settings
-- [Experimental Features](./docs/experimental.md) - Execution modes and network restrictions
-- [Cloud Providers](./docs/cloud-providers.md) - AWS Bedrock, Google Vertex AI, and Microsoft Foundry setup
-- [Capabilities & Limitations](./docs/capabilities-and-limitations.md) - What Claude can and cannot do
-- [Security](./docs/security.md) - Access control, permissions, and commit signing
-- [FAQ](./docs/faq.md) - Common questions and troubleshooting
+## Runtime and configuration
 
-## 📚 FAQ
+The runtime uses `@openai/agents` pinned to `0.18.0` with the OpenAI Responses API and `gpt-5.3-codex` by default. The Agents SDK owns the model/tool loop; this action does not install or run the Codex CLI, Claude Code, or the Claude Agent SDK.
 
-Having issues or questions? Check out our [Frequently Asked Questions](./docs/faq.md) for solutions to common problems and detailed explanations of Claude's capabilities and limitations.
+Preparation builds the GitHub context and scoped MCP configuration. The SDK then executes the agent with registered file, shell, MCP, task, and workflow tools and adapts completed messages into the action's execution report. An incomplete or failed agent run fails the action.
 
-## License
+| Input or feature                                       | Agents SDK adaptation                                                                                                       |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `codex_model`, `codex_effort`                          | OpenAI model selection and reasoning effort; default model is `gpt-5.3-codex`.                                              |
+| `max_turns`, `max_budget_usd`, `fallback_model`        | SDK-owned turn limits, estimated token budget, and eligible model-request fallback.                                         |
+| `allowed_tools`, `disallowed_tools`, `permission_mode` | Tool permission policy applied to registered tools before execution.                                                        |
+| `system_prompt`, appended instructions                 | Trusted system instructions and additional task guidance.                                                                   |
+| `settings`, `setting_sources`                          | User/project/local settings, environment, hooks, MCP, and component configuration.                                          |
+| `plugins`, `plugin_marketplaces`                       | Configuration components loaded by this action; supported Codex and legacy manifest formats do not select a Claude runtime. |
+| Commands, skills, Task, Workflow                       | Repository/plugin instructions, command arguments, subagents, and workflow execution in the SDK loop.                       |
+| `mcp_config`, tool selection                           | Custom stdio/HTTP MCP servers and existing GitHub integrations.                                                             |
+| `structured_output`                                    | Validated JSON result for a supplied schema.                                                                                |
+| Progress, sticky comments, inline review               | Existing GitHub presentation, classification, signing, branch handling, and cleanup.                                        |
 
-This project is licensed under the MIT License—see the LICENSE file for details.
+`codex_args` takes precedence over the legacy `claude_args` name. Both describe action configuration; they are not arbitrary arguments to a CLI subprocess. Legacy `.claude` settings, command, and plugin format names are compatibility inputs, not a Claude execution backend. Anthropic OAuth, WIF, Bedrock, and Vertex authentication are not supported. Grant GitHub permissions in the calling workflow or supplied token; `additional_permissions` cannot elevate a workflow token.
+
+See [all action inputs](action.yml), the [base-action reference](base-action/README.md), and the retained [workflow feature guides](docs/usage.md). The available adapter surfaces are distinct from live qualification: offline checks do not establish a complete model-driven GitHub task end to end.
+
+Trusted write tasks receive the scoped GitHub token and repository/event metadata for existing `gh` and script workflows. OpenAI model credentials remain excluded from tool subprocesses. Non-write exceptions use configured GitHub MCP capabilities rather than exposing the GitHub token to shell commands.
+
+## Run limits, costs, and sessions
+
+`max_turns` limits model turns. Set job `timeout-minutes` for the main action; the base action also exposes `codex_timeout_minutes` for its agent run. `max_budget_usd` checks an estimate from reported model token usage and the configured token-rate table after model responses. This is not an account spending cap: a response can cross the estimate before execution stops. Cached input and output tokens are included. Hosted search or other separately billed tools, pricing tiers, and actual invoiced charges are not included. With a USD limit, models without a configured rate fail rather than assuming zero cost.
+
+`continue_session` selects the latest saved session, and `resume_session` selects a specific saved ID. History is stored on the runner and scoped to the workspace. It survives repeated runs only while that storage exists; persistence across Actions jobs requires a suitable Actions cache or other explicit storage. Protect session history as repository data and restore it only for the same trusted workspace.
+
+## Fork policy and credentials
+
+Fork PR execution is disabled, including PR/review events, PR comments, and associated workflow-run events. This is enforced before preparation or model execution. Confirmed fork requests produce `skipped_due_to_fork=true`; missing source identity or lookup failures fail closed. An upstream comment workflow with no PR association also fails closed because its default-branch commit cannot establish which PR was commented on. This policy blocks action execution; it does not prevent people from forking a public repository.
+
+API authentication uses the OpenAI key supplied to the SDK model client. Shell subprocess environments exclude OpenAI credentials; GitHub MCP tools receive their scoped GitHub token, and trusted write tasks receive explicit GitHub CLI authentication. Execution artifacts and diagnostics redact recognized keys and active credentials. Root and nested PR-authored Codex configuration/instructions are restored from the trusted base, with inert review copies preserved. Workflow tokens are retained for later workflow steps. The action does not mint or revoke App tokens.
+
+## Verification status
+
+Verification uses offline model/transport fixtures, configuration parsing, and relevant upstream regression suites. Live OpenAI calls and GitHub task execution are **not yet verified**. See [the port worklog](docs/CODEX_PORT_WORKLOG.md) for the completed checks.
+
+Fork CI runs offline tests, formatting, type checking, and the inherited workflow checks with Bun `1.4.2`. Original documentation and examples are retained and adapted; provider-specific historical references are identified explicitly. Upstream model-calling CI remains preserved under `examples/upstream-workflows` without running in this fork.
+
+Nonsecret build/test variables from the workflow environment and `settings.env` reach Codex tools. Reserved runtime controls and credential variables remain excluded.

@@ -1,3 +1,5 @@
+# HISTORICAL UPSTREAM REFERENCE: Anthropic WIF is not supported by this Codex fork.
+# Do not copy this as a working Codex workflow; use examples/claude.yml.
 name: Claude Code (Workload Identity Federation)
 
 # Authenticates to the Claude API by exchanging the workflow's GitHub OIDC

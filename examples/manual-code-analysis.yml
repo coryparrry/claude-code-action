@@ -1,4 +1,4 @@
-name: Claude Commit Analysis
+name: Codex Commit Analysis
 
 on:
   workflow_dispatch:
@@ -19,7 +19,6 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
-      id-token: write
 
     steps:
       - name: Checkout repository
@@ -27,10 +26,11 @@ jobs:
         with:
           fetch-depth: 2 # Need at least 2 commits to analyze the latest
 
-      - name: Run Claude Analysis
-        uses: anthropics/claude-code-action@v1
+      - name: Run Codex Analysis
+        uses: coryparrry/claude-code-action@codex/openai-runtime
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             REPO: ${{ github.repository }}
             BRANCH: ${{ github.ref_name }}

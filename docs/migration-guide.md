@@ -1,3 +1,12 @@
+# Historical upstream reference
+
+> This fork runs Codex with `OPENAI_API_KEY`. GitHub triggers, tracking comments, branch handling, signing, and MCP integrations retain the upstream workflow shape. `claude_args` is a compatibility alias; use the preferred `codex_args` name for the same supported argument subset. Legacy `--allowedTools` / `--disallowedTools` support MCP names and simple Bash rules, not the full Claude permission language. Use a supported OpenAI model; there is no native `--max-turns`, Anthropic OAuth, WIF, Bedrock, or Vertex backend. Fork pull requests are rejected. See [configuration](./configuration.md) and [the action inputs](../action.yml).
+
+The original guide below documents the Anthropic upstream action. Its provider flags, credentials, model IDs, and turn-limit mappings do not apply to this fork.
+
+<details>
+<summary>Historical upstream reference — not supported by the Codex runtime</summary>
+
 # Migration Guide: v0.x to v1.0
 
 This guide helps you migrate from Claude Code Action v0.x to v1.0. The new version introduces intelligent mode detection and simplified configuration while maintaining backward compatibility for most use cases.
@@ -355,3 +364,5 @@ If you encounter issues during migration:
 - **v0.x workflows** will continue to work but with deprecation warnings
 - **v1.0** is the recommended version for all new workflows
 - Future versions may remove deprecated inputs entirely
+
+</details>

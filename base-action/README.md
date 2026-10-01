@@ -1,16 +1,91 @@
-# Claude Code Base Action
+# Codex Base Action
 
-This GitHub Action allows you to run [Claude Code](https://www.anthropic.com/claude-code) within your GitHub Actions workflows. You can use this to build any custom workflow on top of Claude Code.
+Run a Codex model through the OpenAI Agents SDK with an inline prompt or a prompt file. This base action skips the GitHub trigger and comment orchestration in the repository's main action.
 
-For simply tagging @claude in issues and PRs out of the box, [check out the Claude Code action and GitHub app](https://github.com/anthropics/claude-code-action).
+Use the base action from your copy of this fork:
+
+```yaml
+- uses: actions/checkout@v4
+- uses: your-owner/your-fork/base-action@your-pinned-ref
+  with:
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+    prompt: "Review the repository and describe any clear defects."
+    codex_sandbox: read-only
+```
+
+API key authentication is required. The runtime uses `@openai/agents` pinned to `0.18.0` with the OpenAI Responses API and `gpt-5.3-codex` by default. The Agents SDK owns the model/tool loop; this action does not install or run the Codex CLI, Claude Code, or the Claude Agent SDK. Agent tools enforce the configured read-only or workspace-write policy; unattended permission decisions follow the supplied tool policy. The runtime restricts inherited environment variables and redacts known credentials from logs and execution reports. Workspace-write permits repository changes; review those changes before publishing them.
+
+## Inputs
+
+| Input                    | Description                                                           | Default             |
+| ------------------------ | --------------------------------------------------------------------- | ------------------- |
+| `prompt`                 | Inline prompt; specify exactly one of prompt or prompt_file           | Empty               |
+| `prompt_file`            | Path to a non-empty prompt file                                       | Empty               |
+| `openai_api_key`         | OpenAI API key used by Codex                                          | Required            |
+| `codex_model`            | OpenAI model used by the Agents SDK; defaults to gpt-5.3-codex        | Empty               |
+| `codex_effort`           | Optional reasoning effort: none, minimal, low, medium, high, or xhigh | Empty               |
+| `codex_sandbox`          | Codex sandbox: read-only or workspace-write                           | `workspace-write`   |
+| `codex_timeout_minutes`  | Positive integer timeout for the agent run                            | `30`                |
+| `mcp_config`             | JSON object with stdio or streamable HTTP mcpServers                  | `{"mcpServers":{}}` |
+| `append_system_prompt`   | Additional instructions appended to the prompt                        | Empty               |
+| `path_to_bun_executable` | Use an existing Bun executable instead of installing Bun              | Empty               |
+| `show_full_output`       | Show redacted Codex events in the Actions log                         | `false`             |
+| `codex_args`             | Codex and supported legacy CLI arguments                              | Empty               |
+| `claude_args`            | Compatibility alias for codex_args                                    | Empty               |
+| `settings`               | Codex configuration or supported legacy settings                      | Empty               |
+| `plugins`                | Newline-separated Codex plugin names                                  | Empty               |
+| `plugin_marketplaces`    | Newline-separated Codex plugin marketplace sources                    | Empty               |
+| `max_turns`              | Maximum model turns before execution fails                            | Empty               |
+| `max_budget_usd`         | Maximum estimated API cost in USD before execution fails              | Empty               |
+| `allowed_tools`          | Comma-separated allowed tool rules                                    | Empty               |
+| `disallowed_tools`       | Comma-separated denied tool rules                                     | Empty               |
+| `system_prompt`          | Replacement trusted system instructions                               | Empty               |
+| `fallback_model`         | Fallback model for eligible API failures                              | Empty               |
+| `additional_directories` | Newline-separated additional workspace directories                    | Empty               |
+| `setting_sources`        | Comma-separated settings sources: user, project, local                | Empty               |
+| `permission_mode`        | Tool permission mode for this unattended run                          | Empty               |
+| `continue_session`       | Continue the latest saved session when true                           | Empty               |
+| `resume_session`         | Saved session ID to resume                                            | Empty               |
+| `use_node_cache`         | Enable the Node npm cache when true                                   | `false`             |
+
+## Outputs
+
+| Output              | Description                                                      |
+| ------------------- | ---------------------------------------------------------------- |
+| `conclusion`        | success or failure.                                              |
+| `structured_output` | JSON result when an output schema is supplied.                   |
+| `execution_file`    | Redacted JSON report at RUNNER_TEMP/codex-execution-output.json. |
+| `session_id`        | Agent session ID for report correlation or explicit resume.      |
+
+The report keeps assistant messages, terminal status, and available token usage in the shape used by the main action's execution tracker. Failure transcripts are also written when the process fails, times out, emits invalid output, or is cancelled. MCP servers preserve stdio command/args/env configuration or streamable HTTP URL, headers, and bearer token environment authentication through SDK integrations. Unsupported transports or fields fail clearly.
+
+For a custom working directory, set CODEX_WORKING_DIR in the step environment. Additional request text can be placed in codex-user-request.txt alongside a supplied prompt file.
+
+## Development
+
+Run `bun install`, `bun test`, and `bun run typecheck` in this directory. Tests use offline model/transport fixtures and require no API key or live model calls. Their results do not establish a complete live GitHub task.
+
+The original MIT license and attribution are preserved in LICENSE.
+
+## Adapted configuration inputs
+
+The Agents SDK owns the execution loop. The action registers tools, permission checks, hooks, MCP servers, commands, skills, Task subagents, and Workflow handling with that loop. `settings` and plugin/command formats are interpreted by this action. Legacy `.claude` names are accepted configuration compatibility, not a Claude runtime. No native Codex CLI is installed for execution.
+
+`codex_args` and its `claude_args` alias accept supported action controls including model, effort, MCP, schema, tool rules, hooks/settings, and run limits. `system_prompt` replaces trusted system instructions; `append_system_prompt` appends guidance. `structured_output` contains validated JSON requested by `--json-schema` or `--output-schema`.
+
+## Run limits, costs, and sessions
+
+`max_turns` limits model turns; `codex_timeout_minutes` limits elapsed time. `max_budget_usd` checks an estimate from reported model token usage and the configured token-rate table after model responses. This is not an account spending cap: a response can cross the estimate before execution stops. Cached input, output tokens and standard hosted web-search call charges are included. Other separately billed tools, pricing tiers, and actual invoiced charges are not included. With a USD limit, models without a configured rate fail before a request. For a custom or fallback model, supply its rates in `settings.modelPrices`, keyed by model name, with `input`, `cachedInput`, and `output` rates in USD per million tokens; for example, `{"modelPrices":{"custom-codex":{"input":1,"cachedInput":0.1,"output":2}}}`.
+
+`continue_session` selects the latest saved session, and `resume_session` selects a specific saved ID. History is stored on the runner and scoped to the workspace. It survives repeated runs only while that storage exists; persistence across Actions jobs requires a suitable Actions cache or other explicit storage. Protect session history as repository data and restore it only for the same trusted workspace.
 
 ## Trust model
 
-This action is a thin wrapper that installs and runs Claude Code with the inputs you provide. It does **not** enforce any trust boundaries on its own. Running this action in a directory is equivalent to running Claude Code in that directory — Claude reads project-level configuration (`.claude/`, `CLAUDE.md`, `.mcp.json`, etc.) from the working directory, and the action's own setup steps run from there as well.
+The base action runs the supplied prompt in the caller's working directory. It does not perform the main action's actor checks, fork guards, tracking comments, or base-branch configuration restoration. The caller must trust the checkout, prompt, and configured MCP/plugin servers. Use the [main action](../README.md) when you need those GitHub boundaries. Read-only sandboxing restricts repository writes; it does not make untrusted prompt content safe or remove MCP write capabilities.
 
-**The caller is responsible for ensuring the working directory and prompt are trusted.** If your workflow processes untrusted input (issues, fork pull requests, external comments), use [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action) instead — it provides actor permission checks, restores project configuration from the base ref in PR contexts, and is the supported path for those scenarios.
+## Runtime Environment
 
-See [Claude Code's security documentation](https://docs.anthropic.com/en/docs/claude-code/security) and the [GitHub Actions guidance on `pull_request_target`](https://securitylab.github.com/research/github-actions-preventing-pwn-requests/) for background.
+Use `CODEX_WORKING_DIR` for an explicit working directory. Nonsecret build/test variables from the workflow step and supported `settings.env` reach the model's tools; runtime controls and credentials are excluded. `NODE_VERSION` selects the Node setup version. `use_node_cache` enables its npm cache; it does not persist agent sessions. No Codex CLI executable/version input is needed.
 
 ## Usage
 
@@ -18,54 +93,54 @@ Add the following to your workflow file:
 
 ```yaml
 # Using a direct prompt
-- name: Run Claude Code with direct prompt
-  uses: anthropics/claude-code-base-action@beta
+- name: Run Codex with direct prompt
+  uses: coryparrry/claude-code-action/base-action@codex/openai-runtime
   with:
     prompt: "Your prompt here"
-    claude_args: '--allowedTools "Bash(git:*),Read,Glob,Grep"'
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    codex_args: '--allowedTools "Bash(git:*),Read,Glob,Grep"'
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
 
 # Or using a prompt from a file
-- name: Run Claude Code with prompt file
-  uses: anthropics/claude-code-base-action@beta
+- name: Run Codex with prompt file
+  uses: coryparrry/claude-code-action/base-action@codex/openai-runtime
   with:
     prompt_file: "/path/to/prompt.txt"
-    claude_args: '--allowedTools "Bash(git:*),Read,Glob,Grep"'
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    codex_args: '--allowedTools "Bash(git:*),Read,Glob,Grep"'
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
 
-# Or limiting the conversation turns
-- name: Run Claude Code with limited turns
-  uses: anthropics/claude-code-base-action@beta
+# Bound execution time separately from max_turns
+- name: Run Codex with a time limit
+  uses: coryparrry/claude-code-action/base-action@codex/openai-runtime
   with:
     prompt: "Your prompt here"
-    claude_args: |
+    codex_args: |
       --allowedTools "Bash(git:*),Read,Glob,Grep"
-      --max-turns 5
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    codex_timeout_minutes: 5
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
 
-# Using custom system prompts
-- name: Run Claude Code with custom system prompt
-  uses: anthropics/claude-code-base-action@beta
+# Append custom instructions (the Codex system prompt is not replaced)
+- name: Run Codex with custom instructions
+  uses: coryparrry/claude-code-action/base-action@codex/openai-runtime
   with:
     prompt: "Build a REST API"
-    claude_args: |
-      --system-prompt "You are a senior backend engineer. Focus on security, performance, and maintainability."
+    codex_args: |
+      --append-system-prompt "You are a senior backend engineer. Focus on security, performance, and maintainability."
       --allowedTools "Bash(git:*),Read,Glob,Grep"
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
 
 # Or appending to the default system prompt
-- name: Run Claude Code with appended system prompt
-  uses: anthropics/claude-code-base-action@beta
+- name: Run Codex with appended system prompt
+  uses: coryparrry/claude-code-action/base-action@codex/openai-runtime
   with:
     prompt: "Create a database schema"
-    claude_args: |
+    codex_args: |
       --append-system-prompt "After writing code, be sure to code review yourself."
       --allowedTools "Bash(git:*),Read,Glob,Grep"
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
 
 # Using custom environment variables
-- name: Run Claude Code with custom environment variables
-  uses: anthropics/claude-code-base-action@beta
+- name: Run Codex with custom environment variables
+  uses: coryparrry/claude-code-action/base-action@codex/openai-runtime
   with:
     prompt: "Deploy to staging environment"
     settings: |
@@ -76,9 +151,250 @@ Add the following to your workflow file:
           "DEBUG": "true"
         }
       }
-    claude_args: '--allowedTools "Bash(git:*),Read,Glob,Grep"'
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    codex_args: '--allowedTools "Bash(git:*),Read,Glob,Grep"'
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+```
 
+## Custom Environment Variables
+
+You can pass custom environment variables to Codex through the `env` object in `settings`:
+
+```yaml
+- name: Deploy with custom environment
+  uses: coryparrry/claude-code-action/base-action@codex/openai-runtime
+  with:
+    prompt: "Deploy the application to the staging environment"
+    settings: |
+      {
+        "env": {
+          "ENVIRONMENT": "staging",
+          "API_BASE_URL": "https://api-staging.example.com",
+          "DATABASE_URL": "postgres://localhost/staging",
+          "DEBUG": "true",
+          "LOG_LEVEL": "debug"
+        }
+      }
+    codex_args: '--allowedTools "Bash(git:*),Read,Glob,Grep"'
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+```
+
+The `settings` input accepts either inline JSON or a path to a settings JSON file. Values in the `env` object are available during the Codex session and can reference GitHub secrets.
+
+Reserved runtime controls and credential-like variables are excluded from tool environments. Supply MCP-specific credentials only in that server's explicit MCP configuration.
+
+## Using Settings Configuration
+
+`settings` accepts supported inline TOML, JSON, or a file. Fields include model, reasoning effort/summary, verbosity, developer instructions, web search, supported tool features, and MCP servers. Original `model`, `env`, `permissions.allow`, `permissions.deny`, `permissions.ask`, hooks, and permission modes are interpreted by this adapter. Unsupported configuration fields or policies fail clearly; accepting a legacy format does not invoke Claude.
+
+```yaml
+- uses: coryparrry/claude-code-action/base-action@codex/openai-runtime
+  with:
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+    prompt: "Review the repository."
+    settings: |
+      model_reasoning_effort = "medium"
+      web_search = "disabled"
+```
+
+## Using MCP Config
+
+You can provide MCP configuration in two ways:
+
+### Option 1: MCP Configuration File
+
+Provide a path to a JSON file containing MCP configuration:
+
+```yaml
+- name: Run Codex with MCP config file
+  uses: coryparrry/claude-code-action/base-action@codex/openai-runtime
+  with:
+    prompt: "Your prompt here"
+    codex_args: |
+      --mcp-config "path/to/mcp-config.json"
+      --allowedTools "Bash(git:*),Read,Glob,Grep"
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+```
+
+### Option 2: Inline MCP Configuration
+
+Provide the MCP configuration directly as a JSON string:
+
+```yaml
+- name: Run Codex with inline MCP config
+  uses: coryparrry/claude-code-action/base-action@codex/openai-runtime
+  with:
+    prompt: "Your prompt here"
+    codex_args: >-
+      --mcp-config '{"mcpServers":{"server-name":{"command":"node","args":["./server.js"],"env":{"API_KEY":"${{ secrets.CUSTOM_MCP_API_KEY }}"}}}}'
+      --allowedTools "Bash(git:*),Read,Glob,Grep"
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+```
+
+The MCP config file should follow this format:
+
+```json
+{
+  "mcpServers": {
+    "server-name": {
+      "command": "node",
+      "args": ["./server.js"],
+      "env": {
+        "API_KEY": "${{ secrets.CUSTOM_MCP_API_KEY }}"
+      }
+    }
+  }
+}
+```
+
+You can combine MCP config with other inputs like allowed tools:
+
+```yaml
+# Using multiple inputs together
+- name: Run Codex with MCP and custom tools
+  uses: coryparrry/claude-code-action/base-action@codex/openai-runtime
+  with:
+    prompt: "Access the custom MCP server and use its tools"
+    codex_args: |
+      --mcp-config "mcp-config.json"
+      --allowedTools "Bash(git:*),Read,mcp__server-name__custom_tool"
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+```
+
+## Example: PR Code Review
+
+```yaml
+name: Codex Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  code-review:
+    # This base action does not apply actor/fork guards. Restrict the review
+    # to trusted same-repository PRs; use the main action for its actor checks.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Run Code Review with Codex
+        id: code-review
+        uses: coryparrry/claude-code-action/base-action@codex/openai-runtime
+        with:
+          prompt: "Review the PR changes. Focus on code quality, potential bugs, and performance issues. Suggest improvements where appropriate. Write your review as markdown text."
+          codex_args: '--allowedTools "Bash(git diff --name-only HEAD~1),Bash(git diff HEAD~1),Read,Glob,Grep,Write"'
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Extract and Comment PR Review
+        if: steps.code-review.outputs.conclusion == 'success'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const executionFile = '${{ steps.code-review.outputs.execution_file }}';
+            const executionLog = JSON.parse(fs.readFileSync(executionFile, 'utf8'));
+
+            // Extract the review content from the execution log.
+            // The SDK writes top-level events with `type`; assistant text is nested
+            // under `message.content`.
+            let review = '';
+
+            // Prefer the final result event when it is available.
+            for (let i = executionLog.length - 1; i >= 0; i--) {
+              const entry = executionLog[i];
+              if (entry?.type === 'result' && typeof entry.result === 'string') {
+                review = entry.result;
+                break;
+              }
+            }
+
+            // Fallback to the last assistant text block if no result event was written.
+            if (!review) {
+              for (let i = executionLog.length - 1; i >= 0; i--) {
+                const entry = executionLog[i];
+                if (entry?.type !== 'assistant' || !Array.isArray(entry.message?.content)) {
+                  continue;
+                }
+
+                review = entry.message.content
+                  .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+                  .map((block) => block.text)
+                  .join('\n');
+
+                if (review) {
+                  break;
+                }
+              }
+            }
+
+            if (review) {
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: "## Codex Review\n\n" + review + "\n\n*Generated by Codex*"
+              });
+            }
+```
+
+For typed automation output, prefer passing `--json-schema` in `codex_args`
+and reading `steps.<id>.outputs.structured_output` instead of parsing the full
+execution log.
+
+Check out additional examples in [`./examples`](./examples).
+
+## Security Best Practices
+
+**⚠️ IMPORTANT: Never commit API keys directly to your repository! Always use GitHub Actions secrets.**
+
+To securely use your OpenAI API key:
+
+1. Add your API key as a repository secret:
+
+   - Go to your repository's Settings
+   - Navigate to "Secrets and variables" → "Actions"
+   - Click "New repository secret"
+   - Name it `OPENAI_API_KEY`
+   - Paste your API key as the value
+
+2. Reference the secret in your workflow:
+   ```yaml
+   openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+   ```
+
+**Never do this:**
+
+```yaml
+# ❌ WRONG - Exposes your API key
+openai_api_key: "sk-example-..."
+```
+
+**Always do this:**
+
+```yaml
+# ✅ CORRECT - Uses GitHub secrets
+openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+```
+
+This applies to all sensitive values including API keys, access tokens, and credentials.
+We also recommend that you always use short-lived tokens when possible
+
+## Historical upstream configuration
+
+The following original examples document Anthropic upstream behavior. OAuth, WIF, Bedrock, and Vertex are historical provider authentication references and are not supported by this fork. Hooks, settings, fallback models, and turn limits are now handled by the Agents SDK adapter; use current inputs above rather than upstream provider model names. `codex_timeout_minutes` bounds elapsed time separately from model turns.
+
+<details>
+<summary>Original upstream provider examples and configuration formats</summary>
+
+```yaml
 # Using fallback model for handling API errors
 - name: Run Claude Code with fallback model
   uses: anthropics/claude-code-base-action@beta
@@ -119,89 +435,6 @@ steps:
 ```
 
 Do not set `anthropic_api_key` or `claude_code_oauth_token` alongside the federation inputs — a static credential takes precedence and federation will not be used.
-
-## Inputs
-
-| Input                            | Description                                                                                                             | Required | Default       |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------- | ------------- |
-| `prompt`                         | The prompt to send to Claude Code                                                                                       | No\*     | `''`          |
-| `prompt_file`                    | Path to a file containing the prompt to send to Claude Code                                                             | No\*     | `''`          |
-| `settings`                       | Claude Code settings as a JSON string or path to a settings JSON file                                                   | No       | `''`          |
-| `claude_args`                    | Additional arguments to pass directly to the Claude CLI                                                                 | No       | `''`          |
-| `anthropic_api_key`              | Anthropic API key for direct Anthropic API authentication                                                               | No       | `''`          |
-| `claude_code_oauth_token`        | Claude Code OAuth token as an alternative to an Anthropic API key                                                       | No       | `''`          |
-| `anthropic_federation_rule_id`   | Workload identity federation rule ID (fdrl\_...). Requires `id-token: write` permission                                 | No       | `''`          |
-| `anthropic_organization_id`      | Anthropic organization UUID used for workload identity federation                                                       | No       | `''`          |
-| `anthropic_service_account_id`   | Service account ID (svac\_...) the federated token acts as                                                              | No       | `''`          |
-| `anthropic_workspace_id`         | Workspace ID (wrkspc\_...) for federation                                                                               | No       | `''`          |
-| `anthropic_oidc_audience`        | Audience for the GitHub OIDC token request                                                                              | No       | `''`          |
-| `use_bedrock`                    | Use Amazon Bedrock with OIDC authentication                                                                             | No       | `'false'`     |
-| `use_vertex`                     | Use Google Vertex AI with OIDC authentication                                                                           | No       | `'false'`     |
-| `use_foundry`                    | Use Microsoft Foundry with OIDC authentication                                                                          | No       | `'false'`     |
-| `use_node_cache`                 | Enable Node.js dependency caching for projects with lock files                                                          | No       | `'false'`     |
-| `path_to_claude_code_executable` | Path to a custom Claude Code executable                                                                                 | No       | `''`          |
-| `path_to_bun_executable`         | Path to a custom Bun executable                                                                                         | No       | `''`          |
-| `show_full_output`               | Show full JSON output (⚠️ May expose secrets - see [security docs](../docs/security.md#️-full-output-security-warning)) | No       | `'false'`\*\* |
-| `plugins`                        | Newline-separated Claude Code plugin names to install                                                                   | No       | `''`          |
-| `plugin_marketplaces`            | Newline-separated plugin marketplace Git URLs to install                                                                | No       | `''`          |
-
-\*Either `prompt` or `prompt_file` must be provided, but not both.
-
-\*\*`show_full_output` is automatically enabled when GitHub Actions debug mode is active. See [security documentation](../docs/security.md#️-full-output-security-warning) for important security considerations.
-
-## Outputs
-
-| Output              | Description                                                                                       |
-| ------------------- | ------------------------------------------------------------------------------------------------- |
-| `conclusion`        | Execution status of Claude Code ('success' or 'failure')                                          |
-| `execution_file`    | Path to the JSON file containing Claude Code execution log                                        |
-| `structured_output` | JSON string containing structured output fields when `--json-schema` is provided in `claude_args` |
-| `session_id`        | The Claude Code session ID that can be used with `--resume` to continue this conversation         |
-
-## Environment Variables
-
-The following environment variables can be used to configure the action:
-
-| Variable       | Description                                           | Default |
-| -------------- | ----------------------------------------------------- | ------- |
-| `NODE_VERSION` | Node.js version to use (e.g., '18.x', '20.x', '22.x') | '18.x'  |
-
-Example usage:
-
-```yaml
-- name: Run Claude Code with Node.js 20
-  uses: anthropics/claude-code-base-action@beta
-  env:
-    NODE_VERSION: "20.x"
-  with:
-    prompt: "Your prompt here"
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-```
-
-## Custom Environment Variables
-
-You can pass custom environment variables to Claude Code through the `env` object in `settings`:
-
-```yaml
-- name: Deploy with custom environment
-  uses: anthropics/claude-code-base-action@beta
-  with:
-    prompt: "Deploy the application to the staging environment"
-    settings: |
-      {
-        "env": {
-          "ENVIRONMENT": "staging",
-          "API_BASE_URL": "https://api-staging.example.com",
-          "DATABASE_URL": "${{ secrets.STAGING_DB_URL }}",
-          "DEBUG": "true",
-          "LOG_LEVEL": "debug"
-        }
-      }
-    claude_args: '--allowedTools "Bash(git:*),Read,Glob,Grep"'
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-```
-
-The `settings` input accepts either inline JSON or a path to a settings JSON file. Values in the `env` object are available during the Claude Code session and can reference GitHub secrets.
 
 ## Using Settings Configuration
 
@@ -265,155 +498,6 @@ The settings file supports all Claude Code settings options including:
 - And more...
 
 **Note**: The `enableAllProjectMcpServers` setting is always set to `true` by this action to ensure MCP servers work correctly.
-
-## Using MCP Config
-
-You can provide MCP configuration in two ways:
-
-### Option 1: MCP Configuration File
-
-Provide a path to a JSON file containing MCP configuration:
-
-```yaml
-- name: Run Claude Code with MCP config file
-  uses: anthropics/claude-code-base-action@beta
-  with:
-    prompt: "Your prompt here"
-    claude_args: |
-      --mcp-config "path/to/mcp-config.json"
-      --allowedTools "Bash(git:*),Read,Glob,Grep"
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-```
-
-### Option 2: Inline MCP Configuration
-
-Provide the MCP configuration directly as a JSON string:
-
-```yaml
-- name: Run Claude Code with inline MCP config
-  uses: anthropics/claude-code-base-action@beta
-  with:
-    prompt: "Your prompt here"
-    claude_args: >-
-      --mcp-config '{"mcpServers":{"server-name":{"command":"node","args":["./server.js"],"env":{"API_KEY":"your-api-key"}}}}'
-      --allowedTools "Bash(git:*),Read,Glob,Grep"
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-```
-
-The MCP config file should follow this format:
-
-```json
-{
-  "mcpServers": {
-    "server-name": {
-      "command": "node",
-      "args": ["./server.js"],
-      "env": {
-        "API_KEY": "your-api-key"
-      }
-    }
-  }
-}
-```
-
-You can combine MCP config with other inputs like allowed tools:
-
-```yaml
-# Using multiple inputs together
-- name: Run Claude Code with MCP and custom tools
-  uses: anthropics/claude-code-base-action@beta
-  with:
-    prompt: "Access the custom MCP server and use its tools"
-    claude_args: |
-      --mcp-config "mcp-config.json"
-      --allowedTools "Bash(git:*),Read,mcp__server-name__custom_tool"
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-```
-
-## Example: PR Code Review
-
-```yaml
-name: Claude Code Review
-
-on:
-  pull_request:
-    types: [opened, synchronize]
-
-jobs:
-  code-review:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Run Code Review with Claude
-        id: code-review
-        uses: anthropics/claude-code-base-action@beta
-        with:
-          prompt: "Review the PR changes. Focus on code quality, potential bugs, and performance issues. Suggest improvements where appropriate. Write your review as markdown text."
-          claude_args: '--allowedTools "Bash(git diff --name-only HEAD~1),Bash(git diff HEAD~1),Read,Glob,Grep,Write"'
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-
-      - name: Extract and Comment PR Review
-        if: steps.code-review.outputs.conclusion == 'success'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const executionFile = '${{ steps.code-review.outputs.execution_file }}';
-            const executionLog = JSON.parse(fs.readFileSync(executionFile, 'utf8'));
-
-            // Extract the review content from the execution log.
-            // The SDK writes top-level events with `type`; assistant text is nested
-            // under `message.content`.
-            let review = '';
-
-            // Prefer the final result event when it is available.
-            for (let i = executionLog.length - 1; i >= 0; i--) {
-              const entry = executionLog[i];
-              if (entry?.type === 'result' && typeof entry.result === 'string') {
-                review = entry.result;
-                break;
-              }
-            }
-
-            // Fallback to the last assistant text block if no result event was written.
-            if (!review) {
-              for (let i = executionLog.length - 1; i >= 0; i--) {
-                const entry = executionLog[i];
-                if (entry?.type !== 'assistant' || !Array.isArray(entry.message?.content)) {
-                  continue;
-                }
-
-                review = entry.message.content
-                  .filter((block) => block?.type === 'text' && typeof block.text === 'string')
-                  .map((block) => block.text)
-                  .join('\n');
-
-                if (review) {
-                  break;
-                }
-              }
-            }
-
-            if (review) {
-              github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: "## Claude Code Review\n\n" + review + "\n\n*Generated by Claude Code*"
-              });
-            }
-```
-
-For typed automation output, prefer passing `--json-schema` in `claude_args`
-and reading `steps.<id>.outputs.structured_output` instead of parsing the full
-execution log.
-
-Check out additional examples in [`./examples`](./examples).
 
 ## Using Cloud Providers
 
@@ -515,42 +599,4 @@ This example shows how to use OIDC authentication with GCP Vertex AI:
       --allowedTools "Bash(git:*),Read,Glob,Grep"
 ```
 
-## Security Best Practices
-
-**⚠️ IMPORTANT: Never commit API keys directly to your repository! Always use GitHub Actions secrets.**
-
-To securely use your Anthropic API key:
-
-1. Add your API key as a repository secret:
-
-   - Go to your repository's Settings
-   - Navigate to "Secrets and variables" → "Actions"
-   - Click "New repository secret"
-   - Name it `ANTHROPIC_API_KEY`
-   - Paste your API key as the value
-
-2. Reference the secret in your workflow:
-   ```yaml
-   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-   ```
-
-**Never do this:**
-
-```yaml
-# ❌ WRONG - Exposes your API key
-anthropic_api_key: "sk-ant-..."
-```
-
-**Always do this:**
-
-```yaml
-# ✅ CORRECT - Uses GitHub secrets
-anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-```
-
-This applies to all sensitive values including API keys, access tokens, and credentials.
-We also recommend that you always use short-lived tokens when possible
-
-## License
-
-This project is licensed under the MIT License—see the LICENSE file for details.
+</details>

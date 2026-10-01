@@ -1,13 +1,17 @@
 #!/usr/bin/env bun
 
 /**
- * Prepare the Claude action by checking trigger conditions, verifying human actor,
+ * Prepare the Codex action by checking trigger conditions, verifying actor permissions,
  * and creating the initial tracking comment
  */
 
 import * as core from "@actions/core";
 import { setupGitHubToken } from "../github/token";
 import { checkWritePermissions } from "../github/validation/permissions";
+import {
+  assertNoForkPullRequests,
+  ForkPullRequestError,
+} from "../github/validation/forks";
 import { createOctokit } from "../github/api/client";
 import {
   parseGitHubContext,
@@ -37,10 +41,19 @@ async function run() {
     const githubToken = await setupGitHubToken();
     const octokit = createOctokit(githubToken);
 
+    try {
+      await assertNoForkPullRequests(context, octokit.rest);
+    } catch (error) {
+      if (!(error instanceof ForkPullRequestError)) throw error;
+      core.setOutput("contains_trigger", "false");
+      core.setOutput("skipped_due_to_fork", "true");
+      return;
+    }
+
     // Step 3: Check write permissions (entity contexts and workflow_run)
     if (isEntityContext(context) || isWorkflowRunEvent(context)) {
-      // Check if github_token was provided as input (not from app)
-      const githubTokenProvided = !!process.env.OVERRIDE_GITHUB_TOKEN;
+      // Non-write exceptions require an explicitly supplied scoped token.
+      const githubTokenProvided = process.env.GITHUB_TOKEN_PROVIDED === "true";
       const hasWritePermissions = await checkWritePermissions(
         octokit.rest,
         context,
@@ -87,7 +100,7 @@ async function run() {
 
     // MCP config is handled by individual modes (tag/agent) and included in their claude_args output
 
-    // Expose the GitHub token (Claude App token) as an output
+    // Expose the supplied GitHub token as an output
     core.setOutput("github_token", githubToken);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

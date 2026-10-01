@@ -24,13 +24,14 @@ A clear and concise description of what you expected to happen.
 If applicable, add screenshots to help explain your problem.
 
 **Workflow yml file**
-If it's not sensitive, consider including a paste of your full Claude workflow.yml file.
+If it's not sensitive, consider including a paste of your full Codex workflow.yml file.
 
 **API Provider**
 
-[ ] Anthropic First-Party API (default)
-[ ] AWS Bedrock
-[ ] GCP Vertex
+[ ] OpenAI API key (supported backend)
+
+**Runtime details**
+Codex CLI version, `codex_args` / legacy `claude_args`, and any custom settings or MCP servers (redact credentials).
 
 **Additional context**
 Add any other context about the problem here.

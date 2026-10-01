@@ -14,8 +14,8 @@ import type { Octokits } from "../../github/api/client";
  * Prepares the agent mode execution context.
  *
  * Agent mode runs whenever an explicit prompt is provided in the workflow configuration.
- * It bypasses the standard @claude mention checking and comment tracking used by tag mode,
- * providing direct access to Claude Code for automation workflows.
+ * It bypasses the standard @codex mention checking and comment tracking used by tag mode,
+ * providing direct access to Codex for automation workflows.
  */
 export async function prepareAgentMode({
   context,
@@ -78,7 +78,7 @@ export async function prepareAgentMode({
   // Create prompt directory. Clear any stale files from a prior invocation first —
   // see src/create-prompt/index.ts for context (non-ephemeral self-hosted runners
   // do not reliably honor the RUNNER_TEMP cleanup contract).
-  const promptDir = `${process.env.RUNNER_TEMP || "/tmp"}/claude-prompts`;
+  const promptDir = `${process.env.RUNNER_TEMP || "/tmp"}/codex-prompts`;
   await rm(promptDir, { recursive: true, force: true });
   await mkdir(promptDir, { recursive: true });
 
@@ -87,14 +87,15 @@ export async function prepareAgentMode({
     context.inputs.prompt ||
     `Repository: ${context.repository.owner}/${context.repository.repo}`;
 
-  await writeFile(`${promptDir}/claude-prompt.txt`, promptContent);
+  await writeFile(`${promptDir}/codex-prompt.txt`, promptContent);
 
-  // Parse allowed tools from user's claude_args
-  const userClaudeArgs = process.env.CLAUDE_ARGS || "";
+  // Parse allowed tools from codex_args or the claude_args compatibility alias.
+  const userClaudeArgs =
+    process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "";
   const allowedTools = parseAllowedTools(userClaudeArgs);
 
   // Check for branch info from environment variables (useful for auto-fix workflows)
-  const claudeBranch = process.env.CLAUDE_BRANCH || undefined;
+  const claudeBranch = process.env.CODEX_BRANCH || undefined;
   const defaultBranch = context.repository.default_branch || "main";
   const baseBranch = context.inputs.baseBranch || defaultBranch;
 

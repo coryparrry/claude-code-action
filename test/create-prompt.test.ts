@@ -93,7 +93,7 @@ describe("generatePrompt", () => {
       {
         id: "comment2",
         databaseId: "123457",
-        body: "@claude help me",
+        body: "@codex help me",
         author: { login: "user2" },
         createdAt: "2023-01-01T01:30:00Z",
       },
@@ -130,7 +130,7 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "issue_comment",
         commentId: "67890",
@@ -138,20 +138,20 @@ describe("generatePrompt", () => {
         baseBranch: "main",
         claudeBranch: "claude/issue-67890-20240101-1200",
         issueNumber: "67890",
-        commentBody: "@claude please fix this",
+        commentBody: "@codex please fix this",
       },
     };
 
     const prompt = await generatePrompt(envVars, mockGitHubData, false, "tag");
 
-    expect(prompt).toContain("You are Claude, an AI assistant");
+    expect(prompt).toContain("You are Codex, an AI assistant");
     expect(prompt).toContain("<event_type>GENERAL_COMMENT</event_type>");
     expect(prompt).toContain("<is_pr>false</is_pr>");
     expect(prompt).toContain(
-      "<trigger_context>issue comment with '@claude'</trigger_context>",
+      "<trigger_context>issue comment with '@codex'</trigger_context>",
     );
     expect(prompt).toContain("<repository>owner/repo</repository>");
-    expect(prompt).toContain("<claude_comment_id>12345</claude_comment_id>");
+    expect(prompt).toContain("<codex_comment_id>12345</codex_comment_id>");
     expect(prompt).toContain("<trigger_username>Unknown</trigger_username>");
     expect(prompt).toContain("[user1 at 2023-01-01T01:00:00Z]: First comment"); // from formatted comments
     expect(prompt).not.toContain("filename\tstatus\tadditions\tdeletions\tsha"); // since it's not a PR
@@ -161,12 +161,12 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "pull_request_review",
         isPR: true,
         prNumber: "456",
-        commentBody: "@claude please fix this bug",
+        commentBody: "@codex please fix this bug",
       },
     };
 
@@ -185,7 +185,7 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "issues",
         eventAction: "opened",
@@ -200,7 +200,7 @@ describe("generatePrompt", () => {
 
     expect(prompt).toContain("<event_type>ISSUE_CREATED</event_type>");
     expect(prompt).toContain(
-      "<trigger_context>new issue with '@claude' in body</trigger_context>",
+      "<trigger_context>new issue with '@codex' in body</trigger_context>",
     );
     expect(prompt).toContain(
       "[Create a PR](https://github.com/owner/repo/compare/main",
@@ -212,7 +212,7 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "issues",
         eventAction: "assigned",
@@ -239,7 +239,7 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "issues",
         eventAction: "labeled",
@@ -268,7 +268,7 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "pull_request",
         eventAction: "opened",
@@ -289,7 +289,7 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "issue_comment",
         commentId: "67890",
@@ -297,14 +297,14 @@ describe("generatePrompt", () => {
         issueNumber: "123",
         baseBranch: "main",
         claudeBranch: "claude/issue-67890-20240101-1200",
-        commentBody: "@claude please fix this",
+        commentBody: "@codex please fix this",
       },
     };
 
     const prompt = await generatePrompt(envVars, mockGitHubData, false, "tag");
 
     // Verify prompt generates successfully without custom instructions
-    expect(prompt).toContain("@claude please fix this");
+    expect(prompt).toContain("@codex please fix this");
     expect(prompt).not.toContain("CUSTOM INSTRUCTIONS");
   });
 
@@ -312,7 +312,7 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       prompt: "Simple prompt for reviewing PR",
       eventData: {
         eventName: "pull_request",
@@ -331,14 +331,14 @@ describe("generatePrompt", () => {
 
     // Agent mode: Prompt is passed through as-is
     expect(prompt).toBe("Simple prompt for reviewing PR");
-    expect(prompt).not.toContain("You are Claude, an AI assistant");
+    expect(prompt).not.toContain("You are Codex, an AI assistant");
   });
 
   test("should pass through prompt without variable substitution", async () => {
     const envVars: PreparedContext = {
       repository: "test/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       triggerUsername: "john-doe",
       prompt: `Repository: $REPOSITORY
       PR: $PR_NUMBER
@@ -385,7 +385,7 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       prompt: "Review issue and provide feedback",
       eventData: {
         eventName: "issues",
@@ -427,7 +427,7 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       prompt: "PR: $PR_NUMBER, Issue: $ISSUE_NUMBER, Comment: $TRIGGER_COMMENT",
       eventData: {
         eventName: "pull_request",
@@ -454,7 +454,7 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "issues",
         eventAction: "opened",
@@ -467,7 +467,7 @@ describe("generatePrompt", () => {
 
     const prompt = await generatePrompt(envVars, mockGitHubData, false, "tag");
 
-    expect(prompt).toContain("You are Claude, an AI assistant");
+    expect(prompt).toContain("You are Codex, an AI assistant");
     expect(prompt).toContain("<event_type>ISSUE_CREATED</event_type>");
   });
 
@@ -475,7 +475,7 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       triggerUsername: "johndoe",
       eventData: {
         eventName: "issue_comment",
@@ -484,7 +484,7 @@ describe("generatePrompt", () => {
         issueNumber: "123",
         baseBranch: "main",
         claudeBranch: "claude/issue-67890-20240101-1200",
-        commentBody: "@claude please fix this",
+        commentBody: "@codex please fix this",
       },
     };
 
@@ -501,7 +501,7 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       triggerUsername: "johndoe",
       triggerUserId: 123456,
       eventData: {
@@ -511,7 +511,7 @@ describe("generatePrompt", () => {
         issueNumber: "123",
         baseBranch: "main",
         claudeBranch: "claude/issue-67890-20240101-1200",
-        commentBody: "@claude please fix this",
+        commentBody: "@codex please fix this",
       },
     };
 
@@ -527,12 +527,12 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "pull_request_review",
         isPR: true,
         prNumber: "456",
-        commentBody: "@claude please fix this",
+        commentBody: "@codex please fix this",
       },
     };
 
@@ -556,7 +556,7 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "issues",
         eventAction: "opened",
@@ -594,7 +594,7 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "issue_comment",
         commentId: "67890",
@@ -602,7 +602,7 @@ describe("generatePrompt", () => {
         issueNumber: "123",
         baseBranch: "main",
         claudeBranch: "claude/issue-123-20240101-1200",
-        commentBody: "@claude please fix this",
+        commentBody: "@codex please fix this",
       },
     };
 
@@ -624,13 +624,13 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "issue_comment",
         commentId: "67890",
         isPR: true,
         prNumber: "456",
-        commentBody: "@claude please fix this",
+        commentBody: "@codex please fix this",
         claudeBranch: "claude/pr-456-20240101-1200",
         baseBranch: "main",
       },
@@ -663,13 +663,13 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "issue_comment",
         commentId: "67890",
         isPR: true,
         prNumber: "456",
-        commentBody: "@claude please fix this",
+        commentBody: "@codex please fix this",
         // No claudeBranch or baseBranch for open PRs
       },
     };
@@ -694,12 +694,12 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "pull_request_review",
         isPR: true,
         prNumber: "789",
-        commentBody: "@claude please update this",
+        commentBody: "@codex please update this",
         claudeBranch: "claude/pr-789-20240101-1230",
         baseBranch: "develop",
       },
@@ -721,13 +721,13 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "pull_request_review_comment",
         isPR: true,
         prNumber: "999",
         commentId: "review-comment-123",
-        commentBody: "@claude fix this issue",
+        commentBody: "@codex fix this issue",
         claudeBranch: "claude/pr-999-20240101-1400",
         baseBranch: "main",
       },
@@ -750,7 +750,7 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "pull_request",
         eventAction: "closed",
@@ -771,30 +771,57 @@ describe("generatePrompt", () => {
     expect(prompt).toContain("Reference to the original PR");
   });
 
+  test("include_fix_links preserves actionable review context without a Claude launch URL", async () => {
+    const context: PreparedContext = {
+      repository: "owner/repo",
+      claudeCommentId: "12345",
+      triggerPhrase: "@codex",
+      githubContext: createMockContext({ inputs: { includeFixLinks: true } }),
+      eventData: {
+        eventName: "pull_request_review",
+        isPR: true,
+        prNumber: "42",
+        baseBranch: "main",
+        claudeBranch: "feature",
+        commentBody: "@codex review this PR",
+      },
+    };
+    const prompt = await generatePrompt(context, mockGitHubData, false, "tag");
+    expect(prompt).toContain(
+      "[View changes](https://github.com/owner/repo/pull/42/files)",
+    );
+    expect(prompt).toContain("file path, line numbers, and specific fix");
+    expect(prompt).not.toContain("claude.ai/code");
+    context.githubContext!.inputs.includeFixLinks = false;
+    expect(
+      await generatePrompt(context, mockGitHubData, false, "tag"),
+    ).not.toContain("[View changes]");
+  });
+
   test("should include git commands when useCommitSigning is false", async () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "issue_comment",
         commentId: "67890",
         isPR: true,
         prNumber: "123",
-        commentBody: "@claude fix the bug",
+        commentBody: "@codex fix the bug",
       },
     };
 
     const prompt = await generatePrompt(envVars, mockGitHubData, false, "tag");
 
     // Should have git command instructions
-    expect(prompt).toContain("Use git commands via the Bash tool");
+    expect(prompt).toContain("Use git commands via the shell tool");
     expect(prompt).toContain("git add");
     expect(prompt).toContain("git commit");
     expect(prompt).toContain("scripts/git-push.sh origin");
 
     // Should use the minimal comment tool
-    expect(prompt).toContain("mcp__github_comment__update_claude_comment");
+    expect(prompt).toContain("mcp__github_comment__update_codex_comment");
 
     // Should not have commit signing tool references
     expect(prompt).not.toContain("mcp__github_file_ops__commit_files");
@@ -804,13 +831,13 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "issue_comment",
         commentId: "67890",
         isPR: true,
         prNumber: "123",
-        commentBody: "@claude fix the bug",
+        commentBody: "@codex fix the bug",
       },
     };
 
@@ -826,16 +853,14 @@ describe("generatePrompt", () => {
       'mcp__github_file_ops__delete_files: {"files":',
     );
     // Comment tool should always be from comment server, not file ops
-    expect(prompt).toContain("mcp__github_comment__update_claude_comment");
+    expect(prompt).toContain("mcp__github_comment__update_codex_comment");
 
     // Should not have git command instructions
-    expect(prompt).not.toContain("Use git commands via the Bash tool");
+    expect(prompt).not.toContain("Use git commands via the shell tool");
 
     // Bash is off unless the user passes --allowedTools through claude_args.
     // allowed_tools was removed in v1.0 and must not appear as live guidance.
-    expect(prompt).toContain(
-      "Run arbitrary Bash commands (unless explicitly allowed via claude_args with --allowedTools)",
-    );
+    expect(prompt).toContain("Execute commands outside the repository context");
     expect(prompt).not.toContain("allowed_tools configuration");
   });
 
@@ -843,13 +868,13 @@ describe("generatePrompt", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "issue_comment",
         commentId: "67890",
         isPR: true,
         prNumber: "123",
-        commentBody: "@claude fix the bug",
+        commentBody: "@codex fix the bug",
       },
     };
 
@@ -881,12 +906,12 @@ describe("generatePrompt", () => {
         const envVars: PreparedContext = {
           repository: "owner/repo",
           claudeCommentId: "12345",
-          triggerPhrase: "@claude",
+          triggerPhrase: "@codex",
           eventData: {
             eventName: "pull_request_review_comment",
             isPR: true,
             prNumber: "456",
-            commentBody: "@claude please review this",
+            commentBody: "@codex please review this",
             claudeBranch: "feature-branch",
             baseBranch: "develop",
           },
@@ -901,7 +926,7 @@ describe("generatePrompt", () => {
 
         // Simplified prompt, not the default
         expect(prompt).toContain("You were tagged on a GitHub pull request");
-        expect(prompt).not.toContain("You are Claude, an AI assistant");
+        expect(prompt).not.toContain("You are Codex, an AI assistant");
 
         // 1. Scoping clarification (neutral, no untrusted/secrets language)
         expect(prompt).toContain(
@@ -926,9 +951,7 @@ describe("generatePrompt", () => {
         expect(prompt).toContain(
           "You cannot submit formal GitHub PR reviews, approve, or merge PRs",
         );
-        expect(prompt).toContain(
-          "https://github.com/anthropics/claude-code-action/blob/main/docs/faq.md",
-        );
+        expect(prompt).toContain("https://developers.openai.com/codex");
       });
     });
 
@@ -937,7 +960,7 @@ describe("generatePrompt", () => {
         const envVars: PreparedContext = {
           repository: "owner/repo",
           claudeCommentId: "12345",
-          triggerPhrase: "@claude",
+          triggerPhrase: "@codex",
           eventData: {
             eventName: "issues",
             eventAction: "opened",
@@ -985,26 +1008,26 @@ describe("getEventTypeAndContext", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "pull_request_review_comment",
         isPR: true,
         prNumber: "123",
-        commentBody: "@claude please fix this",
+        commentBody: "@codex please fix this",
       },
     };
 
     const result = getEventTypeAndContext(envVars);
 
     expect(result.eventType).toBe("REVIEW_COMMENT");
-    expect(result.triggerContext).toBe("PR review comment with '@claude'");
+    expect(result.triggerContext).toBe("PR review comment with '@codex'");
   });
 
   test("should return correct type and context for issue assigned", async () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "issues",
         eventAction: "assigned",
@@ -1026,7 +1049,7 @@ describe("getEventTypeAndContext", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       eventData: {
         eventName: "issues",
         eventAction: "labeled",
@@ -1048,7 +1071,7 @@ describe("getEventTypeAndContext", () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       claudeCommentId: "12345",
-      triggerPhrase: "@claude",
+      triggerPhrase: "@codex",
       prompt: "Please assess this issue",
       eventData: {
         eventName: "issues",
@@ -1085,7 +1108,7 @@ describe("buildAllowedToolsString", () => {
     expect(result).toContain("Bash(git add:*)");
     expect(result).toContain("Bash(git commit:*)");
     expect(result).toContain("scripts/git-push.sh:*)");
-    expect(result).toContain("mcp__github_comment__update_claude_comment");
+    expect(result).toContain("mcp__github_comment__update_codex_comment");
 
     // Should not have commit signing tools
     expect(result).not.toContain("mcp__github_file_ops__commit_files");
@@ -1106,7 +1129,7 @@ describe("buildAllowedToolsString", () => {
     // Should have specific Bash git commands for non-signing mode
     expect(result).toContain("Bash(git add:*)");
     expect(result).toContain("Bash(git commit:*)");
-    expect(result).toContain("mcp__github_comment__update_claude_comment");
+    expect(result).toContain("mcp__github_comment__update_codex_comment");
 
     // Should not have commit signing tools
     expect(result).not.toContain("mcp__github_file_ops__commit_files");
@@ -1179,7 +1202,7 @@ describe("buildAllowedToolsString", () => {
     expect(result).toContain("mcp__github_file_ops__commit_files");
     expect(result).toContain("mcp__github_file_ops__delete_files");
     // Comment tool should always be from github_comment server
-    expect(result).toContain("mcp__github_comment__update_claude_comment");
+    expect(result).toContain("mcp__github_comment__update_codex_comment");
 
     // Bash should NOT be included when using commit signing (except in comment tool name)
     expect(result).not.toContain("Bash(");
@@ -1203,7 +1226,7 @@ describe("buildAllowedToolsString", () => {
     expect(result).toContain("Bash(git rm:*)");
 
     // Comment tool from minimal server should be included
-    expect(result).toContain("mcp__github_comment__update_claude_comment");
+    expect(result).toContain("mcp__github_comment__update_codex_comment");
 
     // Commit signing tools should NOT be included
     expect(result).not.toContain("mcp__github_file_ops__commit_files");
@@ -1226,7 +1249,7 @@ describe("buildAllowedToolsString", () => {
     expect(result).toContain("mcp__github_ci__get_ci_status");
 
     // Comment tool from minimal server should be included
-    expect(result).toContain("mcp__github_comment__update_claude_comment");
+    expect(result).toContain("mcp__github_comment__update_codex_comment");
 
     // Commit signing tools should NOT be included
     expect(result).not.toContain("mcp__github_file_ops__commit_files");
@@ -1378,12 +1401,12 @@ describe("prepareContext validation errors", () => {
       eventName: "issue_comment",
       isPR: false,
       payload: {
-        comment: { id: 999, body: "@claude help", user: { login: "user1" } },
+        comment: { id: 999, body: "@codex help", user: { login: "user1" } },
       } as any,
     });
 
     expect(() => prepareContext(context, commentId)).toThrow(
-      "CLAUDE_BRANCH is required for issue_comment event",
+      "CODEX_BRANCH is required for issue_comment event",
     );
   });
 });

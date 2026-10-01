@@ -1,3 +1,4 @@
+import { getRuntimeInstructions } from "../../create-prompt/runtime-instructions";
 import { GITHUB_SERVER_URL } from "../api/config";
 import { redactSecrets } from "../utils/sanitizer";
 import { encodeBranchNameForUrl } from "./comments/common";
@@ -70,6 +71,7 @@ export function ensureProperlyEncodedUrl(url: string): string | null {
 
 export function updateCommentBody(input: CommentUpdateInput): string {
   const originalBody = input.currentBody;
+  const runtime = getRuntimeInstructions();
   const {
     executionDetails,
     jobUrl,
@@ -82,8 +84,8 @@ export function updateCommentBody(input: CommentUpdateInput): string {
   } = input;
 
   // Extract content from the original comment body
-  // First, remove the "Claude Code is working…" or "Claude Code is working..." message
-  const workingPattern = /Claude Code is working[…\.]{1,3}(?:\s*<img[^>]*>)?/i;
+  // Remove the initial status header while preserving model-authored content.
+  const workingPattern = /^Codex is working[…\.]{1,3}(?:\s*<img[^>]*>)?/i;
   let bodyContent = originalBody.replace(workingPattern, "").trim();
 
   // Check if there's a PR link in the content
@@ -115,7 +117,7 @@ export function updateCommentBody(input: CommentUpdateInput): string {
   let header = "";
 
   if (actionFailed) {
-    header = "**Claude encountered an error";
+    header = `**${runtime.name} encountered an error`;
     if (durationStr) {
       header += ` after ${durationStr}`;
     }
@@ -126,7 +128,7 @@ export function updateCommentBody(input: CommentUpdateInput): string {
     const username =
       triggerUsername || (usernameMatch ? usernameMatch[1] : "user");
 
-    header = `**Claude finished @${username}'s task`;
+    header = `**${runtime.name} finished @${username}'s task`;
     if (durationStr) {
       header += ` in ${durationStr}`;
     }
@@ -203,5 +205,7 @@ export function updateCommentBody(input: CommentUpdateInput): string {
   // Add the cleaned body content
   newBody += bodyContent;
 
+  newBody = newBody.replace(/<!-- codex-action:tracking -->/g, "").trim();
+  newBody += "\n\n<!-- codex-action:tracking -->";
   return newBody.trim();
 }

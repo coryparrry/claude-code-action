@@ -14,7 +14,7 @@ import {
 } from "./mockContext";
 
 const BASE_ENV = {
-  CLAUDE_COMMENT_ID: "12345",
+  CODEX_COMMENT_ID: "12345",
   GITHUB_TOKEN: "test-token",
 };
 
@@ -36,7 +36,7 @@ describe("parseEnvVarsWithContext", () => {
         process.env = {
           ...BASE_ENV,
           BASE_BRANCH: "main",
-          CLAUDE_BRANCH: "claude/issue-67890-20240101-1200",
+          CODEX_BRANCH: "claude/issue-67890-20240101-1200",
         };
       });
 
@@ -70,10 +70,10 @@ describe("parseEnvVarsWithContext", () => {
         }
       });
 
-      test("should throw error when CLAUDE_BRANCH is missing", () => {
+      test("should throw error when CODEX_BRANCH is missing", () => {
         expect(() =>
           prepareContext(mockIssueCommentContext, "12345", "main"),
-        ).toThrow("CLAUDE_BRANCH is required for issue_comment event");
+        ).toThrow("CODEX_BRANCH is required for issue_comment event");
       });
 
       test("should throw error when BASE_BRANCH is missing", () => {
@@ -171,7 +171,7 @@ describe("parseEnvVarsWithContext", () => {
       process.env = {
         ...BASE_ENV,
         BASE_BRANCH: "main",
-        CLAUDE_BRANCH: "claude/issue-42-20240101-1200",
+        CODEX_BRANCH: "claude/issue-42-20240101-1200",
       };
     });
 
@@ -222,10 +222,10 @@ describe("parseEnvVarsWithContext", () => {
       }
     });
 
-    test("should throw error when CLAUDE_BRANCH is missing for issues", () => {
+    test("should throw error when CODEX_BRANCH is missing for issues", () => {
       expect(() =>
         prepareContext(mockIssueOpenedContext, "12345", "main"),
-      ).toThrow("CLAUDE_BRANCH is required for issues event");
+      ).toThrow("CODEX_BRANCH is required for issues event");
     });
 
     test("should throw error when BASE_BRANCH is missing for issues", () => {

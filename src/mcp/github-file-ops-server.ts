@@ -214,7 +214,7 @@ server.tool(
       // Validate all paths are within repository root and get full/relative paths
       const resolvedRepoDir = resolve(REPO_DIR);
       const validatedFiles = await Promise.all(
-        files.map(async (filePath) => {
+        files.map(async (filePath: string) => {
           const fullPath = await validatePathWithinRepo(filePath, REPO_DIR);
           // Calculate the relative path for the git tree entry
           // Use the original filePath (normalized) for the git path, not the symlink-resolved path
@@ -427,7 +427,7 @@ server.tool(
       // ("../") and symlinked escapes as defense-in-depth.
       const resolvedRepoDir = resolve(REPO_DIR);
       const processedPaths = await Promise.all(
-        paths.map(async (filePath) => {
+        paths.map(async (filePath: string) => {
           await validatePathWithinRepo(filePath, REPO_DIR);
           const normalizedPath = resolve(resolvedRepoDir, filePath);
           return normalizedPath.slice(resolvedRepoDir.length + 1);

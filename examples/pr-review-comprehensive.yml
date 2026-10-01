@@ -13,7 +13,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -21,10 +20,10 @@ jobs:
           fetch-depth: 1
 
       - name: PR Review with Progress Tracking
-        uses: anthropics/claude-code-action@v1
+        uses: coryparrry/claude-code-action@codex/openai-runtime
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           # Enable progress tracking
           track_progress: true
 

@@ -1,5 +1,7 @@
 # Experimental Features
 
+> This fork runs Codex with `OPENAI_API_KEY`. GitHub triggers, tracking comments, branch handling, signing, and MCP integrations retain the upstream workflow shape. `claude_args` is a compatibility alias; use the preferred `codex_args` name for the same supported argument subset. Legacy `--allowedTools` / `--disallowedTools` support MCP names and simple Bash rules, not the full Claude permission language. Use a supported OpenAI model; there is no native `--max-turns`, Anthropic OAuth, WIF, Bedrock, or Vertex backend. Fork pull requests are rejected. See [configuration](./configuration.md) and [the action inputs](../action.yml).
+
 **Note:** Experimental features are considered unstable and not supported for production use. They may change or be removed at any time.
 
 ## Automatic Mode Detection
@@ -8,17 +10,18 @@ The action intelligently detects the appropriate execution mode based on your wo
 
 ### Interactive Mode (Tag Mode)
 
-Activated when Claude detects @mentions, issue assignments, or labels—without an explicit `prompt`.
+Activated when Codex detects @mentions, issue assignments, or labels—without an explicit `prompt`.
 
-- **Triggers**: `@claude` mentions in comments, issue assignment to claude user, label application
+- **Triggers**: `@codex` mentions in comments, issue assignment to claude user, label application
 - **Features**: Creates tracking comments with progress checkboxes, full implementation capabilities
 - **Use case**: Interactive code assistance, Q&A, and implementation requests
 
 ```yaml
-- uses: anthropics/claude-code-action@v1
+- uses: coryparrry/claude-code-action@codex/openai-runtime
   with:
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-    # No prompt needed - responds to @claude mentions
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    # No prompt needed - responds to @codex mentions
 ```
 
 ### Automation Mode (Agent Mode)
@@ -26,13 +29,14 @@ Activated when Claude detects @mentions, issue assignments, or labels—without 
 Automatically activated when you provide a `prompt` input.
 
 - **Triggers**: Any GitHub event when `prompt` input is provided
-- **Features**: Direct execution without requiring @claude mentions, streamlined for automation
+- **Features**: Direct execution without requiring @codex mentions, streamlined for automation
 - **Use case**: Automated PR reviews, scheduled tasks, workflow automation
 
 ```yaml
-- uses: anthropics/claude-code-action@v1
+- uses: coryparrry/claude-code-action@codex/openai-runtime
   with:
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+    github_token: ${{ secrets.GITHUB_TOKEN }}
     prompt: |
       Check for outdated dependencies and create an issue if any are found.
     # Automatically runs in agent mode when prompt is provided
@@ -43,7 +47,7 @@ Automatically activated when you provide a `prompt` input.
 The action uses this logic to determine the mode:
 
 1. **If `prompt` is provided** → Runs in **agent mode** for automation
-2. **If no `prompt` but @claude is mentioned** → Runs in **tag mode** for interaction
+2. **If no `prompt` but @codex is mentioned** → Runs in **tag mode** for interaction
 3. **If neither** → No action is taken
 
 This automatic detection ensures your workflows are simpler and more intuitive, without needing to understand or configure different modes.
@@ -53,11 +57,11 @@ This automatic detection ensures your workflows are simpler and more intuitive, 
 For specialized use cases, you can fine-tune behavior using `claude_args`:
 
 ```yaml
-- uses: anthropics/claude-code-action@v1
+- uses: coryparrry/claude-code-action@codex/openai-runtime
   with:
     prompt: "Review this PR"
     claude_args: |
-      --max-turns 20
-      --system-prompt "You are a code review specialist"
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+      --append-system-prompt "You are a code review specialist"
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+    github_token: ${{ secrets.GITHUB_TOKEN }}
 ```

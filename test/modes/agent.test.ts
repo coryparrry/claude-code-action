@@ -67,7 +67,7 @@ describe("Agent Mode", () => {
     delete process.env.GITHUB_REF_NAME;
 
     // Set CLAUDE_ARGS environment variable
-    process.env.CLAUDE_ARGS = "--model claude-sonnet-4 --max-turns 10";
+    process.env.CLAUDE_ARGS = "--model gpt-5.4 --max-turns 10";
 
     const mockOctokit = {
       rest: {
@@ -92,7 +92,7 @@ describe("Agent Mode", () => {
     });
 
     // Verify claude_args includes user args (no MCP config in agent mode without allowed tools)
-    expect(result.claudeArgs).toBe("--model claude-sonnet-4 --max-turns 10");
+    expect(result.claudeArgs).toBe("--model gpt-5.4 --max-turns 10");
     expect(result.claudeArgs).not.toContain("--mcp-config");
 
     // Verify return structure - should fall back to repository.default_branch when no env vars set
@@ -104,7 +104,7 @@ describe("Agent Mode", () => {
         claudeBranch: undefined,
       },
       mcpConfig: expect.any(String),
-      claudeArgs: "--model claude-sonnet-4 --max-turns 10",
+      claudeArgs: "--model gpt-5.4 --max-turns 10",
     });
 
     // Clean up
@@ -115,6 +115,72 @@ describe("Agent Mode", () => {
       process.env.GITHUB_REF_NAME = originalRefName;
   });
 
+  test("codex_args selects requested GitHub MCP servers and overrides its compatibility alias", async () => {
+    const originalCodexArgs = process.env.CODEX_ARGS;
+    const originalClaudeArgs = process.env.CLAUDE_ARGS;
+    process.env.CODEX_ARGS =
+      "--allowedTools mcp__github__get_issue mcp__github_comment__update_codex_comment";
+    process.env.CLAUDE_ARGS = "--allowedTools mcp__github_ci__get_ci_status";
+    try {
+      const result = await prepareAgentMode({
+        context: createMockAutomationContext({
+          eventName: "workflow_dispatch",
+        }),
+        octokit: {
+          rest: {
+            users: {
+              getByUsername: mock(async () => ({ data: { type: "User" } })),
+            },
+          },
+        } as any,
+        githubToken: "test-token",
+      });
+      const config = JSON.parse(result.mcpConfig);
+      expect(config.mcpServers.github.command).toBe("docker");
+      expect(config.mcpServers.github_comment).toBeDefined();
+      expect(config.mcpServers.github_ci).toBeUndefined();
+      expect(result.claudeArgs).toContain(process.env.CODEX_ARGS!);
+      expect(result.claudeArgs).not.toContain(process.env.CLAUDE_ARGS!);
+    } finally {
+      if (originalCodexArgs === undefined) delete process.env.CODEX_ARGS;
+      else process.env.CODEX_ARGS = originalCodexArgs;
+      if (originalClaudeArgs === undefined) delete process.env.CLAUDE_ARGS;
+      else process.env.CLAUDE_ARGS = originalClaudeArgs;
+    }
+  });
+
+  test("empty codex_args falls back to existing claude_args MCP selection", async () => {
+    const previous = {
+      codex: process.env.CODEX_ARGS,
+      legacy: process.env.CLAUDE_ARGS,
+    };
+    process.env.CODEX_ARGS = "";
+    process.env.CLAUDE_ARGS = "--allowedTools mcp__github__get_issue";
+    try {
+      const result = await prepareAgentMode({
+        context: createMockAutomationContext({
+          eventName: "workflow_dispatch",
+        }),
+        octokit: {
+          rest: {
+            users: {
+              getByUsername: mock(async () => ({ data: { type: "User" } })),
+            },
+          },
+        } as any,
+        githubToken: "test-token",
+      });
+      expect(JSON.parse(result.mcpConfig).mcpServers.github.command).toBe(
+        "docker",
+      );
+      expect(result.claudeArgs).toContain(process.env.CLAUDE_ARGS!);
+    } finally {
+      if (previous.codex === undefined) delete process.env.CODEX_ARGS;
+      else process.env.CODEX_ARGS = previous.codex;
+      if (previous.legacy === undefined) delete process.env.CLAUDE_ARGS;
+      else process.env.CLAUDE_ARGS = previous.legacy;
+    }
+  });
   test("prepare falls back to repository.default_branch when not 'main'", async () => {
     const contextWithDevelop = createMockAutomationContext({
       eventName: "workflow_dispatch",
@@ -127,10 +193,10 @@ describe("Agent Mode", () => {
     });
 
     // Save and clear env vars that would otherwise override the fallback
-    const originalClaudeBranch = process.env.CLAUDE_BRANCH;
+    const originalClaudeBranch = process.env.CODEX_BRANCH;
     const originalHeadRef = process.env.GITHUB_HEAD_REF;
     const originalRefName = process.env.GITHUB_REF_NAME;
-    delete process.env.CLAUDE_BRANCH;
+    delete process.env.CODEX_BRANCH;
     delete process.env.GITHUB_HEAD_REF;
     delete process.env.GITHUB_REF_NAME;
 
@@ -162,7 +228,7 @@ describe("Agent Mode", () => {
 
     // Restore env vars
     if (originalClaudeBranch !== undefined)
-      process.env.CLAUDE_BRANCH = originalClaudeBranch;
+      process.env.CODEX_BRANCH = originalClaudeBranch;
     if (originalHeadRef !== undefined)
       process.env.GITHUB_HEAD_REF = originalHeadRef;
     if (originalRefName !== undefined)

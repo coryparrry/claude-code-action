@@ -25,22 +25,22 @@ const server = new McpServer({
 });
 
 server.tool(
-  "update_claude_comment",
-  "Update the Claude comment with progress and results (automatically handles both issue and PR comments)",
+  "update_codex_comment",
+  "Update the Codex comment with progress and results (automatically handles both issue and PR comments)",
   {
     body: z.string().describe("The updated comment content"),
   },
   async ({ body }) => {
     try {
       const githubToken = process.env.GITHUB_TOKEN;
-      const claudeCommentId = process.env.CLAUDE_COMMENT_ID;
+      const claudeCommentId = process.env.CODEX_COMMENT_ID;
       const eventName = process.env.GITHUB_EVENT_NAME;
 
       if (!githubToken) {
         throw new Error("GITHUB_TOKEN environment variable is required");
       }
       if (!claudeCommentId) {
-        throw new Error("CLAUDE_COMMENT_ID environment variable is required");
+        throw new Error("CODEX_COMMENT_ID environment variable is required");
       }
 
       const owner = REPO_OWNER;

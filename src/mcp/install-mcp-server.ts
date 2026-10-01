@@ -109,7 +109,7 @@ export async function prepareMcpConfig(
     };
 
     // Include comment server:
-    // - Always in tag mode (for updating Claude comments)
+    // - Always in tag mode (for updating Codex comments)
     // - Only with explicit tools in agent mode
     const shouldIncludeCommentServer = !isAgentMode || hasGitHubCommentTools;
 
@@ -121,7 +121,7 @@ export async function prepareMcpConfig(
           GITHUB_TOKEN: githubToken,
           REPO_OWNER: owner,
           REPO_NAME: repo,
-          ...(claudeCommentId && { CLAUDE_COMMENT_ID: claudeCommentId }),
+          ...(claudeCommentId && { CODEX_COMMENT_ID: claudeCommentId }),
           GITHUB_EVENT_NAME: process.env.GITHUB_EVENT_NAME || "",
           GITHUB_API_URL: GITHUB_API_URL,
         },
@@ -162,9 +162,16 @@ export async function prepareMcpConfig(
           REPO_NAME: repo,
           PR_NUMBER: context.entityNumber?.toString() || "",
           GITHUB_API_URL: GITHUB_API_URL,
-          CLASSIFY_INLINE_COMMENTS: context.inputs.classifyInlineComments
-            ? "true"
-            : "false",
+          BUFFER_INLINE_COMMENTS:
+            context.inputs.bufferInlineComments &&
+            context.inputs.classifyInlineComments
+              ? "true"
+              : "false",
+          CLASSIFY_INLINE_COMMENTS:
+            context.inputs.bufferInlineComments &&
+            context.inputs.classifyInlineComments
+              ? "true"
+              : "false",
         },
       };
     }

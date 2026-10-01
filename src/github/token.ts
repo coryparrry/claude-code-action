@@ -1,69 +1,16 @@
 #!/usr/bin/env bun
-
 import * as core from "@actions/core";
-import { retryWithBackoff } from "../utils/retry";
 
-export class WorkflowValidationSkipError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "WorkflowValidationSkipError";
-  }
-}
-
-type AppTokenExchangeErrorResponse = {
-  error?: {
-    message?: string;
-    details?: {
-      error_code?: string;
-    };
-  };
-  type?: string;
-  message?: string;
-};
-
-const WORKFLOW_VALIDATION_ERROR_CODES = new Set([
-  "workflow_not_found_on_default_branch",
-]);
-
-function getAppTokenExchangeErrorMessage(
-  responseJson: AppTokenExchangeErrorResponse,
-): string {
-  return responseJson.error?.message ?? responseJson.message ?? "Unknown error";
-}
-
-function isWorkflowValidationError(
-  status: number,
-  responseJson: AppTokenExchangeErrorResponse,
-): boolean {
-  const errorCode = responseJson.error?.details?.error_code;
-  if (
-    errorCode !== undefined &&
-    WORKFLOW_VALIDATION_ERROR_CODES.has(errorCode)
-  ) {
-    return true;
-  }
-
-  if (status !== 401) {
-    return false;
-  }
-
-  const workflowValidationMessage = "workflow validation failed";
-  return [responseJson.message, responseJson.error?.message].some((message) =>
-    message?.toLowerCase().includes(workflowValidationMessage),
-  );
-}
-
-async function getOidcToken(): Promise<string> {
-  try {
-    const oidcToken = await core.getIDToken("claude-code-github-action");
-
-    return oidcToken;
-  } catch (error) {
-    console.error("Failed to get OIDC token:", error);
+export async function setupGitHubToken(): Promise<string> {
+  const token = process.env.OVERRIDE_GITHUB_TOKEN || process.env.GITHUB_TOKEN;
+  if (!token?.trim()) {
     throw new Error(
-      "Could not fetch an OIDC token. Did you remember to add `id-token: write` to your workflow permissions?",
+      "A GitHub token is required. Pass github_token or provide GITHUB_TOKEN with repository write permissions.",
     );
   }
+  core.setSecret(token);
+  console.log("Using provided GitHub token for authentication");
+  return token;
 }
 
 const DEFAULT_PERMISSIONS: Record<string, string> = {
@@ -98,88 +45,4 @@ export function parseAdditionalPermissions():
   }
 
   return { ...DEFAULT_PERMISSIONS, ...additional };
-}
-
-async function exchangeForAppToken(
-  oidcToken: string,
-  permissions?: Record<string, string>,
-): Promise<string> {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${oidcToken}`,
-  };
-  const fetchOptions: RequestInit = {
-    method: "POST",
-    headers,
-  };
-
-  if (permissions) {
-    headers["Content-Type"] = "application/json";
-    fetchOptions.body = JSON.stringify({ permissions });
-  }
-
-  const response = await fetch(
-    "https://api.anthropic.com/api/github/github-app-token-exchange",
-    fetchOptions,
-  );
-
-  if (!response.ok) {
-    const responseJson =
-      (await response.json()) as AppTokenExchangeErrorResponse;
-
-    if (isWorkflowValidationError(response.status, responseJson)) {
-      const message = getAppTokenExchangeErrorMessage(responseJson);
-      core.warning(`Skipping action due to workflow validation: ${message}`);
-      console.log(
-        "Action skipped due to workflow validation error. This is expected when adding Claude Code workflows to new repositories or on PRs with workflow changes. If you're seeing this, your workflow will begin working once you merge your PR.",
-      );
-      throw new WorkflowValidationSkipError(message);
-    }
-
-    const message = getAppTokenExchangeErrorMessage(responseJson);
-    console.error(
-      `App token exchange failed: ${response.status} ${response.statusText} - ${message}`,
-    );
-    throw new Error(message);
-  }
-
-  const appTokenData = (await response.json()) as {
-    token?: string;
-    app_token?: string;
-  };
-  const appToken = appTokenData.token || appTokenData.app_token;
-
-  if (!appToken) {
-    throw new Error("App token not found in response");
-  }
-
-  return appToken;
-}
-
-export async function setupGitHubToken(): Promise<string> {
-  // Check if GitHub token was provided as override
-  const providedToken = process.env.OVERRIDE_GITHUB_TOKEN;
-
-  if (providedToken) {
-    console.log("Using provided GITHUB_TOKEN for authentication");
-    return providedToken;
-  }
-
-  console.log("Requesting OIDC token...");
-  const oidcToken = await retryWithBackoff(() => getOidcToken());
-  console.log("OIDC token successfully obtained");
-
-  const permissions = parseAdditionalPermissions();
-
-  console.log("Exchanging OIDC token for app token...");
-  const appToken = await retryWithBackoff(
-    () => exchangeForAppToken(oidcToken, permissions),
-    {
-      shouldRetry: (error) => !(error instanceof WorkflowValidationSkipError),
-    },
-  );
-  console.log("App token successfully obtained");
-  core.setSecret(appToken);
-
-  console.log("Using GITHUB_TOKEN from OIDC");
-  return appToken;
 }

@@ -1,12 +1,21 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Install act if not already installed
-if ! command -v act &> /dev/null; then
-    echo "Installing act..."
-    brew install act
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+project_root="$(cd -- "$script_dir/.." && pwd)"
+bun_binary="${BUN_EXECUTABLE:-bun}"
+
+# Default: deterministic local tests with fake Codex; no model credentials/calls.
+if [[ "${CODEX_TEST_LIVE:-0}" != "1" ]]; then
+  cd "$project_root"
+  "$bun_binary" test base-action/test
+  exit
 fi
 
-# Run the test workflow locally
-# You'll need to provide your ANTHROPIC_API_KEY
-echo "Running action locally with act..."
-act push --secret ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" -W .github/workflows/test-base-action.yml --container-architecture linux/amd64
+# Paid/live runs require an explicit opt-in AND an explicitly supplied workflow.
+# No package manager or act installation is performed by this script.
+: "${OPENAI_API_KEY:?Live testing requires OPENAI_API_KEY}"
+: "${CODEX_TEST_LIVE_WORKFLOW:?Set a Codex workflow file to run with act}"
+command -v act >/dev/null || { echo "Install act separately before opting into live testing." >&2; exit 1; }
+cd "$project_root"
+act push --secret OPENAI_API_KEY -W "$CODEX_TEST_LIVE_WORKFLOW" --container-architecture linux/amd64

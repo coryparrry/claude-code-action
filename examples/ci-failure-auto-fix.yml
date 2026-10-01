@@ -4,7 +4,7 @@ name: Auto Fix CI Failures
 #
 # This workflow checks out the PR branch and runs build/test commands
 # (npm, bun, etc.) against it with elevated permissions (contents:write,
-# id-token:write). This means code from the PR branch executes in a
+# the OpenAI API key). This means code from the PR branch executes in a
 # trusted context with access to secrets and the ability to push to the
 # repository.
 #
@@ -27,7 +27,6 @@ permissions:
   pull-requests: write
   actions: read
   issues: write
-  id-token: write # Required for OIDC token exchange
 
 jobs:
   auto-fix:
@@ -46,8 +45,8 @@ jobs:
 
       - name: Setup git identity
         run: |
-          git config --global user.email "claude[bot]@users.noreply.github.com"
-          git config --global user.name "claude[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
 
       - name: Create fix branch
         id: branch
@@ -98,12 +97,12 @@ jobs:
               errorLogs: errorLogs
             };
 
-      - name: Fix CI failures with Claude
+      - name: Fix CI failures with Codex
         id: claude
-        uses: anthropics/claude-code-action@v1
+        uses: coryparrry/claude-code-action@codex/openai-runtime
         with:
           prompt: |
-            /fix-ci 
+            /fix-ci
             Failed CI Run: ${{ fromJSON(steps.failure_details.outputs.result).runUrl }}
             Failed Jobs: ${{ join(fromJSON(steps.failure_details.outputs.result).failedJobs, ', ') }}
             PR Number: ${{ github.event.workflow_run.pull_requests[0].number }}
@@ -113,5 +112,6 @@ jobs:
 
             Error logs:
             ${{ toJSON(fromJSON(steps.failure_details.outputs.result).errorLogs) }}
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: "--allowedTools 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*)'"

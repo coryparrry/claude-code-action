@@ -1,6 +1,6 @@
-# Contributing to Claude Code Action
+# Contributing to Codex Action
 
-Thank you for your interest in contributing to Claude Code Action! This document provides guidelines and instructions for contributing to the project.
+Thank you for your interest in contributing to Codex Action! This document provides guidelines and instructions for contributing to the project.
 
 ## Getting Started
 
@@ -9,7 +9,7 @@ Thank you for your interest in contributing to Claude Code Action! This document
 - [Bun](https://bun.sh/) runtime
 - [Docker](https://www.docker.com/) (for running GitHub Actions locally)
 - [act](https://github.com/nektos/act) (installed automatically by our test script)
-- An Anthropic API key (for testing)
+- An OpenAI API key (for testing)
 
 ### Setup
 
@@ -26,9 +26,9 @@ Thank you for your interest in contributing to Claude Code Action! This document
    bun install
    ```
 
-3. Set up your Anthropic API key:
+3. Set up your OpenAI API key:
    ```bash
-   export ANTHROPIC_API_KEY="your-api-key-here"
+   export OPENAI_API_KEY="your-api-key-here"
    ```
 
 ## Development
@@ -41,6 +41,8 @@ Thank you for your interest in contributing to Claude Code Action! This document
 - `bun run format:check` - Check code formatting
 
 ## Testing
+
+Live model calls require an OpenAI key and are opt-in; unit tests do not need model credentials. The preserved `examples/upstream-workflows/` files are historical fixtures, not active Codex CI.
 
 ### Running Tests Locally
 
@@ -55,7 +57,7 @@ Thank you for your interest in contributing to Claude Code Action! This document
 1. Create a new branch from `main`:
 
    ```bash
-   git checkout -b feature/your-feature-name
+   git checkout -b codex/your-feature-name
    ```
 
 2. Make your changes and commit them:
@@ -76,7 +78,7 @@ Thank you for your interest in contributing to Claude Code Action! This document
 4. Push your branch and create a Pull Request:
 
    ```bash
-   git push origin feature/your-feature-name
+   git push origin codex/your-feature-name
    ```
 
 5. Ensure all CI checks pass
@@ -102,7 +104,7 @@ When modifying the action:
 - Check GitHub Actions logs for runtime issues
 - Use `act` with `-v` flag for verbose output:
   ```bash
-  act push -v --secret ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY"
+  act push -v --secret OPENAI_API_KEY="$OPENAI_API_KEY"
   ```
 
 ## Common Issues

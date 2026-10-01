@@ -1,12 +1,14 @@
 # Custom Automations
 
-These examples show how to configure Claude to act automatically based on GitHub events. When you provide a `prompt` input, the action automatically runs in agent mode without requiring manual @mentions. Without a `prompt`, it runs in interactive mode, responding to @claude mentions.
+> This fork runs Codex with `OPENAI_API_KEY`. GitHub triggers, tracking comments, branch handling, signing, and MCP integrations retain the upstream workflow shape. `claude_args` is a compatibility alias; use the preferred `codex_args` name for the same supported argument subset. Legacy `--allowedTools` / `--disallowedTools` support MCP names and simple Bash rules, not the full Claude permission language. Use a supported OpenAI model; there is no native `--max-turns`, Anthropic OAuth, WIF, Bedrock, or Vertex backend. Fork pull requests are rejected. See [configuration](./configuration.md) and [the action inputs](../action.yml).
+
+These examples show how to configure Codex to act automatically based on GitHub events. When you provide a `prompt` input, the action automatically runs in agent mode without requiring manual @mentions. Without a `prompt`, it runs in interactive mode, responding to @codex mentions.
 
 ## Mode Detection & Tracking Comments
 
 The action automatically detects which mode to use based on your configuration:
 
-- **Interactive Mode** (no `prompt` input): Responds to @claude mentions, creates tracking comments with progress indicators
+- **Interactive Mode** (no `prompt` input): Responds to @codex mentions, creates tracking comments with progress indicators
 - **Automation Mode** (with `prompt` input): Executes immediately, **does not create tracking comments**
 
 > **Note**: In v1, automation mode intentionally does not create tracking comments by default to reduce noise in automated workflows. If you need progress tracking, use the `track_progress: true` input parameter.
@@ -35,15 +37,16 @@ on:
       - "src/api/**/*.ts"
 
 steps:
-  - uses: anthropics/claude-code-action@v1
+  - uses: coryparrry/claude-code-action@codex/openai-runtime
     with:
       prompt: |
         Update the API documentation in README.md to reflect
         the changes made to the API endpoints in this PR.
-      anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+      openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+      github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-When API files are modified, the action automatically detects that a `prompt` is provided and runs in agent mode. Claude updates your README with the latest endpoint documentation and pushes the changes back to the PR, keeping your docs in sync with your code.
+When API files are modified, the action automatically detects that a `prompt` is provided and runs in agent mode. Codex updates your README with the latest endpoint documentation and pushes the changes back to the PR, keeping your docs in sync with your code.
 
 ## Author-Specific Code Reviews
 
@@ -60,13 +63,14 @@ jobs:
       github.event.pull_request.user.login == 'developer1' ||
       github.event.pull_request.user.login == 'external-contributor'
     steps:
-      - uses: anthropics/claude-code-action@v1
+      - uses: coryparrry/claude-code-action@codex/openai-runtime
         with:
           prompt: |
             Please provide a thorough review of this pull request.
             Pay extra attention to coding standards, security practices,
             and test coverage since this is from an external contributor.
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 Perfect for automatically reviewing PRs from new team members, external contributors, or specific developers who need extra guidance. The action automatically runs in agent mode when a `prompt` is provided.
@@ -76,7 +80,7 @@ Perfect for automatically reviewing PRs from new team members, external contribu
 Use the `prompt` input with GitHub context variables for dynamic automation:
 
 ```yaml
-- uses: anthropics/claude-code-action@v1
+- uses: coryparrry/claude-code-action@codex/openai-runtime
   with:
     prompt: |
       Analyze PR #${{ github.event.pull_request.number }} in ${{ github.repository }} for security vulnerabilities.
@@ -88,7 +92,8 @@ Use the `prompt` input with GitHub context variables for dynamic automation:
       - Exposed secrets or credentials
 
       Provide severity ratings (Critical/High/Medium/Low) for any issues found.
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+    github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 You can access any GitHub context variable using the standard GitHub Actions syntax:
@@ -105,18 +110,18 @@ You can access any GitHub context variable using the standard GitHub Actions syn
 
 ## Advanced Configuration with claude_args
 
-For more control over Claude's behavior, use the `claude_args` input to pass CLI arguments directly:
+For more control over Codex's behavior, use the `claude_args` input to pass supported compatibility arguments:
 
 ```yaml
-- uses: anthropics/claude-code-action@v1
+- uses: coryparrry/claude-code-action@codex/openai-runtime
   with:
     prompt: "Review this PR for performance issues"
     claude_args: |
-      --max-turns 15
-      --model claude-4-0-sonnet-20250805
+      --model gpt-5.4
       --allowedTools Edit,Read,Write,Bash
-      --system-prompt "You are a performance optimization expert. Focus on identifying bottlenecks and suggesting improvements."
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+      --append-system-prompt "You are a performance optimization expert. Focus on identifying bottlenecks and suggesting improvements."
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+    github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-This provides full access to Claude Code CLI capabilities while maintaining the simplified action interface.
+This provides the supported Codex compatibility controls while maintaining the simplified action interface.

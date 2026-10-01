@@ -1,50 +1,55 @@
-import { describe, it, expect } from "bun:test";
-import { spawnSync } from "child_process";
-import { buildInstallCommand } from "../src/entrypoints/run";
+import { expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { parse } from "yaml";
 
-describe("buildInstallCommand (regression for #1136)", () => {
-  it("includes the pinned claude version in the bash -s args", () => {
-    const cmd = buildInstallCommand("2.1.114");
-    expect(cmd).toContain("bash -s -- 2.1.114");
-  });
-
-  it("prefixes the pipeline with `set -o pipefail`", () => {
-    const cmd = buildInstallCommand("2.1.114");
-    expect(cmd.startsWith("set -o pipefail;")).toBe(true);
-  });
-
-  it("keeps the curl -fsSL flags so the script is fetched, not inlined", () => {
-    const cmd = buildInstallCommand("2.1.114");
-    expect(cmd).toContain(
-      "curl -fsSL https://claude.ai/install.sh | bash -s --",
+for (const path of ["../action.yml", "../base-action/action.yml"]) {
+  test(`${path} stops when SDK dependency installation fails`, async () => {
+    const metadata = parse(
+      await readFile(new URL(path, import.meta.url), "utf8"),
     );
-  });
-});
-
-describe("pipefail semantics (proves the bug shape and the fix)", () => {
-  // Mirrors the real install invocation: a curl that returns non-zero
-  // feeding into `bash -s --`. Without pipefail, the pipeline exits 0
-  // because bash -s receives an empty stdin and does nothing. With
-  // pipefail, curl's exit code wins and the retry loop in run.ts triggers.
-  //
-  // Uses port 1 (reserved/unused) so curl fails deterministically with no
-  // network access. No shell-escaping traps here: the version argument is
-  // a numeric literal.
-  const unreachable = "http://127.0.0.1:1/nope";
-  const version = "2.1.114";
-
-  it("BEFORE FIX: pipeline without pipefail swallows curl failure (exit 0)", () => {
-    const buggy = `curl -fsSL ${unreachable} | bash -s -- ${version}`;
-    const result = spawnSync("bash", ["-c", buggy], { stdio: "pipe" });
-    expect(result.status).toBe(0);
-  });
-
-  it("AFTER FIX: buildInstallCommand (against unreachable host) exits non-zero", () => {
-    const fixed = buildInstallCommand(version).replace(
-      "https://claude.ai/install.sh",
-      unreachable,
+    const install = metadata.runs.steps.find(
+      (step: { name?: string }) =>
+        step.name?.toLowerCase() === "install dependencies",
     );
-    const result = spawnSync("bash", ["-c", fixed], { stdio: "pipe" });
-    expect(result.status).not.toBe(0);
+    const directory = await mkdtemp(
+      join(tmpdir(), "codex-sdk-install-failure-"),
+    );
+    try {
+      const executable = join(directory, "bun");
+      await writeFile(
+        executable,
+        "#!/bin/sh\nprintf 'SDK dependency installation failed\\n' >&2\nexit 17\n",
+      );
+      await chmod(executable, 0o700);
+      const result = spawnSync(
+        "bash",
+        [
+          "--noprofile",
+          "--norc",
+          "-e",
+          "-o",
+          "pipefail",
+          "-c",
+          `${install.run}\necho RUNTIME_STARTED`,
+        ],
+        {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: `${directory}:${process.env.PATH}`,
+            GITHUB_ACTION_PATH: directory,
+          },
+        },
+      );
+      expect(install.shell).toBe("bash");
+      expect(result.status).toBe(17);
+      expect(result.stderr).toContain("SDK dependency installation failed");
+      expect(result.stdout).not.toContain("RUNTIME_STARTED");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
-});
+}

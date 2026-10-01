@@ -383,9 +383,8 @@ describe("redactSecrets", () => {
     );
   });
 
-  it("should not redact sk- strings that are not sk-ant-", () => {
-    const content =
-      "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789 and sk-ant-short";
+  it("should not redact short strings that are not valid API keys", () => {
+    const content = "sk-proj-short and sk-ant-short";
     expect(redactSecrets(content)).toBe(content);
   });
 
@@ -520,6 +519,14 @@ describe("stripHtmlComments (legacy)", () => {
 });
 
 describe("outbound comment sanitization and redaction", () => {
+  it("redacts OpenAI project, service-account, and legacy keys", () => {
+    const suffix = "abcdefghijklmnopqrstuvwxyz1234567890";
+    for (const prefix of ["sk-proj-", "sk-svcacct-", "sk-"]) {
+      expect(redactSecrets(`key=${prefix}${suffix}`)).toBe(
+        "key=[REDACTED_OPENAI_KEY]",
+      );
+    }
+  });
   it("should sanitize content and redact all credential types for public comments", () => {
     const rawComment =
       "Done! Configured AWS AKIAIOSFODNN7EXAMPLE, Anthropic sk-ant-api03-abcdefghijklmnopqrstuvwxyz1234567890, Slack xoxb-1234567890-abcdefghijkl-mnopqrstuvwx, and GitHub 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 <!-- secret note -->";

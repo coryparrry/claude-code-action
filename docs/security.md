@@ -1,5 +1,7 @@
 # Security
 
+> This fork runs Codex with `OPENAI_API_KEY`. GitHub triggers, tracking comments, branch handling, signing, and MCP integrations retain the upstream workflow shape. `claude_args` is a compatibility alias; use the preferred `codex_args` name for the same supported argument subset. Legacy `--allowedTools` / `--disallowedTools` support MCP names and simple Bash rules, not the full Claude permission language. Use a supported OpenAI model; there is no native `--max-turns`, Anthropic OAuth, WIF, Bedrock, or Vertex backend. Fork pull requests are rejected. See [configuration](./configuration.md) and [the action inputs](../action.yml).
+
 ## Access Control
 
 - **Repository Access**: The action can only be triggered by users with write access to the repository. This is checked for issue, pull request, comment, and review events, and for `workflow_run` events, where both the workflow actor and the actor that started the upstream run are checked. `workflow_dispatch`, `repository_dispatch`, and `schedule` events are not checked separately — GitHub itself requires write access to dispatch a workflow, and scheduled runs have no external actor.
@@ -13,26 +15,29 @@
   - Accepts either a comma-separated list of specific usernames or `*` to allow all users
   - **Should be used with extreme caution** as it bypasses the primary security mechanism of this action
   - Is designed for automation workflows where user permissions are already restricted by the workflow's permission scope
-  - When set, Claude does a best-effort scrub of Anthropic, cloud, and GitHub Actions secrets from subprocess environments. On Linux runners with bubblewrap available, subprocesses additionally run with PID-namespace isolation. This reduces but does not eliminate prompt injection risk — keep workflow permissions minimal and validate all outputs. Set `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: 0` in your workflow or job `env:` block to opt out.
-  - Optionally set `CLAUDE_CODE_SCRIPT_CAPS` in your workflow `env:` block to limit how many times Claude can call specific scripts per run. Value is JSON: `{"script-name.sh": maxCalls}`. Example: `CLAUDE_CODE_SCRIPT_CAPS: '{"edit-issue-labels.sh":2}'` allows at most 2 calls to `edit-issue-labels.sh`. Useful for write-capable helper scripts.
+  - When set, the runtime performs best-effort scrubbing of OpenAI and GitHub secrets from model subprocess environments. This does not eliminate prompt injection risk; keep permissions minimal.
+  - Script-cap limits and bubblewrap isolation described by the upstream Claude runtime are not guarantees of this Codex bridge.
   - When using `allowed_non_write_users`, always pass `github_token: ${{ secrets.GITHUB_TOKEN }}`. The auto-generated workflow token is scoped to the job's declared permissions and expires when the job completes. **Do not use a personal access token** — a static token does not rotate between runs and could be partially or fully recovered over time via prompt injection. Restricting allowed tools via `claude_args` reduces the rate of recovery but may not eliminate the risk. We recommend restricting allowed tools (e.g. `claude_args: '--allowedTools "Bash(gh issue view:*)"'`) to the minimum required when using `allowed_non_write_users`.
-- **Token Permissions**: The GitHub app receives only a short-lived token scoped specifically to the repository it's operating in
+- **Token Permissions**: The workflow token is short-lived and limited by the workflow permissions; custom tokens follow their own scopes and expiry
 - **No Cross-Repository Access**: Each action invocation is limited to the repository where it was triggered
 - **Limited Scope**: The token cannot access other repositories or perform actions beyond the configured permissions
 
 ## Using this action with `pull_request_target` or `workflow_run`
 
-For `workflow_run` events, the action checks the repository access of the actor that started the upstream run (for example, the author of the fork pull request that triggered your CI workflow) in addition to the workflow actor. If that actor does not have write access, the action stops before running Claude. To run on `workflow_run` events downstream of pull requests from contributors without write access, add those users to `allowed_non_write_users` and pass `github_token: ${{ secrets.GITHUB_TOKEN }}` — see the notes on that input above and keep the workflow's permissions minimal.
+For `workflow_run` events, the action checks the repository access of the actor that started the upstream run (for example, the author of the fork pull request that triggered your CI workflow) in addition to the workflow actor. If that actor does not have write access, the action stops before running Codex. To run on `workflow_run` events downstream of pull requests from contributors without write access, add those users to `allowed_non_write_users` and pass `github_token: ${{ secrets.GITHUB_TOKEN }}` — see the notes on that input above and keep the workflow's permissions minimal.
 
-`pull_request_target` and `workflow_run` execute with the **base repository's secrets**. If your workflow checks out the PR head (`ref: ${{ github.event.pull_request.head.sha }}` for `pull_request_target`, `ref: ${{ github.event.workflow_run.head_sha }}` for `workflow_run`) into `$GITHUB_WORKSPACE` before this action, the action and Claude run with that checkout as the working directory.
+`pull_request_target` and `workflow_run` execute with the **base repository's secrets**. If your workflow checks out the PR head (`ref: ${{ github.event.pull_request.head.sha }}` for `pull_request_target`, `ref: ${{ github.event.workflow_run.head_sha }}` for `workflow_run`) into `$GITHUB_WORKSPACE` before this action, the action and Codex run with that checkout as the working directory.
 
 **Do not check out an untrusted ref into the workspace root before this action.** Use one of these patterns instead:
 
 ```yaml
 # Preferred — check out the base ref (default).
 - uses: actions/checkout@v6 # no `ref:` → base branch
-- uses: anthropics/claude-code-action@v1
+- uses: coryparrry/claude-code-action@codex/openai-runtime
 ```
+
+<details>
+<summary>Original add-dir checkout pattern — not supported by this Codex fork</summary>
 
 ```yaml
 # If you need the PR's files locally — check out the base ref at the workspace
@@ -44,40 +49,45 @@ For `workflow_run` events, the action checks the repository access of the actor 
     # For workflow_run use: ${{ github.event.workflow_run.head_sha }}
     ref: ${{ github.event.pull_request.head.sha }}
     path: pr-head
-- uses: anthropics/claude-code-action@v1
+- uses: coryparrry/claude-code-action@codex/openai-runtime
   with:
     claude_args: "--add-dir pr-head"
 ```
+
+</details>
 
 This is general guidance for these event types — see [GitHub's documentation](https://securitylab.github.com/research/github-actions-preventing-pwn-requests/).
 
 ### Which files come from the base branch on pull requests
 
-When the action runs against a pull request, it restores a fixed list of Claude configuration paths from the PR base branch before starting Claude: `.claude/`, `.mcp.json`, `.claude.json`, `.gitmodules`, `.ripgreprc`, `CLAUDE.md`, `CLAUDE.local.md`, and `.husky/`. Paths in that list that do not exist on the base branch are removed, and the PR-authored versions are kept under `.claude-pr/` for reference only.
+When the action runs against a pull request, it restores a fixed list of Codex configuration paths from the PR base branch before starting Codex: `.codex/`, `.mcp.json`, `.claude.json`, `.gitmodules`, `.ripgreprc`, `AGENTS.md`, `AGENTS.override.md`, and `.husky/`. Paths in that list that do not exist on the base branch are removed, and the PR-authored versions are kept under `.claude-pr/` for reference only.
 
-Everything else in the working tree — including `package.json`, lockfiles, `Makefile`, `node_modules/`, and formatter/linter config files — stays at the PR head. If a hook, `apiKeyHelper`, or `statusLine` command in your base-branch `.claude/settings.json` runs a package-manager script (`bun run …`, `npm run …`, `yarn …`, `pnpm run …`), a `make` target, a repo-relative script, or a tool that loads executable project config, that command resolves through files the pull request supplies. Keep such commands self-contained: invoke the tool directly with a pinned version and pass its configuration on the command line (for example `bunx prettier@3.5.3 --no-config --write .` rather than `bun run format`).
+Everything else in the working tree — including `package.json`, lockfiles, `Makefile`, `node_modules/`, and formatter/linter config files — stays at the PR head. If a hook, `apiKeyHelper`, or `statusLine` command in your base-branch `.codex/settings.json` runs a package-manager script (`bun run …`, `npm run …`, `yarn …`, `pnpm run …`), a `make` target, a repo-relative script, or a tool that loads executable project config, that command resolves through files the pull request supplies. Keep such commands self-contained: invoke the tool directly with a pinned version and pass its configuration on the command line (for example `bunx prettier@3.5.3 --no-config --write .` rather than `bun run format`).
 
 Note that the runtime executing the tool also reads project config. `bunx <tool>` runs the tool's script under `node` when `node` is on `PATH` (as it is on GitHub-hosted runners); when only Bun is available, Bun executes the script itself and reads `bunfig.toml` from the checkout — including `preload` entries — which comes from the PR head. On such runners, make sure `node` is on `PATH` for the hook, and treat `bunfig.toml` and `.npmrc` in the checkout as PR-controlled runtime config.
 
 ### `claude-code-action` vs `claude-code-base-action`
 
-`claude-code-base-action` is a lower-level building block that installs and runs Claude Code with the inputs you provide. It does not perform actor permission checks or restore project configuration from the base ref. If you need those behaviors, use this action (`claude-code-action`). See the [base-action README](../base-action/README.md#trust-model) for details.
+`claude-code-base-action` is a lower-level building block that installs and runs Codex with the inputs you provide. It does not perform actor permission checks or restore project configuration from the base ref. If you need those behaviors, use this action (`claude-code-action`). See the [base-action README](../base-action/README.md#trust-model) for details.
 
 ## Pull Request Creation
 
-In its default configuration, **Claude does not create pull requests automatically** when responding to `@claude` mentions. Instead:
+In its default configuration, **Codex does not create pull requests automatically** when responding to `@codex` mentions. Instead:
 
-- Claude commits code changes to a new branch
-- Claude provides a **link to the GitHub PR creation page** in its response
+- Codex commits code changes to a new branch
+- Codex provides a **link to the GitHub PR creation page** in its response
 - **The user must click the link and create the PR themselves**, ensuring human oversight before any code is proposed for merging
 
 This design ensures that users retain full control over what pull requests are created and can review the changes before initiating the PR workflow.
 
 ## ⚠️ Prompt Injection Risks
 
-**Beware of potential hidden markdown when tagging Claude on untrusted content.** External contributors may include hidden instructions through HTML comments, invisible characters, hidden attributes, or other techniques. The action sanitizes content by stripping HTML comments, invisible characters, markdown image alt text, hidden HTML attributes, and HTML entities, but new bypass techniques may emerge. We recommend reviewing the raw content of all input coming from external contributors before allowing Claude to process it.
+**Beware of potential hidden markdown when tagging Codex on untrusted content.** External contributors may include hidden instructions through HTML comments, invisible characters, hidden attributes, or other techniques. The action sanitizes content by stripping HTML comments, invisible characters, markdown image alt text, hidden HTML attributes, and HTML entities, but new bypass techniques may emerge. We recommend reviewing the raw content of all input coming from external contributors before allowing Codex to process it.
 
-On public repos, you can also use `include_comments_by_actor` to allowlist which users' comments are passed to Claude, reducing exposure to untrusted input. Use `exclude_comments_by_actor` to filter out noisy bot comments (e.g., `dependabot[bot]`, `renovate[bot]`). If an actor matches both lists, exclusion takes priority. See [Usage](./usage.md) for details.
+On public repos, you can also use `include_comments_by_actor` to allowlist which users' comments are passed to Codex, reducing exposure to untrusted input. Use `exclude_comments_by_actor` to filter out noisy bot comments (e.g., `dependabot[bot]`, `renovate[bot]`). If an actor matches both lists, exclusion takes priority. See [Usage](./usage.md) for details.
+
+<details>
+<summary>Historical upstream reference — not supported by the Codex runtime</summary>
 
 ## GitHub App Permissions
 
@@ -98,16 +108,18 @@ The following permissions are requested but not yet actively used. These will en
 - **Checks** (Read): For reading check run results
 - **Workflows** (Read & Write): For triggering and managing GitHub Actions workflows
 
+</details>
+
 ## Commit Signing
 
-By default, commits made by Claude are unsigned. You can enable commit signing using one of two methods:
+By default, commits made by Codex are unsigned. You can enable commit signing using one of two methods:
 
 ### Option 1: GitHub API Commit Signing (use_commit_signing)
 
 This uses GitHub's API to create commits, which automatically signs them as verified from the GitHub App:
 
 ```yaml
-- uses: anthropics/claude-code-action@main
+- uses: coryparrry/claude-code-action@codex/openai-runtime
   with:
     use_commit_signing: true
 ```
@@ -119,7 +131,7 @@ This is the simplest option and requires no additional setup. However, because i
 This uses an SSH key to sign commits via git CLI. Use this option when you need both signed commits AND standard git operations (rebasing, cherry-picking, etc.):
 
 ```yaml
-- uses: anthropics/claude-code-action@main
+- uses: coryparrry/claude-code-action@codex/openai-runtime
   with:
     ssh_signing_key: ${{ secrets.SSH_SIGNING_KEY }}
     bot_id: "YOUR_GITHUB_USER_ID"
@@ -161,24 +173,25 @@ Commits will show as verified and attributed to the GitHub account that owns the
 
 ## ⚠️ Authentication Protection
 
-**CRITICAL: Never hardcode your Anthropic API key or OAuth token in workflow files!**
+**Never hardcode your OpenAI API key or GitHub token in workflow files.**
 
 Your authentication credentials must always be stored in GitHub secrets to prevent unauthorized access:
 
 ```yaml
 # CORRECT ✅
-anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+github_token: ${{ secrets.GITHUB_TOKEN }}
 # OR
-claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+# Anthropic OAuth tokens are not supported.
 
 # NEVER DO THIS ❌
-anthropic_api_key: "sk-ant-api03-..." # Exposed and vulnerable!
-claude_code_oauth_token: "oauth_token_..." # Exposed and vulnerable!
+openai_api_key: "sk-example-..." # Exposed and vulnerable!
+# Anthropic OAuth tokens are not supported.
 ```
 
 ## ⚠️ Full Output Security Warning
 
-The `show_full_output` option is **disabled by default** for security reasons. When enabled, it outputs ALL Claude Code messages including:
+The `show_full_output` option is **disabled by default** for security reasons. When enabled, it outputs ALL Codex messages including:
 
 - Full outputs from tool executions (e.g., `ps`, `env`, file reads)
 - API responses that may contain tokens or credentials
@@ -202,4 +215,4 @@ Only enable `show_full_output: true` or GitHub Actions debug mode when:
 
 ### Recommended Practice
 
-For debugging, prefer using `show_full_output: false` (the default) and rely on Claude Code's sanitized output, which shows only essential information like errors and completion status without exposing sensitive data.
+For debugging, prefer using `show_full_output: false` (the default) and rely on Codex's sanitized output, which shows only essential information like errors and completion status without exposing sensitive data.

@@ -31,8 +31,28 @@ export const SENSITIVE_PATHS = [
   ".ripgreprc",
   "CLAUDE.md",
   "CLAUDE.local.md",
+  ".codex",
+  "AGENTS.md",
+  "AGENTS.override.md",
   ".husky",
 ];
+
+function addCodexInstructionPaths(paths: Set<string>, files: string[]): void {
+  for (const file of files) {
+    const parts = file.split("/");
+    const configIndex = parts.indexOf(".codex");
+    if (configIndex >= 0) paths.add(parts.slice(0, configIndex + 1).join("/"));
+    if (/^AGENTS(?:\.override)?\.md$/.test(parts.at(-1) || "")) paths.add(file);
+  }
+}
+
+function reviewSnapshotPath(path: string): string {
+  if (/(^|\/)AGENTS(?:\.override)?\.md$/.test(path)) {
+    return `.claude-pr/${path}.review.txt`;
+  }
+  if (/(^|\/)\.codex$/.test(path)) return `.claude-pr/${path}.review`;
+  return `.claude-pr/${path}`;
+}
 
 const CLAUDE_PR_EXCLUDE_PATTERN = "/.claude-pr/";
 
@@ -267,6 +287,13 @@ function ensureClaudePrExcludedFromGit(): void {
  *   will commit the revert back onto the PR author's branch.
  */
 export function restoreConfigFromBase(baseBranch: string): string[] {
+  const sensitivePaths = new Set(SENSITIVE_PATHS);
+  addCodexInstructionPaths(
+    sensitivePaths,
+    execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
+      .split("\0")
+      .filter(Boolean),
+  );
   console.log(
     `Restoring ${SENSITIVE_PATHS.join(", ")} from origin/${baseBranch} (PR head is untrusted)`,
   );
@@ -280,9 +307,14 @@ export function restoreConfigFromBase(baseBranch: string): string[] {
   rmSync(".claude-pr", { recursive: true, force: true });
   const workTreeRealPath = realpathSync(process.cwd());
   const tracked = listTrackedPaths();
-  for (const p of SENSITIVE_PATHS) {
+  for (const p of sensitivePaths) {
     if (lstatSync(p, { throwIfNoEntry: false })) {
-      snapshotSensitivePath(p, `.claude-pr/${p}`, workTreeRealPath, tracked);
+      snapshotSensitivePath(
+        p,
+        reviewSnapshotPath(p),
+        workTreeRealPath,
+        tracked,
+      );
     }
   }
   if (existsSync(".claude-pr")) {
@@ -301,7 +333,7 @@ export function restoreConfigFromBase(baseBranch: string): string[] {
   // If the restore below fails for a given path, that path stays deleted —
   // the safe fallback (no attacker-controlled config). A bare `git checkout`
   // alone wouldn't remove files the PR added, so nuke first.
-  for (const p of SENSITIVE_PATHS) {
+  for (const p of sensitivePaths) {
     rmSync(p, { recursive: true, force: true });
   }
 
@@ -322,7 +354,17 @@ export function restoreConfigFromBase(baseBranch: string): string[] {
     },
   );
 
-  for (const p of SENSITIVE_PATHS) {
+  addCodexInstructionPaths(
+    sensitivePaths,
+    execFileSync(
+      "git",
+      ["ls-tree", "-r", "-z", "--name-only", `origin/${baseBranch}`],
+      { encoding: "utf8" },
+    )
+      .split("\0")
+      .filter(Boolean),
+  );
+  for (const p of sensitivePaths) {
     try {
       execFileSync("git", ["checkout", `origin/${baseBranch}`, "--", p], {
         stdio: "pipe",
@@ -335,7 +377,7 @@ export function restoreConfigFromBase(baseBranch: string): string[] {
   // `git checkout <ref> -- <path>` stages the restored files. Unstage so the
   // revert doesn't silently leak into commits the CLI makes later.
   try {
-    execFileSync("git", ["reset", "--", ...SENSITIVE_PATHS], {
+    execFileSync("git", ["reset", "--", ...sensitivePaths], {
       stdio: "pipe",
     });
   } catch {
@@ -345,5 +387,5 @@ export function restoreConfigFromBase(baseBranch: string): string[] {
   // Every sensitive path is reported, not just the ones that changed: the
   // restore also deletes paths the PR added that are absent on base, and those
   // deletions are stageable too.
-  return [...SENSITIVE_PATHS];
+  return [...sensitivePaths];
 }

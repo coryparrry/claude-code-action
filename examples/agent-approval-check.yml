@@ -28,11 +28,11 @@ jobs:
     if: github.event_name != 'issue_comment' || github.event.issue.pull_request
     runs-on: ubuntu-latest
     steps:
-      - uses: anthropics/claude-code-action/agent-approval-check@main
+      - uses: coryparrry/claude-code-action/agent-approval-check@codex/openai-runtime
         with:
           required_approvals: 2
-          agent_emails: noreply@anthropic.com
-          agent_logins: claude[bot],claude-code[bot]
+          agent_emails: 41898282+github-actions[bot]@users.noreply.github.com
+          agent_logins: github-actions[bot]
           # Uncomment to tune:
           # excluded_approvers: dependabot[bot]
           # exempt_path_prefixes: docs/

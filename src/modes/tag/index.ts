@@ -22,7 +22,7 @@ import { parseAllowedTools } from "../agent/parse-tools";
 /**
  * Prepares the tag mode execution context.
  *
- * Tag mode responds to @claude mentions, issue assignments, or labels.
+ * Tag mode responds to @codex mentions, issue assignments, or labels.
  * Creates tracking comments showing progress and has full implementation capabilities.
  */
 export async function prepareTagMode({
@@ -120,7 +120,8 @@ export async function prepareTagMode({
     context,
   );
 
-  const userClaudeArgs = process.env.CLAUDE_ARGS || "";
+  const userClaudeArgs =
+    process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "";
   const userAllowedMCPTools = parseAllowedTools(userClaudeArgs).filter((tool) =>
     tool.startsWith("mcp__github_"),
   );
@@ -136,7 +137,7 @@ export async function prepareTagMode({
     "Grep",
     "LS",
     "Read",
-    "mcp__github_comment__update_claude_comment",
+    "mcp__github_comment__update_codex_comment",
     "mcp__github_ci__get_ci_status",
     "mcp__github_ci__get_workflow_run_details",
     "mcp__github_ci__download_job_log",

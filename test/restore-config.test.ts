@@ -506,6 +506,39 @@ describe("restoreConfigFromBase", () => {
     return lstatSync(join(repoDir, path));
   }
 
+  test("restores root and nested Codex instructions and keeps review copies inert", () => {
+    git(["checkout", "main"]);
+    writeRepoFile("AGENTS.md", "trusted root guidance\n");
+    writeRepoFile("src/AGENTS.override.md", "trusted nested guidance\n");
+    writeRepoFile(".codex/config.toml", "trusted = true\n");
+    git(["add", "."]);
+    git(["commit", "-m", "add trusted Codex config"]);
+    git(["push", "origin", "main"]);
+    git(["checkout", "pr"]);
+    writeRepoFile("AGENTS.md", "untrusted root guidance\n");
+    writeRepoFile("src/AGENTS.override.md", "untrusted nested guidance\n");
+    writeRepoFile(".codex/config.toml", "trusted = false\n");
+    writeRepoFile("new/AGENTS.md", "new untrusted guidance\n");
+    writeRepoFile("new/.codex/config.toml", "untrusted = true\n");
+    git(["add", "."]);
+    git(["commit", "-m", "change Codex config"]);
+    const restored = restoreConfigFromBase("main");
+    expect(readFileSync("AGENTS.md", "utf8")).toBe("trusted root guidance\n");
+    expect(readFileSync("src/AGENTS.override.md", "utf8")).toBe(
+      "trusted nested guidance\n",
+    );
+    expect(readFileSync(".codex/config.toml", "utf8")).toBe("trusted = true\n");
+    expect(existsSync("new/AGENTS.md")).toBe(false);
+    expect(existsSync("new/.codex")).toBe(false);
+    expect(readFileSync(".claude-pr/AGENTS.md.review.txt", "utf8")).toContain(
+      "untrusted root",
+    );
+    expect(existsSync(".claude-pr/AGENTS.md")).toBe(false);
+    expect(existsSync(".claude-pr/.codex")).toBe(false);
+    expect(restored).toContain("new/AGENTS.md");
+    expect(restored).toContain("src/AGENTS.override.md");
+  });
+
   function setupSymlinkedMainBranch(): void {
     git(["checkout", "main"]);
     rmSync(join(repoDir, "CLAUDE.md"), { force: true });

@@ -24,9 +24,10 @@ jobs:
 
       - name: Detect flaky test failures
         id: detect
-        uses: anthropics/claude-code-action@main
+        uses: coryparrry/claude-code-action@codex/openai-runtime
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             The CI workflow failed: ${{ github.event.workflow_run.html_url }}
 

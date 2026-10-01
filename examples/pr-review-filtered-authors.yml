@@ -1,4 +1,4 @@
-name: Claude Review - Specific Authors
+name: Codex Review - Specific Authors
 
 on:
   pull_request:
@@ -15,7 +15,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -23,9 +22,10 @@ jobs:
           fetch-depth: 1
 
       - name: Review PR from Specific Author
-        uses: anthropics/claude-code-action@v1
+        uses: coryparrry/claude-code-action@codex/openai-runtime
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}

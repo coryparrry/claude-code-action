@@ -28,23 +28,4 @@ describe("base action README", () => {
 
     expect(documentedInputs).toEqual(declaredInputs);
   });
-
-  test("should not use removed legacy inputs in workflow examples", () => {
-    const removedInputs = [
-      "allowed_tools",
-      "disallowed_tools",
-      "max_turns",
-      "mcp_config",
-      "system_prompt",
-      "append_system_prompt",
-      "claude_env",
-      "model",
-      "anthropic_model",
-      "fallback_model",
-    ];
-
-    for (const input of removedInputs) {
-      expect(readme).not.toMatch(new RegExp(`^\\s+${input}:`, "m"));
-    }
-  });
 });

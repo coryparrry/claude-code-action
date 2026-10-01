@@ -1,3 +1,12 @@
+# Historical upstream reference
+
+> This fork runs Codex with `OPENAI_API_KEY`. GitHub triggers, tracking comments, branch handling, signing, and MCP integrations retain the upstream workflow shape. `claude_args` is a compatibility alias; use the preferred `codex_args` name for the same supported argument subset. Legacy `--allowedTools` / `--disallowedTools` support MCP names and simple Bash rules, not the full Claude permission language. Use a supported OpenAI model; there is no native `--max-turns`, Anthropic OAuth, WIF, Bedrock, or Vertex backend. Fork pull requests are rejected. See [configuration](./configuration.md) and [the action inputs](../action.yml).
+
+The original guide below documents the Anthropic upstream action. Its provider flags, credentials, model IDs, and turn-limit mappings do not apply to this fork.
+
+<details>
+<summary>Historical upstream reference — not supported by the Codex runtime</summary>
+
 # Cloud Providers
 
 You can authenticate with Claude using any of these four methods:
@@ -139,3 +148,5 @@ permissions:
 ## Microsoft Foundry Setup
 
 For detailed setup instructions for Microsoft Foundry, see the [official documentation](https://docs.anthropic.com/en/docs/claude-code/microsoft-foundry).
+
+</details>

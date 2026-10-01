@@ -1,16 +1,17 @@
 # Setup Guide
 
+> This fork runs Codex with `OPENAI_API_KEY`. GitHub triggers, tracking comments, branch handling, signing, and MCP integrations retain the upstream workflow shape. `claude_args` is a compatibility alias; use the preferred `codex_args` name for the same supported argument subset. Legacy `--allowedTools` / `--disallowedTools` support MCP names and simple Bash rules, not the full Claude permission language. Use a supported OpenAI model; there is no native `--max-turns`, Anthropic OAuth, WIF, Bedrock, or Vertex backend. Fork pull requests are rejected. See [configuration](./configuration.md) and [the action inputs](../action.yml).
+
 ## Manual Setup (Direct API)
 
 **Requirements**: You must be a repository admin to complete these steps.
 
-1. Install the Claude GitHub app to your repository: https://github.com/apps/claude
-2. Add authentication to your repository secrets ([Learn how to use secrets in GitHub Actions](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions)):
-   - Either `ANTHROPIC_API_KEY` for API key authentication
-   - Or `CLAUDE_CODE_OAUTH_TOKEN` for OAuth token authentication (Pro and Max users can generate this by running `claude setup-token` locally)
-3. Copy the workflow file from [`examples/claude.yml`](../examples/claude.yml) into your repository's `.github/workflows/`
+1. Add `OPENAI_API_KEY` to repository Actions secrets.
+2. Copy [`examples/claude.yml`](../examples/claude.yml) into `.github/workflows/`. The filename is retained for compatibility; the workflow runs Codex.
+3. Grant the workflow token the repository permissions it needs. The action uses `github_token: ${{ secrets.GITHUB_TOKEN }}` and does not require installing the Anthropic GitHub app or granting `id-token: write`.
 
-> Don't want to store a static API key at all? See [Workload Identity Federation](#workload-identity-federation) below.
+<details>
+<summary>Historical upstream reference — not supported by the Codex runtime</summary>
 
 ## Workload Identity Federation
 
@@ -56,15 +57,17 @@ Notes:
 - The GitHub OIDC token is requested with audience `https://api.anthropic.com` by default, so set the federation rule's expected audience to that value (or leave the rule's audience unmatched). Use `anthropic_oidc_audience` only if your rule expects a different audience.
 - Inline comment classification (`classify_inline_comments`) currently requires `anthropic_api_key`; with federation it is skipped and unconfirmed inline comments are posted directly.
 
+</details>
+
 ## Using a Custom GitHub App
 
-If you prefer not to install the official Claude app, you can create your own GitHub App to use with this action. This gives you complete control over permissions and access.
+If you need a separate GitHub bot identity, you can create your own GitHub App to use with this action. This gives you complete control over permissions and access.
 
 **When you may want to use a custom GitHub App:**
 
-- You need more restrictive permissions than the official app
+- You need more restrictive permissions than the workflow token
 - Organization policies prevent installing third-party apps
-- You're using AWS Bedrock or Google Vertex AI
+- You need a GitHub token with separately managed installation permissions
 
 ### Option 1: Quick Setup with App Manifest (Recommended)
 
@@ -132,7 +135,7 @@ If you prefer to configure the app manually or need custom permissions:
 
    - Go to the app's settings page
    - Click "Install App"
-   - Select the repositories where you want to use Claude
+   - Select the repositories where you want to use Codex
 
 4. **Add the app credentials to your repository secrets:**
 
@@ -144,14 +147,14 @@ If you prefer to configure the app manually or need custom permissions:
 5. **Update your workflow to use the custom app:**
 
    ```yaml
-   name: Claude with Custom App
+   name: Codex with Custom App
    on:
      issue_comment:
        types: [created]
      # ... other triggers
 
    jobs:
-     claude-response:
+     codex-response:
        runs-on: ubuntu-latest
        steps:
          # Generate a token from your custom app
@@ -162,10 +165,10 @@ If you prefer to configure the app manually or need custom permissions:
              app-id: ${{ secrets.APP_ID }}
              private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
-         # Use Claude with your custom app's token
-         - uses: anthropics/claude-code-action@v1
+         # Use Codex with your custom app's token
+         - uses: coryparrry/claude-code-action@codex/openai-runtime
            with:
-             anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+             openai_api_key: ${{ secrets.OPENAI_API_KEY }}
              github_token: ${{ steps.app-token.outputs.token }}
              # ... other configuration
    ```
@@ -181,33 +184,35 @@ For more information on creating GitHub Apps, see the [GitHub documentation](htt
 
 **⚠️ IMPORTANT: Never commit API keys directly to your repository! Always use GitHub Actions secrets.**
 
-To securely use your Anthropic API key:
+To securely use your OpenAI API key:
 
 1. Add your API key as a repository secret:
 
    - Go to your repository's Settings
    - Navigate to "Secrets and variables" → "Actions"
    - Click "New repository secret"
-   - Name it `ANTHROPIC_API_KEY`
+   - Name it `OPENAI_API_KEY`
    - Paste your API key as the value
 
 2. Reference the secret in your workflow:
    ```yaml
-   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+   openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+   github_token: ${{ secrets.GITHUB_TOKEN }}
    ```
 
 **Never do this:**
 
 ```yaml
 # ❌ WRONG - Exposes your API key
-anthropic_api_key: "sk-ant-..."
+openai_api_key: "sk-example-..."
 ```
 
 **Always do this:**
 
 ```yaml
 # ✅ CORRECT - Uses GitHub secrets
-anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 This applies to all sensitive values including API keys, access tokens, and credentials.
@@ -219,13 +224,13 @@ We also recommend that you always use short-lived tokens when possible
 2. Click on "Secrets and variables" → "Actions"
 3. Click "New repository secret"
 4. For authentication, choose one:
-   - API Key: Name: `ANTHROPIC_API_KEY`, Value: Your Anthropic API key (starting with `sk-ant-`)
-   - OAuth Token: Name: `CLAUDE_CODE_OAUTH_TOKEN`, Value: Your Claude Code OAuth token (Pro and Max users can generate this by running `claude setup-token` locally)
+   - API Key: Name: `OPENAI_API_KEY`, Value: Your OpenAI API key
+   - Anthropic OAuth tokens are not accepted by this fork.
 5. Click "Add secret"
 
 ### Best Practices for Authentication
 
-1. ✅ Always use `${{ secrets.ANTHROPIC_API_KEY }}` or `${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}` in workflows
+1. ✅ Always use `${{ secrets.OPENAI_API_KEY }}` or `${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}` in workflows
 2. ✅ Never commit API keys or tokens to version control
 3. ✅ Regularly rotate your API keys and tokens
 4. ✅ Use environment secrets for organization-wide access

@@ -3,7 +3,7 @@ import { existsSync } from "fs";
 import { writeFile } from "fs/promises";
 import { join } from "path";
 
-const EXECUTION_FILENAME = "claude-execution-output.json";
+const EXECUTION_FILENAME = "codex-execution-output.json";
 
 export function getExecutionFilePath(): string | undefined {
   if (!process.env.RUNNER_TEMP) {

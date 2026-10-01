@@ -34,9 +34,11 @@ describe("checkContainsTrigger", () => {
           labelTrigger: "",
           branchPrefix: "claude/",
           useStickyComment: false,
+          bufferInlineComments: true,
           classifyInlineComments: true,
           useCommitSigning: false,
           allowedBots: "",
+          allowedNonWriteUsers: "",
         },
       });
       expect(checkContainsTrigger(context)).toBe(true);
@@ -63,9 +65,11 @@ describe("checkContainsTrigger", () => {
           labelTrigger: "",
           branchPrefix: "claude/",
           useStickyComment: false,
+          bufferInlineComments: true,
           classifyInlineComments: true,
           useCommitSigning: false,
           allowedBots: "",
+          allowedNonWriteUsers: "",
         },
       });
       expect(checkContainsTrigger(context)).toBe(false);
@@ -292,9 +296,11 @@ describe("checkContainsTrigger", () => {
           labelTrigger: "",
           branchPrefix: "claude/",
           useStickyComment: false,
+          bufferInlineComments: true,
           classifyInlineComments: true,
           useCommitSigning: false,
           allowedBots: "",
+          allowedNonWriteUsers: "",
         },
       });
       expect(checkContainsTrigger(context)).toBe(true);
@@ -322,9 +328,11 @@ describe("checkContainsTrigger", () => {
           labelTrigger: "",
           branchPrefix: "claude/",
           useStickyComment: false,
+          bufferInlineComments: true,
           classifyInlineComments: true,
           useCommitSigning: false,
           allowedBots: "",
+          allowedNonWriteUsers: "",
         },
       });
       expect(checkContainsTrigger(context)).toBe(true);
@@ -352,9 +360,11 @@ describe("checkContainsTrigger", () => {
           labelTrigger: "",
           branchPrefix: "claude/",
           useStickyComment: false,
+          bufferInlineComments: true,
           classifyInlineComments: true,
           useCommitSigning: false,
           allowedBots: "",
+          allowedNonWriteUsers: "",
         },
       });
       expect(checkContainsTrigger(context)).toBe(false);

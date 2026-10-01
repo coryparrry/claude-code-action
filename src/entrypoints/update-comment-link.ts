@@ -154,11 +154,14 @@ export async function updateCommentLink(
           (comparison.files && comparison.files.length > 0)
         ) {
           const entityType = context.isPR ? "PR" : "Issue";
+          const label = "Codex";
+          const attribution =
+            "Generated with [Codex](https://developers.openai.com/codex/)";
           const prTitle = encodeURIComponent(
-            `${entityType} #${context.entityNumber}: Changes from Claude`,
+            `${entityType} #${context.entityNumber}: Changes from ${label}`,
           );
           const prBody = encodeURIComponent(
-            `This PR addresses ${entityType.toLowerCase()} #${context.entityNumber}\n\nGenerated with [Claude Code](https://claude.ai/code)`,
+            `This PR addresses ${entityType.toLowerCase()} #${context.entityNumber}\n\n${attribution}`,
           );
           const prUrl = `${serverUrl}/${owner}/${repo}/compare/${encodeBranchNameForUrl(baseBranch)}...${encodeBranchNameForUrl(claudeBranch)}?quick_pull=1&title=${prTitle}&body=${prBody}`;
           prLink = `\n[Create a PR](${prUrl})`;
@@ -192,11 +195,7 @@ export async function updateCommentLink(
         // Output file is an array, get the last element which contains execution details
         if (Array.isArray(outputData) && outputData.length > 0) {
           const lastElement = outputData[outputData.length - 1];
-          if (
-            lastElement.type === "result" &&
-            "total_cost_usd" in lastElement &&
-            "duration_ms" in lastElement
-          ) {
+          if (lastElement.type === "result" && "duration_ms" in lastElement) {
             executionDetails = {
               total_cost_usd: lastElement.total_cost_usd,
               duration_ms: lastElement.duration_ms,
@@ -259,15 +258,15 @@ async function run() {
     const octokit = createOctokit(githubToken);
 
     await updateCommentLink({
-      commentId: parseInt(process.env.CLAUDE_COMMENT_ID!),
+      commentId: parseInt(process.env.CODEX_COMMENT_ID!),
       githubToken,
-      claudeBranch: process.env.CLAUDE_BRANCH,
+      claudeBranch: process.env.CODEX_BRANCH,
       baseBranch:
         process.env.BASE_BRANCH || context.repository.default_branch || "main",
       triggerUsername: process.env.TRIGGER_USERNAME,
       context,
       octokit,
-      claudeSuccess: process.env.CLAUDE_SUCCESS !== "false",
+      claudeSuccess: process.env.CODEX_SUCCESS !== "false",
       outputFile: process.env.OUTPUT_FILE,
       prepareSuccess: process.env.PREPARE_SUCCESS !== "false",
       prepareError: process.env.PREPARE_ERROR,
