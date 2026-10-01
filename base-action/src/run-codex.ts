@@ -23,6 +23,7 @@ import { workflowToolEnvironment } from "./codex-tool-environment";
 import { loadAgentConfiguration } from "./agent-configuration";
 import { AgentPermissions } from "./agent-permissions";
 import type { BackgroundAgentTask } from "./agent-tools";
+import { DEFAULT_CODEX_MODEL } from "./codex-model";
 import { resolveAgentCommand } from "./agent-additional-tools";
 import { createCodexAgentRuntime } from "./codex-agent-runtime";
 import { selectConfiguredAgent, childMcpConfig } from "./codex-agent-selection";
@@ -89,14 +90,13 @@ export type CodexOptions = Omit<
   modelPrices?: Record<string, ModelPrice>;
   workspace?: string;
 };
-const DEFAULT_MODEL = "gpt-5.3-codex";
 export function resolveCodexModel(
   model: string | Model | undefined,
 ): string | Model {
-  if (!model) return DEFAULT_MODEL;
+  if (!model) return DEFAULT_CODEX_MODEL;
   return typeof model === "string" &&
     /^(?:default|opus|sonnet|haiku)(?:\[1m\])?$/.test(model)
-    ? DEFAULT_MODEL
+    ? DEFAULT_CODEX_MODEL
     : model;
 }
 async function readPrompt(
@@ -413,11 +413,13 @@ export async function runCodex(
           );
     const effort = normalizeCodexEffort(
       compatibility.effort,
-      typeof model === "string" ? model : DEFAULT_MODEL,
+      typeof model === "string" ? model : DEFAULT_CODEX_MODEL,
     );
     if (
       effort &&
-      !["none", "minimal", "low", "medium", "high", "xhigh"].includes(effort)
+      !["none", "minimal", "low", "medium", "high", "xhigh", "max"].includes(
+        effort,
+      )
     )
       throw new Error("Unsupported Codex reasoning effort");
     const modelSettings: ModelSettings = {

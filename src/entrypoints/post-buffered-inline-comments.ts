@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createOctokit } from "../github/api/client";
 import { redactSecrets } from "../github/utils/sanitizer";
+import { DEFAULT_CODEX_MODEL } from "../../base-action/src/codex-model";
 
 const BUFFER_PATH = "/tmp/inline-comments-buffer.jsonl";
 
@@ -95,7 +96,7 @@ export async function classifyComments(
       RUNNER_TEMP: directory,
       INPUT_PROMPT_FILE: promptPath,
       INPUT_MCP_CONFIG: '{"mcpServers":{}}',
-      INPUT_CODEX_MODEL: env.INPUT_CODEX_MODEL || "gpt-5.3-codex",
+      INPUT_CODEX_MODEL: env.INPUT_CODEX_MODEL || DEFAULT_CODEX_MODEL,
       INPUT_CODEX_EFFORT: env.INPUT_CODEX_EFFORT || "",
       INPUT_CODEX_SANDBOX: "read-only",
       INPUT_CODEX_TIMEOUT_MINUTES: "2",

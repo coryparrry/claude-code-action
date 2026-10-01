@@ -19,6 +19,7 @@ import {
   type Tool,
 } from "@openai/agents";
 import { randomUUID } from "node:crypto";
+import { normalizeCodexEffort } from "./codex-compat";
 
 export type OpenAIAgentEvent =
   | { type: "tool.started"; toolName: string; callId?: string; input: unknown }
@@ -220,6 +221,23 @@ export async function runOpenAIAgent(
             request: ModelRequest,
           ): Promise<ModelResponse> => {
             if (controller.signal.aborted) throw new Error(interruption);
+            const effort = request.modelSettings.reasoning?.effort;
+            if (effort && activeModelName) {
+              const supported = normalizeCodexEffort(effort, activeModelName);
+              if (supported !== effort)
+                request = {
+                  ...request,
+                  modelSettings: {
+                    ...request.modelSettings,
+                    reasoning: {
+                      ...request.modelSettings.reasoning,
+                      effort: supported as NonNullable<
+                        ModelSettings["reasoning"]
+                      >["effort"],
+                    },
+                  },
+                };
+            }
             if (!options.includePartialMessages)
               return selected.getResponse(request);
             let completed: ModelResponse | undefined;

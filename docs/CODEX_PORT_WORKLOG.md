@@ -11,7 +11,7 @@ offline, with no paid model calls, merge or target installation.
 ## Implementation
 
 - Branch `codex/openai-runtime`, existing draft PR #1.
-- `@openai/agents` 0.18.0 and the Responses API run `gpt-5.3-codex` by default.
+- `@openai/agents` 0.18.0 and the Responses API run `gpt-6.1-sol` by default.
   No Claude SDK, Claude CLI, Anthropic provider or native Codex CLI dependency.
 - The original GitHub preparation, modes, comments, file operations, actor
   controls, branch/signing behavior, reports and inline classifier remain.
@@ -30,7 +30,7 @@ offline, with no paid model calls, merge or target installation.
 
 ## Verification
 
-- `bun test`: 1,144 passed, 0 failed, 3,496 assertions across 75 files.
+- `bun test`: 1,148 passed, 0 failed, 3,520 assertions across 75 files.
 - Root and base-action `bun run typecheck`: passed.
 - Root `bun run format:check` and `git diff --check`: passed.
 - Fresh root/base `bun install --production --frozen-lockfile --ignore-scripts`:
@@ -61,3 +61,21 @@ commits also introduce no new distinct PAT patterns. GitGuardian's precise
 flagged line is unavailable, so this is evidence of inherited fixtures rather
 than a definitive classification of its alert. No credential values were
 printed and no history rewrite or credential revocation was performed.
+
+## Model default correction
+
+PR #1 was merged before this follow-up. The port had chosen the older
+`gpt-5.3-codex` without checking the current coding-model recommendation.
+Official OpenAI Codex model guidance recommends `gpt-6.1-sol` for complex
+coding. The runtime and inline classifier now share that default; explicit
+model overrides remain supported. Sol effort mapping, its 1,050,000-token
+context, cache-write rates and standard long-context prices are adapted too.
+Prevention: verify current official model guidance when selecting a default,
+and exercise the actual SDK request plus model-specific controls in regressions.
+Follow-up branch: `codex/current-model-default`; offline verification only.
+
+Follow-up verification: `bun test` passed (1,148 tests, 3,520 assertions);
+root/base typechecks, formatting and diff checks passed. Independent review
+caught a fallback-effort mismatch; a failing real-SDK regression confirmed it,
+then passed after effort was adapted at each selected-model invocation without
+mutating the original request. Review now has no open material findings.

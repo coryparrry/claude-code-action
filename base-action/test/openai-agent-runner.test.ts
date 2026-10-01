@@ -622,6 +622,36 @@ describe("OpenAI Agents SDK runner", () => {
     }
   });
 
+  test("fallback adapts Sol max effort to the older model without mutating the primary request", async () => {
+    const primary = new ScriptedModel([
+      async (request) => {
+        expect(request.modelSettings.reasoning?.effort).toBe("max");
+        throw Object.assign(new Error("Unavailable"), { status: 429 });
+      },
+    ]);
+    const fallback = new ScriptedModel([
+      async (request) => {
+        expect(request.modelSettings.reasoning?.effort).toBe("xhigh");
+        return message("Recovered");
+      },
+    ]);
+    const result = await runOpenAIAgent(
+      "request",
+      options(primary, {
+        model: "gpt-6.1-sol",
+        fallbackModel: "gpt-5.3-codex",
+        modelSettings: { reasoning: { effort: "max" } },
+        modelProvider: {
+          getModel: (name) => (name === "gpt-6.1-sol" ? primary : fallback),
+        },
+        maxTurns: 1,
+      }),
+    );
+    expect(result.turns).toBe(1);
+    expect(primary.requests[0]?.modelSettings.reasoning?.effort).toBe("max");
+    expect(fallback.requests).toHaveLength(1);
+  });
+
   test("reports the actual named fallback model for per-model accounting", async () => {
     const primary = new ScriptedModel([
       async () => {

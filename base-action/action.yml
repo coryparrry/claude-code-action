@@ -17,7 +17,7 @@ inputs:
     description: "OpenAI API key used by Codex"
     required: true
   codex_model:
-    description: "OpenAI model used by the Agents SDK; defaults to gpt-5.3-codex"
+    description: "OpenAI model used by the Agents SDK; defaults to gpt-6.1-sol"
     required: false
     default: ""
   codex_effort:

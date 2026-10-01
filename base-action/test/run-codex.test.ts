@@ -356,8 +356,8 @@ describe("Codex Agents SDK integration", () => {
     const names: string[] = [];
     const provider: ModelProvider = {
       getModel: (name) => {
-        names.push(name ?? "gpt-5.3-codex");
-        return name === "gpt-5.3-codex" ? primary : fallback;
+        names.push(name ?? "gpt-6.1-sol");
+        return name === "gpt-6.1-sol" ? primary : fallback;
       },
     };
     await runCodex(
@@ -368,7 +368,7 @@ describe("Codex Agents SDK integration", () => {
         modelProvider: provider,
       }),
     );
-    expect(names).toEqual(["gpt-5.3-codex", "fallback-fixture"]);
+    expect(names).toEqual(["gpt-6.1-sol", "fallback-fixture"]);
     expect((await artifact()).at(-1)?.result).toBe("Fallback result");
   });
 
@@ -523,10 +523,30 @@ describe("Codex Agents SDK integration", () => {
     ).rejects.toThrow();
   });
 
-  test("model aliases select the documented default", () => {
-    expect(resolveCodexModel("opus")).toBe("gpt-5.3-codex");
-    expect(resolveCodexModel(undefined)).toBe("gpt-5.3-codex");
+  test("default and aliases run Sol with supported effort and budget accounting", async () => {
+    expect(resolveCodexModel("opus")).toBe("gpt-6.1-sol");
+    expect(resolveCodexModel(undefined)).toBe("gpt-6.1-sol");
     expect(resolveCodexModel("gpt-fixture")).toBe("gpt-fixture");
+    expect(resolveCodexModel("gpt-5.3-codex")).toBe("gpt-5.3-codex");
+    const model = new ScriptedModel([message()]);
+    const names: (string | undefined)[] = [];
+    await runCodex(
+      prompt,
+      options(model, {
+        model: undefined,
+        effort: "max",
+        maxBudgetUsd: 1,
+        modelProvider: {
+          getModel: (name) => {
+            names.push(name);
+            return model;
+          },
+        },
+      }),
+    );
+    expect(names).toEqual(["gpt-6.1-sol"]);
+    expect(model.requests[0]?.modelSettings.reasoning?.effort).toBe("max");
+    expect((await artifact()).at(-1)?.total_cost_usd).toBeCloseTo(0.00005, 10);
   });
 
   test("nested Task budget exhaustion aborts the parent before a third model request", async () => {

@@ -1,6 +1,36 @@
 import type { Usage, ModelResponse } from "@openai/agents";
 
-export type ModelPrice = { input: number; cachedInput: number; output: number };
+type TokenRates = {
+  input: number;
+  cachedInput: number;
+  output: number;
+  cacheWrite?: number;
+};
+export type ModelPrice = TokenRates & {
+  longContext?: TokenRates & { threshold: number };
+};
+function validRates(value: unknown): value is TokenRates {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const rates = value as Record<string, unknown>;
+  return [
+    rates.input,
+    rates.cachedInput,
+    rates.output,
+    rates.cacheWrite === undefined ? rates.input : rates.cacheWrite,
+  ].every(
+    (rate) => typeof rate === "number" && Number.isFinite(rate) && rate >= 0,
+  );
+}
+function validPrice(value: unknown): value is ModelPrice {
+  if (!validRates(value)) return false;
+  const tier = (value as ModelPrice).longContext;
+  return (
+    tier === undefined ||
+    (validRates(tier) &&
+      Number.isSafeInteger(tier.threshold) &&
+      tier.threshold > 0)
+  );
+}
 export function configuredModelPrices(
   value: unknown,
 ): Record<string, ModelPrice> {
@@ -9,18 +39,9 @@ export function configuredModelPrices(
     throw new Error("modelPrices must be an object of token rates per million");
   const prices: Record<string, ModelPrice> = {};
   for (const [name, price] of Object.entries(value)) {
-    if (!price || typeof price !== "object" || Array.isArray(price))
-      throw new Error(`Invalid token prices for ${name}`);
-    const rates = price as Record<string, unknown>;
-    if (
-      [rates.input, rates.cachedInput, rates.output].some(
-        (rate) =>
-          typeof rate !== "number" || !Number.isFinite(rate) || rate < 0,
-      )
-    )
-      throw new Error(`Invalid token prices for ${name}`);
+    if (!validPrice(price)) throw new Error(`Invalid token prices for ${name}`);
     Object.defineProperty(prices, name, {
-      value: rates as ModelPrice,
+      value: price,
       enumerable: true,
     });
   }
@@ -28,8 +49,22 @@ export function configuredModelPrices(
 }
 // Standard token rates, USD per million, verified against the official model page.
 // https://developers.openai.com/api/docs/models/gpt-5.3-codex
+// https://developers.openai.com/api/docs/pricing
 export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
   "gpt-5.3-codex": { input: 1.75, cachedInput: 0.175, output: 14 },
+  "gpt-6.1-sol": {
+    input: 2,
+    cachedInput: 0.1,
+    cacheWrite: 2.5,
+    output: 10,
+    longContext: {
+      threshold: 272_000,
+      input: 4,
+      cachedInput: 0.2,
+      cacheWrite: 5,
+      output: 15,
+    },
+  },
 };
 export class AgentBudget {
   cost = 0;
@@ -41,12 +76,7 @@ export class AgentBudget {
     if (limit !== undefined && (!Number.isFinite(limit) || limit <= 0))
       throw new Error("Agent budget must be positive");
     for (const price of Object.values(prices))
-      if (
-        [price.input, price.cachedInput, price.output].some(
-          (rate) => !Number.isFinite(rate) || rate < 0,
-        )
-      )
-        throw new Error("Invalid model token prices");
+      if (!validPrice(price)) throw new Error("Invalid model token prices");
   }
   assertModel(model: string): void {
     if (this.limit !== undefined && !this.prices[model])
@@ -76,10 +106,20 @@ export class AgentBudget {
         total + (entry.cached_tokens ?? entry.cachedTokens ?? 0),
       0,
     );
+    const writes = usage.inputTokensDetails.reduce(
+      (total, entry) =>
+        total + (entry.cache_write_tokens ?? entry.cacheWriteTokens ?? 0),
+      0,
+    );
+    const rates =
+      price.longContext && usage.inputTokens > price.longContext.threshold
+        ? price.longContext
+        : price;
     this.cost +=
-      (Math.max(0, usage.inputTokens - cached) * price.input +
-        cached * price.cachedInput +
-        usage.outputTokens * price.output) /
+      (Math.max(0, usage.inputTokens - cached - writes) * rates.input +
+        cached * rates.cachedInput +
+        writes * (rates.cacheWrite ?? rates.input) +
+        usage.outputTokens * rates.output) /
       1_000_000;
     // Standard Responses web search pricing: $10 / 1,000 calls. Search-content
     // tokens are accounted for in model usage above; no charge is guessed twice.
