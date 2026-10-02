@@ -369,6 +369,7 @@ export async function runOpenAIAgent(
       });
       let nextInput: string | AgentInputItem[] = input;
       let continuations = 0;
+      let completionRecoveryUsed = false;
       while (true) {
         const remainingTurns = maxTurns - turns;
         if (remainingTurns <= 0)
@@ -420,6 +421,22 @@ export async function runOpenAIAgent(
         hookContext = [];
         completedUsage.add(result.runContext.usage);
         activeState = undefined;
+        if (
+          typeof result.finalOutput === "string" &&
+          !result.finalOutput.trim()
+        ) {
+          if (completionRecoveryUsed)
+            throw new Error(
+              "Agent did not produce a final assistant message after completion recovery",
+            );
+          completionRecoveryUsed = true;
+          const request =
+            "Provide a non-empty final response summarizing the completed work and any unresolved issues. Do not repeat tool calls or side effects that have already completed.";
+          nextInput = options.session
+            ? request
+            : [...history, { role: "user", content: request }];
+          continue;
+        }
         const candidateUsage = new Usage();
         candidateUsage.add(completedUsage);
         if (options.additionalUsage)
