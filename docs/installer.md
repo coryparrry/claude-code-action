@@ -5,9 +5,8 @@ workflow PR. It runs locally using Node.js and GitHub CLI, without Bun or extra
 Node dependencies. The generated workflow uses Luna 6 (`gpt-6-luna`), the reviewed
 action commit and the repository's built-in workflow token.
 
-New local parity changes are not included in that published pin. See the
-[feature comparison](./feature-parity.md) before installing; publishing a reviewed
-revision and updating the pin are required to deliver those additions.
+The reviewed runtime changes are included in that source pin. See the
+[feature comparison](./feature-parity.md) for coverage and remaining differences.
 
 ## Guided installation
 
