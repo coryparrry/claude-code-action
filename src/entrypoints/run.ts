@@ -40,6 +40,7 @@ import { actionRuntimeOptions } from "./runtime-options";
 import { initializeInlineCommentBuffer } from "../mcp/inline-comment-buffer";
 import { collectActionInputsPresence } from "./collect-inputs";
 import { updateCommentLink } from "./update-comment-link";
+import { main as postBufferedInlineComments } from "./post-buffered-inline-comments";
 import { formatTurnsFromData } from "./format-turns";
 import type { Turn } from "./format-turns";
 import { redactSecrets } from "../github/utils/sanitizer";
@@ -81,6 +82,7 @@ async function writeStepSummary(executionFile: string): Promise<void> {
 }
 
 async function run() {
+  let deliveryError: string | undefined;
   let githubToken: string | undefined;
   let commentId: number | undefined;
   let claudeBranch: string | undefined;
@@ -260,6 +262,40 @@ async function run() {
   } finally {
     // Phase 4: Cleanup (always runs)
 
+    // Complete the inherited comment delivery before announcing success.
+    if (
+      prepareCompleted &&
+      context &&
+      isEntityContext(context) &&
+      context.isPR &&
+      githubToken &&
+      octokit &&
+      process.env.BUFFER_INLINE_COMMENTS !== "false" &&
+      process.env.CLASSIFY_INLINE_COMMENTS !== "false"
+    ) {
+      try {
+        await postBufferedInlineComments({
+          env: {
+            ...process.env,
+            GITHUB_TOKEN: githubToken,
+            REPO_OWNER: context.repository.owner,
+            REPO_NAME: context.repository.repo,
+            PR_NUMBER: String(context.entityNumber),
+            INPUT_CODEX_MODEL: process.env.CODEX_MODEL,
+            INPUT_CODEX_EFFORT: process.env.CODEX_EFFORT,
+          },
+          octokit: octokit.rest,
+        });
+      } catch (error) {
+        deliveryError = redactSecrets(
+          `Inline feedback delivery failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        claudeSuccess = false;
+        core.setFailed(deliveryError);
+        core.setOutput("conclusion", "failure");
+      }
+    }
+
     // Update tracking comment
     if (
       commentId &&
@@ -281,6 +317,7 @@ async function run() {
           outputFile: executionFile,
           prepareSuccess,
           prepareError,
+          deliveryError,
           useCommitSigning: usesApiCommitSigning(context.inputs),
           restoredConfigPaths,
         });

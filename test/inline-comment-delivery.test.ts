@@ -73,11 +73,13 @@ test("drains successes and filtered probes while preserving failures for retry",
     createReviewComment: post,
   };
   const octokit = { pulls, rest: { pulls } } as unknown as Octokit;
-  await main({
-    env: environment(path),
-    octokit,
-    classify: async () => [true, true, false],
-  });
+  await expect(
+    main({
+      env: environment(path),
+      octokit,
+      classify: async () => [true, true, false],
+    }),
+  ).rejects.toThrow("Failed to deliver 1/2 inline review comments");
   expect(post.mock.calls.map(([params]) => params.line)).toEqual([1, 2]);
   expect(readFileSync(path, "utf8")).toBe(JSON.stringify(comment(2)) + "\n");
 
@@ -109,4 +111,13 @@ test("a later invocation does not replay an earlier failed review", async () => 
   });
   expect(get).not.toHaveBeenCalled();
   expect(readFileSync(first, "utf8")).toContain("Fix bug on line 1");
+});
+
+test("does not report successful delivery when GitHub credentials are missing", async () => {
+  const path = initializeInlineCommentBuffer({ RUNNER_TEMP: directory });
+  writeBuffer(path, [comment(1)]);
+  await expect(
+    main({ env: { ...environment(path), GITHUB_TOKEN: "" } }),
+  ).rejects.toThrow("cannot post buffered comments");
+  expect(readFileSync(path, "utf8")).toContain("Fix bug on line 1");
 });

@@ -15,6 +15,7 @@ that agreement or full parity with Claude Code Action.
 | Structured output      | Valid output reaches the action output; invalid output fails validation and is not exposed as a successful structured result.                                                      | Real HTTP entrypoint tests                                   |
 | Permissions            | Read-only configuration prevents a requested write even when permission mode would otherwise allow tools.                                                                          | Real HTTP entrypoint test                                    |
 | Report identity        | Preflight failure cannot expose a previous base-action run's report.                                                                                                               | Real entrypoint regression                                   |
+| Feedback delivery      | Final inline comments use the inherited immediate-posting tool. Failed buffered delivery fails the action before tracking is finalized; retry retains only undelivered comments.   | MCP/HTTP, process and tracking-comment regression tests      |
 
 ## Verification layers
 
@@ -37,6 +38,11 @@ The production-package check verifies isolated production installs separately.
 A real automatic PR review must also run the exact candidate action revision.
 That live run qualifies the exercised review path, not every provider, issue
 command, authentication method or feature in the parity table.
+
+The root action completes buffered GitHub feedback before finalizing the tracking
+comment. A delivery error changes the action conclusion and comment status to
+failure. The model execution report still describes the model run; its successful
+result alone does not prove that GitHub feedback was delivered.
 
 The installed command and review jobs save execution reports as GitHub Actions
 artifacts for seven days, including failed runs that produced a report. Runs

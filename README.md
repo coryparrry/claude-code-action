@@ -101,9 +101,11 @@ jobs:
           codex_args: >-
             --allowedTools "mcp__github_inline_comment__create_inline_comment"
           prompt: |
-            Review this pull request's changes for concrete correctness, security and regression defects.
+            Review this pull request for code quality, bugs, security and performance issues.
             Read the prepared patch in .git/codex-review.diff first; it includes removed lines as well as additions.
-            Use the repository and PR context. Post actionable inline feedback where appropriate and a concise summary.
+            Use the repository and PR context. Provide actionable inline feedback and a summary.
+            For final inline findings, call mcp__github_inline_comment__create_inline_comment with confirmed: true, using verified paths, line numbers and sides from the patch.
+            If GitHub rejects a comment, correct its location and retry, or explain the finding in the summary. Claim an inline comment was posted only after the tool returns its GitHub URL.
             Do not edit files, commit changes or implement fixes during this review.
             The author can request an implementation in a comment with /codex.
 ```
