@@ -37,7 +37,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: coryparrry/claude-code-action@43a2ba1c9a47672152dbaa447bef74f74939ee27
+      - id: agent
+        uses: coryparrry/claude-code-action@43a2ba1c9a47672152dbaa447bef74f74939ee27
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -45,6 +46,14 @@ jobs:
           codex_effort: low
           max_turns: "30"
           track_progress: "true"
+      - name: Save execution report
+        if: ${{ always() && steps.agent.outputs.execution_file != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-command-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.agent.outputs.execution_file }}
+          if-no-files-found: error
+          retention-days: 7
 
   codex_review:
     if: >-
@@ -72,7 +81,8 @@ jobs:
           CODEX_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
-      - uses: coryparrry/claude-code-action@43a2ba1c9a47672152dbaa447bef74f74939ee27
+      - id: agent
+        uses: coryparrry/claude-code-action@43a2ba1c9a47672152dbaa447bef74f74939ee27
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -89,3 +99,11 @@ jobs:
             Use the repository and PR context. Post actionable inline feedback where appropriate and a concise summary.
             Do not edit files, commit changes or implement fixes during this review.
             The author can request an implementation in a comment with /codex.
+      - name: Save execution report
+        if: ${{ always() && steps.agent.outputs.execution_file != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-review-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.agent.outputs.execution_file }}
+          if-no-files-found: error
+          retention-days: 7

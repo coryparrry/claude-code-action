@@ -49,6 +49,11 @@ users to trigger either job. Fork PRs remain disabled by the action. Automatic
 reviews call the selected model on each qualifying PR event; `/codex` requests
 call it when explicitly requested.
 
+Command and review jobs save execution reports in the run's Actions artifacts
+for seven days, including failed runs that produced a report. Reports can contain
+private prompts, repository content and tool output; access follows the
+repository's GitHub permissions.
+
 ## Run from any directory
 
 Link the command once from this checkout:

@@ -29,6 +29,8 @@ recovery, a forbidden recovery tool call and repeated blank completions. Its
 verification step requires the expected step outcome, action output, report,
 usage and file side effect. `continue-on-error` permits inspection of expected
 failures; it does not make an unexpected failure or false success pass CI.
+These cases also upload their fixture reports with seven-day retention, so
+hosted runs verify report storage after the successful and failed action steps.
 The fixture server is stopped in an always-running cleanup step.
 
 The production-package check verifies isolated production installs separately.
@@ -36,6 +38,8 @@ A real automatic PR review must also run the exact candidate action revision.
 That live run qualifies the exercised review path, not every provider, issue
 command, authentication method or feature in the parity table.
 
-Execution reports remain available through the action output. Uploading them
-as GitHub Actions artifacts requires explicit approval because they can contain
-prompts, repository content and tool output.
+The installed command and review jobs save execution reports as GitHub Actions
+artifacts for seven days, including failed runs that produced a report. Runs
+without a report skip the upload. Names include the job, run ID and attempt.
+Reports can contain prompts, repository content and tool output, accessible
+under the repository's GitHub permissions.

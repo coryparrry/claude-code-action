@@ -106,6 +106,63 @@ function fakeClient(overrides: Record<string, any> = {}): {
 }
 
 describe("guided GitHub Action workflow", () => {
+  test.each(["generated", "installed"])(
+    "%s workflow retains available reports after success or failure",
+    async (source) => {
+      const workflow = parse(
+        source === "generated"
+          ? renderWorkflow(defaultOptions)
+          : await readFile(
+              new URL("../.github/workflows/codex.yml", import.meta.url),
+              "utf8",
+            ),
+      );
+      for (const [jobName, label] of [
+        ["codex", "command"],
+        ["codex_review", "review"],
+      ] as const) {
+        const steps = workflow.jobs[jobName].steps;
+        const agentIndex = steps.findIndex((step: any) => step.id === "agent");
+        const reportIndex = steps.findIndex(
+          (step: any) => step.uses === "actions/upload-artifact@v4",
+        );
+        expect(agentIndex).toBeGreaterThanOrEqual(0);
+        expect(steps[agentIndex].uses).toBe(DEFAULT_ACTION_REF);
+        expect(reportIndex).toBe(agentIndex + 1);
+        const report = steps[reportIndex];
+        expect(report.with).toEqual({
+          name: `codex-${label}-\${{ github.run_id }}-\${{ github.run_attempt }}`,
+          path: "${{ steps.agent.outputs.execution_file }}",
+          "if-no-files-found": "error",
+          "retention-days": 7,
+        });
+        expect(report.if).toBe(
+          "${{ always() && steps.agent.outputs.execution_file != '' }}",
+        );
+        const shouldUpload = new Function(
+          "always",
+          "steps",
+          `return (${report.if.slice(3, -2)});`,
+        );
+        for (const outcome of ["success", "failure"]) {
+          expect(
+            shouldUpload(() => true, {
+              agent: {
+                outcome,
+                outputs: { execution_file: "/tmp/current-report.json" },
+              },
+            }),
+          ).toBe(true);
+          expect(
+            shouldUpload(() => true, {
+              agent: { outcome, outputs: { execution_file: "" } },
+            }),
+          ).toBe(false);
+        }
+      }
+    },
+  );
+
   test("renders valid, restricted workflow YAML using action.yml inputs", async () => {
     const source = renderWorkflow(defaultOptions);
     const workflow = parse(source);

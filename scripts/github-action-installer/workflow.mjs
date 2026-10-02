@@ -80,7 +80,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: ${DEFAULT_ACTION_REF}
+      - id: agent
+        uses: ${DEFAULT_ACTION_REF}
         with:
           trigger_phrase: ${JSON.stringify(DEFAULT_TRIGGER_PHRASE)}
           openai_api_key: \${{ secrets.OPENAI_API_KEY }}
@@ -88,6 +89,14 @@ jobs:
           codex_effort: low
           max_turns: "30"
           track_progress: "true"
+      - name: Save execution report
+        if: \${{ always() && steps.agent.outputs.execution_file != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-command-\${{ github.run_id }}-\${{ github.run_attempt }}
+          path: \${{ steps.agent.outputs.execution_file }}
+          if-no-files-found: error
+          retention-days: 7
 
   codex_review:
     if: >-
@@ -115,7 +124,8 @@ jobs:
           CODEX_PR_HEAD_SHA: \${{ github.event.pull_request.head.sha }}
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > ${REVIEW_DIFF_PATH}
-      - uses: ${DEFAULT_ACTION_REF}
+      - id: agent
+        uses: ${DEFAULT_ACTION_REF}
         with:
           trigger_phrase: ${JSON.stringify(DEFAULT_TRIGGER_PHRASE)}
           openai_api_key: \${{ secrets.OPENAI_API_KEY }}
@@ -128,5 +138,13 @@ jobs:
             --allowedTools "mcp__github_inline_comment__create_inline_comment"
           prompt: |
             ${AUTOMATIC_REVIEW_PROMPT.replaceAll("\n", "\n            ")}
+      - name: Save execution report
+        if: \${{ always() && steps.agent.outputs.execution_file != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-review-\${{ github.run_id }}-\${{ github.run_attempt }}
+          path: \${{ steps.agent.outputs.execution_file }}
+          if-no-files-found: error
+          retention-days: 7
 `;
 }

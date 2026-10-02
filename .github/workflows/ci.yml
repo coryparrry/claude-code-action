@@ -112,6 +112,14 @@ jobs:
           BOUNDARY_CONCLUSION: ${{ steps.runtime.outputs.conclusion }}
           BOUNDARY_REPORT: ${{ steps.runtime.outputs.execution_file }}
         run: node scripts/verify-action-boundary-result.mjs
+      - name: Save fixture execution report
+        if: ${{ always() && steps.runtime.outputs.execution_file != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: boundary-${{ matrix.scenario }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.runtime.outputs.execution_file }}
+          if-no-files-found: error
+          retention-days: 7
       - name: Stop inference fixture
         if: ${{ always() && steps.fixture.outputs.pid != '' }}
         env:
