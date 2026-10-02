@@ -1,6 +1,6 @@
 # Advanced Configuration
 
-> This fork runs Codex with `OPENAI_API_KEY`. GitHub triggers, tracking comments, branch handling, signing, and MCP integrations retain the upstream workflow shape. `claude_args` is a compatibility alias; use the preferred `codex_args` name for the same supported argument subset. Legacy `--allowedTools` / `--disallowedTools` support MCP names and simple Bash rules, not the full Claude permission language. Use a supported OpenAI model; there is no native `--max-turns`, Anthropic OAuth, WIF, Bedrock, or Vertex backend. Fork pull requests are rejected. See [configuration](./configuration.md) and [the action inputs](../action.yml).
+> This fork runs OpenAI models through the OpenAI Agents SDK. It preserves the upstream GitHub workflow and adapts runtime controls. See the [feature comparison](./feature-parity.md) for verified coverage and remaining differences.
 
 ## Using Custom MCP Configuration
 
@@ -9,7 +9,7 @@ You can add custom MCP (Model Context Protocol) servers to extend Codex's capabi
 ### Basic Example: Adding a Sequential Thinking Server
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -41,7 +41,7 @@ For MCP servers that require sensitive information like API keys or tokens, you 
     }
     EOF
 
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -74,7 +74,7 @@ For Python-based MCP servers managed with `uv`, you need to specify the director
     }
     EOF
 
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -96,7 +96,7 @@ For example, if your Python MCP server is at `mcp_servers/weather.py`, you would
 You can add multiple MCP servers by using multiple `--mcp-config` flags:
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -136,7 +136,7 @@ To allow Codex to view workflow run results, job logs, and CI status:
 2. **Configure the action with additional permissions**:
 
    ```yaml
-   - uses: coryparrry/claude-code-action@codex/openai-runtime
+   - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
      with:
        openai_api_key: ${{ secrets.OPENAI_API_KEY }}
        github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -169,13 +169,13 @@ jobs:
   codex-ci-helper:
     runs-on: ubuntu-latest
     steps:
-      - uses: coryparrry/claude-code-action@codex/openai-runtime
+      - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           additional_permissions: |
             actions: read
-          # Now Codex can respond to "@codex why did the CI fail?"
+          # Now Codex can respond to "/codex why did the CI fail?"
 ```
 
 **Important Notes**:
@@ -194,7 +194,7 @@ jobs:
 Set environment variables on the action step using GitHub Actions `env:`. Nonsecret legacy `settings.env` values are supported; reserved runtime controls and credential variables are excluded. Do not place model or GitHub credentials into custom settings or MCP environment values.
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   env:
     NODE_ENV: test
     CI: "true"
@@ -211,14 +211,14 @@ Set environment variables on the action step using GitHub Actions `env:`. Nonsec
 You can pass custom environment variables to Codex execution using the `settings` input. This is useful for CI/test setups that require specific environment variables:
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     settings: |
       {
         "env": {
           "NODE_ENV": "test",
           "CI": "true",
-          "DATABASE_URL": "postgres://test:test@localhost:5432/test_db"
+          "DATABASE_URL": "postgres://localhost:5432/test_db"
         }
       }
     # ... other inputs
@@ -228,37 +228,13 @@ These environment variables will be available to Codex during execution, allowin
 
 </details>
 
-<details>
-<summary>Historical upstream reference — not supported by the Codex runtime</summary>
-
-## Limiting Conversation Turns
-
-You can limit the number of back-and-forth exchanges Claude can have during task execution using the `claude_args` input. This is useful for:
-
-- Controlling costs by preventing runaway conversations
-- Setting time boundaries for automated workflows
-- Ensuring predictable behavior in CI/CD pipelines
-
-```yaml
-- uses: anthropics/claude-code-action@v1
-  with:
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-    claude_args: |
-      --max-turns 5  # Limit to 5 conversation turns
-    # ... other inputs
-```
-
-When the turn limit is reached, Claude will stop execution gracefully. Choose a value that gives Claude enough turns to complete typical tasks while preventing excessive usage.
-
-</details>
-
 ## Time and Cost Bounds
 
-Codex has no `--max-turns` equivalent. Set `timeout-minutes` on the GitHub job to bound elapsed time; this is not a turn or spend limit.
+`max_turns` or `--max-turns` bounds model turns. `max_budget_usd` bounds estimated usage costs after each response; it is not an account spending cap. Set job `timeout-minutes` for elapsed time. Luna, Sol and Astra have built-in standard token rates, including cached input and long-context rates. Other models require `settings.modelPrices` when a USD limit is set.
 
 ## Custom Tools
 
-The compatibility bridge filters the action MCP servers and supports simple Bash rules. Codex file and shell capabilities also depend on the sandbox and config; the full Claude tool/permission system is not reproduced. Complex Claude patterns fail rather than silently broadening permissions.
+Tool policy supports names, MCP server/tool rules, Bash command prefixes and wildcards, file scopes, and WebFetch domains. Read-only and workspace-write policies protect registered file tools; they do not provide operating-system isolation for Bash or arbitrary MCP servers.
 
 By default, Codex only has access to:
 
@@ -268,10 +244,10 @@ By default, Codex only has access to:
 
 Use the compatibility tool filters to select supported command and MCP capabilities for your workflow:
 
-**Note**: Pass custom stdio or streamable HTTP servers explicitly through `--mcp-config` or supported `settings` MCP keys. HTTP servers accept `url`, `headers` (or `http_headers`), and `bearer_token_env_var`; legacy SSE transport has no native translation. Do not assume Claude project configuration files are loaded by native Codex.
+**Note**: Pass custom stdio or streamable HTTP servers explicitly through `--mcp-config` or supported `settings` MCP keys. HTTP servers accept `url`, `headers` (or `http_headers`), and `bearer_token_env_var`; SSE transport is supported as well. The action loads supported project configuration before SDK execution.
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     claude_args: |
       --allowedTools "Bash(npm install),Bash(npm run test),Edit,Read,Write"
@@ -279,67 +255,19 @@ Use the compatibility tool filters to select supported command and MCP capabilit
     # ... other inputs
 ```
 
-**Note**: The base GitHub tools are always included. Use `--allowedTools` to add additional tools (including specific Bash commands), and `--disallowedTools` to prevent specific tools from being used.
+**Note**: Tool filters apply to registered local and GitHub/MCP tools. `--disallowedTools` takes priority over allow rules.
 
 ## Custom Model
 
 Specify a Codex model using `claude_args`:
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     claude_args: |
-      --model gpt-5.4
+      --model gpt-6-luna
     # ... other inputs
 ```
-
-<details>
-<summary>Historical upstream reference — not supported by the Codex runtime</summary>
-
-For provider-specific models:
-
-```yaml
-# AWS Bedrock
-- uses: anthropics/claude-code-action@v1
-  with:
-    use_bedrock: "true"
-    claude_args: |
-      --model anthropic.claude-4-0-sonnet-20250805-v1:0
-    # ... other inputs
-
-# Google Vertex AI
-- uses: anthropics/claude-code-action@v1
-  with:
-    use_vertex: "true"
-    claude_args: |
-      --model claude-4-0-sonnet@20250805
-    # ... other inputs
-```
-
-### 1M context models through an API gateway
-
-When `ANTHROPIC_BASE_URL` points to an Anthropic-compatible API gateway,
-Claude Code may not be able to verify that the gateway supports a model's native
-1M context window and can budget the session at 200K instead. Append the
-`[1m]` selector to explicitly use the 1M context window for supported models,
-including Claude Opus 5 and Claude Sonnet 5:
-
-```yaml
-- uses: anthropics/claude-code-action@v1
-  with:
-    claude_args: |
-      --model "claude-opus-5[1m]"
-    # ... other inputs
-```
-
-Use the same selector when setting a model through `ANTHROPIC_MODEL` or another
-Claude Code model environment variable. The selector is resolved by Claude Code
-before requests are sent to the provider. The action's sanitized result output
-includes each model's resolved
-`contextWindow` and `maxOutputTokens` under `modelUsage`, so these limits are
-visible without enabling `show_full_output`.
-
-</details>
 
 ## Codex Settings
 
@@ -348,68 +276,18 @@ You can provide Codex settings to customize behavior such as model selection and
 ### Option 1: Settings File
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     settings: "path/to/settings.json"
     # ... other inputs
 ```
 
-<details>
-<summary>Historical upstream reference — not supported by the Codex runtime</summary>
-
-### Option 2: Inline Settings
-
-```yaml
-- uses: anthropics/claude-code-action@v1
-  with:
-    settings: |
-      {
-        "model": "claude-opus-4-1-20250805",
-        "env": {
-          "DEBUG": "true",
-          "API_URL": "https://api.example.com"
-        },
-        "permissions": {
-          "allow": ["Bash", "Read"],
-          "deny": ["WebFetch"]
-        },
-        "hooks": {
-          "PreToolUse": [{
-            "matcher": "Bash",
-            "hooks": [{
-              "type": "command",
-              "command": "echo Running bash command..."
-            }]
-          }]
-        }
-      }
-    # ... other inputs
-```
-
-The settings support all Claude Code settings options including:
-
-- `model`: Override the default model
-- `env`: Nonsecret build and test values are supported; credential and runtime variables are excluded
-- `permissions`: Tool usage permissions
-- `hooks`: Pre/post tool execution hooks
-- And more...
-
-For a complete list of available settings and their descriptions, see the [Claude Code settings documentation](https://docs.anthropic.com/en/docs/claude-code/settings).
-
-**Notes**:
-
-- The `enableAllProjectMcpServers` setting is always set to `true` by this action to ensure MCP servers work correctly.
-- The `claude_args` input provides direct access to Claude Code CLI arguments and takes precedence over settings.
-- We recommend using `claude_args` for simple configurations and `settings` for complex configurations with hooks and environment variables.
-
-</details>
-
 ### Native Codex Configuration
 
-`settings` accepts inline TOML or JSON, or a settings file. Native settings use Codex configuration keys. Supported legacy JSON fields are `model`, `permissions`, and nonsecret `env` values; reserved credential/runtime variables are excluded; Claude hooks and other Claude settings are not supported. `codex_args` uses the same supported argument parser; `claude_args` translates only the documented compatibility subset.
+`settings` accepts inline TOML or JSON, or a settings file. Supported configuration includes model, permissions, nonsecret environment, hooks, MCP servers, commands, skills, agents and plugins. Native reasoning summary, verbosity, shell, edit and web-search controls are mapped to SDK settings and tools. `codex_args` and the `claude_args` alias use the same validated action-control parser. Unsupported arguments fail instead of silently doing nothing.
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -426,7 +304,7 @@ Many individual input parameters have been consolidated into `claude_args` or `s
 | `allowed_tools`       | Use `claude_args: "--allowedTools Tool1,Tool2"`                 |
 | `disallowed_tools`    | Use `claude_args: "--disallowedTools Tool1,Tool2"`              |
 | `max_turns`           | No native equivalent; use job `timeout-minutes` to bound time   |
-| `model`               | Use `claude_args: "--model gpt-5.4"`                            |
+| `model`               | Use `claude_args: "--model gpt-6-luna"`                         |
 | `claude_env`          | Workflow step `env` or nonsecret `settings.env`                 |
 | `custom_instructions` | Use `claude_args: "--append-system-prompt 'Your instructions'"` |
 | `mcp_config`          | Use `claude_args: "--mcp-config '{...}'"`                       |
@@ -437,23 +315,14 @@ Many individual input parameters have been consolidated into `claude_args` or `s
 
 For specialized environments like Nix, custom container setups, or other package management systems where the default installation doesn't work, you can provide your own executables:
 
-### Custom Codex Executable
-
-Use `path_to_codex_executable` to provide your own Codex binary instead of using the automatically installed version:
-
-```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
-  with:
-    path_to_codex_executable: "/path/to/custom/codex"
-    # ... other inputs
-```
+Execution uses the pinned OpenAI Agents SDK. A custom Codex CLI executable is not an action input.
 
 ### Custom Bun Executable
 
 Use `path_to_bun_executable` to provide your own Bun runtime instead of the default installation:
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     path_to_bun_executable: "/path/to/custom/bun"
     # ... other inputs

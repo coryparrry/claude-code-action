@@ -99,7 +99,7 @@ jobs:
 
       - name: Fix CI failures with Codex
         id: claude
-        uses: coryparrry/claude-code-action@codex/openai-runtime
+        uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           prompt: |
             /fix-ci

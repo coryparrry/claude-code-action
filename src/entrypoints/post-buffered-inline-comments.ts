@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { validateOpenAIAuthentication } from "../../base-action/src/openai-auth";
 /** Classifies buffered comments with Codex, then posts real reviews.
  * Classification failures preserve the original fallback: post all candidates.
  * Calls explicitly marked confirmed=false are always discarded.
@@ -47,8 +48,12 @@ export async function classifyComments(
   options: ClassificationOptions = {},
 ): Promise<boolean[] | null> {
   const env = options.env ?? process.env;
-  if (!env.OPENAI_API_KEY?.trim()) {
-    console.log("OPENAI_API_KEY not set — posting all unconfirmed comments");
+  try {
+    validateOpenAIAuthentication(env);
+  } catch {
+    console.log(
+      "OpenAI authentication not configured — posting all unconfirmed comments",
+    );
     return null;
   }
   let directory: string | undefined;
@@ -86,6 +91,24 @@ export async function classifyComments(
     ]) {
       if (env[name]) childEnv[name] = env[name];
     }
+    for (const name of [
+      "OPENAI_PROVIDER",
+      "OPENAI_IDENTITY_PROVIDER_ID",
+      "OPENAI_SERVICE_ACCOUNT_ID",
+      "OPENAI_OIDC_AUDIENCE",
+      "ACTIONS_ID_TOKEN_REQUEST_URL",
+      "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+      "AWS_BEARER_TOKEN_BEDROCK",
+      "AWS_REGION",
+      "AWS_DEFAULT_REGION",
+      "AZURE_OPENAI_ENDPOINT",
+      "AZURE_OPENAI_API_KEY",
+      "AZURE_OPENAI_AD_TOKEN",
+      "OPENAI_API_VERSION",
+      "AZURE_OPENAI_DEPLOYMENT",
+    ]) {
+      if (env[name]) childEnv[name] = env[name];
+    }
     Object.assign(childEnv, {
       OPENAI_API_KEY: env.OPENAI_API_KEY,
       ...(env.OPENAI_BASE_URL ? { OPENAI_BASE_URL: env.OPENAI_BASE_URL } : {}),
@@ -95,7 +118,7 @@ export async function classifyComments(
       RUNNER_TEMP: directory,
       INPUT_PROMPT_FILE: promptPath,
       INPUT_MCP_CONFIG: '{"mcpServers":{}}',
-      INPUT_CODEX_MODEL: env.INPUT_CODEX_MODEL || "gpt-5.3-codex",
+      INPUT_CODEX_MODEL: env.INPUT_CODEX_MODEL || "gpt-6-luna",
       INPUT_CODEX_EFFORT: env.INPUT_CODEX_EFFORT || "",
       INPUT_CODEX_SANDBOX: "read-only",
       INPUT_CODEX_TIMEOUT_MINUTES: "2",

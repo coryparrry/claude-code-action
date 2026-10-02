@@ -28,7 +28,7 @@ jobs:
     if: github.event_name != 'issue_comment' || github.event.issue.pull_request
     runs-on: ubuntu-latest
     steps:
-      - uses: coryparrry/claude-code-action/agent-approval-check@codex/openai-runtime
+      - uses: coryparrry/claude-code-action/agent-approval-check@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           required_approvals: 2
           agent_emails: 41898282+github-actions[bot]@users.noreply.github.com

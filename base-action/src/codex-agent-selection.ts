@@ -40,6 +40,27 @@ export async function selectConfiguredAgent(
   const hooks = parseHooks(selected.metadata.hooks ?? {}, {
     pluginRoot: selected.pluginRoot,
   });
+  const permissionMode = selected.metadata.permissionMode;
+  if (
+    permissionMode !== undefined &&
+    ![
+      "default",
+      "acceptEdits",
+      "dontAsk",
+      "bypassPermissions",
+      "plan",
+    ].includes(String(permissionMode))
+  )
+    throw new Error("Unsupported configured agent permissionMode");
+  const memory = selected.metadata.memory;
+  if (
+    memory !== undefined &&
+    !["user", "project", "local"].includes(String(memory))
+  )
+    throw new Error("Unsupported configured agent memory scope");
+  const isolation = selected.metadata.isolation;
+  if (isolation !== undefined && isolation !== "worktree")
+    throw new Error("Unsupported configured agent isolation mode");
   for (const [event, groups] of Object.entries(hooks))
     configuration.hooks[event] = [
       ...(configuration.hooks[event] ?? []),
@@ -63,7 +84,8 @@ export async function selectConfiguredAgent(
   return {
     instructions,
     model:
-      typeof selected.metadata.model === "string"
+      typeof selected.metadata.model === "string" &&
+      selected.metadata.model !== "inherit"
         ? selected.metadata.model
         : undefined,
     tools: stringList(selected.metadata.tools, "Agent tools"),
@@ -71,9 +93,13 @@ export async function selectConfiguredAgent(
       selected.metadata.disallowedTools,
       "Agent disallowedTools",
     ),
-    readonly: ["plan", "readonly", "read-only"].includes(
-      String(selected.metadata.permissionMode),
-    ),
+    permissionMode:
+      typeof permissionMode === "string" && permissionMode !== "default"
+        ? permissionMode
+        : undefined,
+    memory: typeof memory === "string" ? memory : undefined,
+    isolation: typeof isolation === "string" ? isolation : undefined,
+    readonly: permissionMode === "plan",
     maxTurns:
       typeof selected.metadata.maxTurns === "number"
         ? selected.metadata.maxTurns

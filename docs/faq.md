@@ -6,7 +6,7 @@ This FAQ addresses common questions and gotchas when using the Codex GitHub Acti
 
 ## Triggering and Authentication
 
-### Why doesn't tagging @codex from my automated workflow work?
+### Why doesn't tagging /codex from my automated workflow work?
 
 The `github-actions` user cannot trigger subsequent GitHub Actions workflows. This is a GitHub security feature to prevent infinite loops. To make this work, you need to use a Personal Access Token (PAT) instead, which will act as a regular user, or use a separate app token of your own. When posting a comment on an issue or PR from your workflow, use your PAT instead of the `GITHUB_TOKEN` generated in your workflow.
 
@@ -103,7 +103,7 @@ Yes! Codex can access GitHub Actions workflow runs, job logs, and test results o
 
 2. Configure the action with additional permissions:
    ```yaml
-   - uses: coryparrry/claude-code-action@codex/openai-runtime
+   - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
      with:
        additional_permissions: |
          actions: read
@@ -145,8 +145,8 @@ If you need full history, you can configure this in your workflow before calling
 
 The action intelligently detects whether to run in interactive mode or automation mode:
 
-- **With `prompt` input**: Runs in automation mode - executes immediately without waiting for @codex mentions
-- **Without `prompt` input**: Runs in interactive mode - waits for @codex mentions in comments
+- **With `prompt` input**: Runs in automation mode - executes immediately without waiting for /codex mentions
+- **Without `prompt` input**: Runs in interactive mode - waits for /codex mentions in comments
 
 This automatic detection eliminates the need to manually configure modes.
 
@@ -155,7 +155,7 @@ Example:
 ```yaml
 # Automation mode - runs automatically
 prompt: "Review this PR for security vulnerabilities"
-# Interactive mode - waits for @codex mention
+# Interactive mode - waits for /codex mention
 # (no prompt provided)
 ```
 
@@ -225,7 +225,7 @@ Check the GitHub Action log for Codex's run for the full execution trace.
 
 ### Why can't I trigger Codex with `@codex-mention` or `claude!`?
 
-The trigger uses word boundaries, so `@codex` must be a complete word. Variations like `@codex-bot`, `@codex!`, or `claude@mention` won't work unless you customize the `trigger_phrase`.
+The trigger uses word boundaries, so `/codex` must be a complete word. Variations like `@codex-bot`, `/codex!`, or `claude@mention` won't work unless you customize the `trigger_phrase`.
 
 ### How can I use custom executables in specialized environments?
 
@@ -234,7 +234,7 @@ For specialized environments like Nix, NixOS, or custom container setups where y
 **Using a custom Codex executable:**
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -245,7 +245,7 @@ For specialized environments like Nix, NixOS, or custom container setups where y
 **Using a custom Bun executable:**
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}

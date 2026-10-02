@@ -19,7 +19,7 @@ jobs:
           fetch-depth: 1
 
       - name: Check for duplicate issues
-        uses: coryparrry/claude-code-action@codex/openai-runtime
+        uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           prompt: |
             Analyze this new issue and check if it's a duplicate of existing issues in the repository.

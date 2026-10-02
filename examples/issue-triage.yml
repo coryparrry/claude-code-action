@@ -18,7 +18,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run Codex for Issue Triage
-        uses: coryparrry/claude-code-action@codex/openai-runtime
+        uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           # Non-write-user runs keep credentials out of shell environments.
           # Use the authenticated GitHub MCP server instead of shell wrappers.

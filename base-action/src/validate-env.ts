@@ -1,6 +1,5 @@
-/** Validates the API key required by the Codex CLI runtime. */
+import { validateOpenAIAuthentication } from "./openai-auth";
+/** Validate native OpenAI provider authentication before preparing a prompt. */
 export function validateEnvironmentVariables(): void {
-  if (!process.env.OPENAI_API_KEY?.trim()) {
-    throw new Error("OPENAI_API_KEY is required to run Codex");
-  }
+  validateOpenAIAuthentication(process.env);
 }

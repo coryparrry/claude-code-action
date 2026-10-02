@@ -14,7 +14,7 @@ import type { Octokits } from "../../github/api/client";
  * Prepares the agent mode execution context.
  *
  * Agent mode runs whenever an explicit prompt is provided in the workflow configuration.
- * It bypasses the standard @codex mention checking and comment tracking used by tag mode,
+ * It bypasses the standard /codex mention checking and comment tracking used by tag mode,
  * providing direct access to Codex for automation workflows.
  */
 export async function prepareAgentMode({

@@ -311,7 +311,9 @@ export async function resolveCompatibility(
             throw new Error(`Unsupported settings feature: ${name}`);
           result.configOverrides.push(`features.${name}=${enabled}`);
         }
-      } else if (nativeSettings[key]?.(value)) {
+      } else if (nativeSettings[key]) {
+        if (!nativeSettings[key](value))
+          throw new Error(`Invalid native setting: ${key}`);
         if (key === "model") result.model = value as string;
         if (key === "model_reasoning_effort") result.effort = value as string;
         if (key === "developer_instructions")

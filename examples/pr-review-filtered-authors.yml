@@ -22,7 +22,7 @@ jobs:
           fetch-depth: 1
 
       - name: Review PR from Specific Author
-        uses: coryparrry/claude-code-action@codex/openai-runtime
+        uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}

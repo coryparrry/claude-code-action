@@ -35,6 +35,7 @@ import {
   isAutomationContext,
   isWorkflowRunEvent,
 } from "../src/github/context";
+import { checkContainsTrigger } from "../src/github/validation/trigger";
 import {
   GITHUB_ACTIONS_BOT_ID,
   GITHUB_ACTIONS_BOT_LOGIN,
@@ -344,7 +345,7 @@ describe("parseGitHubContext", () => {
       const { inputs } = parseGitHubContext();
 
       expect(inputs.prompt).toBe("");
-      expect(inputs.triggerPhrase).toBe("@codex");
+      expect(inputs.triggerPhrase).toBe("/codex");
       expect(inputs.assigneeTrigger).toBe("");
       expect(inputs.labelTrigger).toBe("");
       expect(inputs.branchPrefix).toBe("codex/");
@@ -363,6 +364,32 @@ describe("parseGitHubContext", () => {
       expect(inputs.includeCommentsByActor).toBe("");
       expect(inputs.excludeCommentsByActor).toBe("");
       expect(inputs.baseBranch).toBeUndefined();
+    });
+
+    test("the default command triggers only /codex and keeps custom phrases configurable", () => {
+      const commentContext = (body: string) => {
+        setEvent("issue_comment", {
+          action: "created",
+          issue: { number: 55 },
+          comment: { id: 1, body },
+          repository: repositoryPayload,
+        } as unknown as IssueCommentEvent);
+        const context = parseGitHubContext();
+        if (!isEntityContext(context))
+          throw new Error("expected entity context");
+        return context;
+      };
+
+      const defaultContext = commentContext("/codex please review");
+      expect(defaultContext.inputs.triggerPhrase).toBe("/codex");
+      expect(checkContainsTrigger(defaultContext)).toBe(true);
+      expect(checkContainsTrigger(commentContext("@codex"))).toBe(false);
+      expect(checkContainsTrigger(commentContext("@codex review"))).toBe(false);
+
+      process.env.TRIGGER_PHRASE = "@codex";
+      const customContext = commentContext("@codex review");
+      expect(customContext.inputs.triggerPhrase).toBe("@codex");
+      expect(checkContainsTrigger(customContext)).toBe(true);
     });
 
     test("inputs reflect the env vars set by action.yml", () => {

@@ -243,6 +243,43 @@ describe("additional real SDK tools", () => {
       await invoke("Task", { subagent_type: "unknown", prompt: "code" }),
     ).toContain("Unknown");
   });
+  test("Task passes permission, memory, isolation, and resume metadata without weakening parent denies", async () => {
+    let request: SubagentRequest | undefined;
+    const { cwd, configuration, invoke } = await setup({
+      disallowedTools: ["Write"],
+      runSubagent: async (value) => {
+        request = value;
+        return "resumed";
+      },
+    });
+    const agents = join(cwd, "agents");
+    await mkdir(agents);
+    await writeFile(
+      join(agents, "remember.md"),
+      "---\npermissionMode: acceptEdits\nmemory: local\nisolation: worktree\n---\nRemember useful details",
+    );
+    configuration.agentDirectories.push({ directory: agents });
+    const resumeId = "da6c7f40-7d32-4cc2-87c0-f3a45409dd14";
+    expect(
+      await invoke("Task", {
+        subagent_type: "remember",
+        prompt: "continue",
+        resume_task_id: resumeId,
+      }),
+    ).toBe("resumed");
+    expect(request?.resumeTaskId).toBe(resumeId);
+    expect(request?.permissionOptions.permissionMode).toBe("acceptEdits");
+    expect(request?.permissionOptions.disallowedTools).toContain("Write");
+    expect(request?.memoryScope).toBe("local");
+    expect(request?.isolation).toBe("worktree");
+    expect(
+      await invoke("Task", {
+        subagent_type: "remember",
+        prompt: "bad id",
+        resume_task_id: "../bad",
+      }),
+    ).toContain("Invalid subagent resume ID");
+  });
   test("normal skills apply metadata callbacks and forked skills run the selected read-only agent", async () => {
     let loaded:
       | import("../src/agent-additional-tools").LoadedAgentSkill

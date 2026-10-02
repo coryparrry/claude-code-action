@@ -235,6 +235,20 @@ export class AgentPermissions {
       const commandWords = shellWords(target)!;
       const prefixWords = shellWords(prefix);
       if (!prefixWords?.length) return false;
+      if (!rule.scope.endsWith(":*") && prefix.includes("*")) {
+        // Shell-rule wildcards span arguments and slashes, unlike file globs.
+        const pattern = prefixWords
+          .join(" ")
+          .split("*")
+          .map((part) => part.replace(/[|\\{}()[\]^$+?.]/g, "\\$&"))
+          .join(".*");
+        const command = commandWords.join(" ");
+        return (
+          new RegExp(`^${pattern}$`).test(command) ||
+          (prefixWords.at(-1) === "*" &&
+            command === prefixWords.slice(0, -1).join(" "))
+        );
+      }
       return (
         prefixWords.every((word, index) => commandWords[index] === word) &&
         (rule.scope.endsWith(":*") ||

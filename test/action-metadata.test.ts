@@ -12,13 +12,45 @@ describe("action metadata", () => {
       /^  conclusion:\n    description: .+\n    value: \$\{\{ steps\.run\.outputs\.conclusion \}\}$/m,
     );
   });
+
+  test("declares OpenAI provider alternatives with environment fallbacks", () => {
+    const parseYaml = (
+      Bun as unknown as {
+        YAML: {
+          parse: (source: string) => {
+            inputs: Record<
+              string,
+              { required?: boolean; description?: string }
+            >;
+            runs: { steps: { env?: Record<string, string> }[] };
+          };
+        };
+      }
+    ).YAML.parse;
+    for (const path of ["../action.yml", "../base-action/action.yml"]) {
+      const metadata = parseYaml(
+        readFileSync(new URL(path, import.meta.url), "utf8"),
+      );
+      expect(metadata.inputs.openai_api_key?.required).toBe(false);
+      expect(metadata.inputs.openai_provider?.description).toContain("bedrock");
+      expect(metadata.inputs.bedrock_api_key?.required).toBe(false);
+      expect(metadata.inputs.codex_model?.description).toContain("gpt-6-luna");
+      expect(
+        metadata.runs.steps.some((step) =>
+          step.env?.AWS_BEARER_TOKEN_BEDROCK?.includes(
+            "inputs.bedrock_api_key || env.AWS_BEARER_TOKEN_BEDROCK",
+          ),
+        ),
+      ).toBe(true);
+    }
+  });
 });
 
 const parseYaml = (
   Bun as unknown as {
     YAML: {
       parse: (source: string) => {
-        inputs: Record<string, unknown>;
+        inputs: Record<string, { required?: boolean; description?: string }>;
         outputs: Record<string, unknown>;
         runs: {
           steps: {
@@ -34,11 +66,15 @@ const parseYaml = (
 
 describe("Codex-only runtime contract", () => {
   for (const path of ["../action.yml", "../base-action/action.yml"]) {
-    test(`${path} exposes only Codex model authentication`, () => {
+    test(`${path} exposes Codex with native OpenAI providers`, () => {
       const metadata = parseYaml(
         readFileSync(new URL(path, import.meta.url), "utf8"),
       );
       expect(metadata.inputs.openai_api_key).toBeDefined();
+      expect(metadata.inputs.openai_api_key?.required).toBe(false);
+      expect(metadata.inputs.openai_provider).toBeDefined();
+      expect(metadata.inputs.bedrock_api_key).toBeDefined();
+      expect(metadata.inputs.codex_model?.description).toContain("gpt-6-luna");
       for (const legacy of [
         "engine",
         "anthropic_api_key",
@@ -61,7 +97,7 @@ describe("Codex-only runtime contract", () => {
           /claude\.ai|api\.anthropic\.com|run-claude/,
         );
         expect(Object.keys(step.env ?? {}).join("\n")).not.toMatch(
-          /ANTHROPIC|CLAUDE_CODE_OAUTH|BEDROCK|VERTEX|FOUNDRY/,
+          /ANTHROPIC|CLAUDE_CODE_OAUTH|VERTEX|FOUNDRY/,
         );
       }
     });

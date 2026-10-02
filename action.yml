@@ -8,8 +8,40 @@ inputs:
   openai_api_key:
     description: "OpenAI API key; defaults to the OPENAI_API_KEY environment variable"
     required: false
+  openai_provider:
+    description: "OpenAI API provider: openai, bedrock or azure"
+    required: false
+    default: ""
+  openai_identity_provider_id:
+    description: "OpenAI workload identity provider ID (requires id-token: write)"
+    required: false
+    default: ""
+  openai_service_account_id:
+    description: "OpenAI workload identity mapped service account ID"
+    required: false
+    default: ""
+  openai_oidc_audience:
+    description: "Audience configured for the OpenAI workload identity provider"
+    required: false
+    default: ""
+  bedrock_api_key:
+    description: "AWS Bedrock bearer token for OpenAI models; region comes from AWS_REGION"
+    required: false
+    default: ""
+  azure_openai_endpoint:
+    description: "Azure OpenAI endpoint for the selected deployment"
+    required: false
+    default: ""
+  azure_openai_api_key:
+    description: "Azure OpenAI API key (alternative to Azure AD token)"
+    required: false
+    default: ""
+  azure_openai_ad_token:
+    description: "Azure AD token for Azure OpenAI (alternative to API key)"
+    required: false
+    default: ""
   codex_model:
-    description: "OpenAI model used by the Agents SDK; defaults to gpt-5.3-codex"
+    description: "OpenAI model used by the Agents SDK; defaults to gpt-6-luna"
     required: false
     default: ""
   codex_effort:
@@ -23,9 +55,9 @@ inputs:
   trigger_phrase:
     description: "The trigger phrase to look for in comments or issue body"
     required: false
-    default: "@codex"
+    default: "/codex"
   assignee_trigger:
-    description: "The assignee username that triggers the action (e.g. @codex)"
+    description: "The assignee username that triggers the action (e.g. @your-bot)"
     required: false
   label_trigger:
     description: "The label that triggers the action (e.g. codex)"
@@ -56,6 +88,18 @@ inputs:
     default: ""
   prompt:
     description: "Instructions for Codex. Can be a direct prompt or custom template."
+    required: false
+    default: ""
+  github_app_id:
+    description: "GitHub App ID used to mint repository-scoped installation tokens"
+    required: false
+    default: ""
+  github_app_private_key:
+    description: "GitHub App private key, stored as a repository secret"
+    required: false
+    default: ""
+  github_app_installation_id:
+    description: "Optional GitHub App installation ID; resolved from current repository when omitted"
     required: false
     default: ""
   github_token:
@@ -225,6 +269,9 @@ outputs:
   github_token:
     description: "The GitHub token used by the action"
     value: ${{ steps.run.outputs.github_token }}
+  github_app_token_created:
+    description: "Whether this run minted a GitHub App installation token (used for final cleanup)"
+    value: ${{ steps.run.outputs.github_app_token_created }}
   structured_output:
     description: "JSON result produced when an output schema is supplied"
     value: ${{ steps.run.outputs.structured_output }}
@@ -294,8 +341,12 @@ runs:
         BASE_BRANCH: ${{ inputs.base_branch }}
         BRANCH_PREFIX: ${{ inputs.branch_prefix }}
         BRANCH_NAME_TEMPLATE: ${{ inputs.branch_name_template }}
-        GITHUB_TOKEN_PROVIDED: ${{ inputs.github_token != '' }}
-        OVERRIDE_GITHUB_TOKEN: ${{ inputs.github_token || github.token }}
+        GITHUB_TOKEN_PROVIDED: ${{ inputs.github_token != '' || inputs.github_app_id != '' || env.GITHUB_APP_ID != '' }}
+        OVERRIDE_GITHUB_TOKEN: ${{ inputs.github_token }}
+        GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_APP_ID: ${{ inputs.github_app_id || env.GITHUB_APP_ID }}
+        GITHUB_APP_PRIVATE_KEY: ${{ inputs.github_app_private_key || env.GITHUB_APP_PRIVATE_KEY }}
+        GITHUB_APP_INSTALLATION_ID: ${{ inputs.github_app_installation_id || env.GITHUB_APP_INSTALLATION_ID }}
         ALLOWED_NON_WRITE_USERS: ${{ inputs.allowed_non_write_users }}
         CLAUDE_ARGS: ${{ inputs.claude_args }}
         CODEX_ARGS: ${{ inputs.codex_args }}
@@ -331,6 +382,14 @@ runs:
         RESUME_SESSION: ${{ inputs.resume_session }}
         APPEND_SYSTEM_PROMPT: ${{ inputs.append_system_prompt }}
         OPENAI_API_KEY: ${{ inputs.openai_api_key || env.OPENAI_API_KEY }}
+        OPENAI_PROVIDER: ${{ inputs.openai_provider || env.OPENAI_PROVIDER }}
+        OPENAI_IDENTITY_PROVIDER_ID: ${{ inputs.openai_identity_provider_id || env.OPENAI_IDENTITY_PROVIDER_ID }}
+        OPENAI_SERVICE_ACCOUNT_ID: ${{ inputs.openai_service_account_id || env.OPENAI_SERVICE_ACCOUNT_ID }}
+        OPENAI_OIDC_AUDIENCE: ${{ inputs.openai_oidc_audience || env.OPENAI_OIDC_AUDIENCE }}
+        AWS_BEARER_TOKEN_BEDROCK: ${{ inputs.bedrock_api_key || env.AWS_BEARER_TOKEN_BEDROCK }}
+        AZURE_OPENAI_ENDPOINT: ${{ inputs.azure_openai_endpoint || env.AZURE_OPENAI_ENDPOINT }}
+        AZURE_OPENAI_API_KEY: ${{ inputs.azure_openai_api_key || env.AZURE_OPENAI_API_KEY }}
+        AZURE_OPENAI_AD_TOKEN: ${{ inputs.azure_openai_ad_token || env.AZURE_OPENAI_AD_TOKEN }}
         CODEX_MODEL: ${{ inputs.codex_model }}
         CODEX_EFFORT: ${{ inputs.codex_effort }}
         CODEX_SANDBOX: ${{ inputs.codex_sandbox }}
@@ -354,6 +413,14 @@ runs:
       shell: bash
       env:
         OPENAI_API_KEY: ${{ inputs.openai_api_key || env.OPENAI_API_KEY }}
+        OPENAI_PROVIDER: ${{ inputs.openai_provider || env.OPENAI_PROVIDER }}
+        OPENAI_IDENTITY_PROVIDER_ID: ${{ inputs.openai_identity_provider_id || env.OPENAI_IDENTITY_PROVIDER_ID }}
+        OPENAI_SERVICE_ACCOUNT_ID: ${{ inputs.openai_service_account_id || env.OPENAI_SERVICE_ACCOUNT_ID }}
+        OPENAI_OIDC_AUDIENCE: ${{ inputs.openai_oidc_audience || env.OPENAI_OIDC_AUDIENCE }}
+        AWS_BEARER_TOKEN_BEDROCK: ${{ inputs.bedrock_api_key || env.AWS_BEARER_TOKEN_BEDROCK }}
+        AZURE_OPENAI_ENDPOINT: ${{ inputs.azure_openai_endpoint || env.AZURE_OPENAI_ENDPOINT }}
+        AZURE_OPENAI_API_KEY: ${{ inputs.azure_openai_api_key || env.AZURE_OPENAI_API_KEY }}
+        AZURE_OPENAI_AD_TOKEN: ${{ inputs.azure_openai_ad_token || env.AZURE_OPENAI_AD_TOKEN }}
         INPUT_CODEX_MODEL: ${{ inputs.codex_model }}
         INPUT_CODEX_EFFORT: ${{ inputs.codex_effort }}
         CLASSIFY_INLINE_COMMENTS: ${{ inputs.classify_inline_comments }}
@@ -368,3 +435,16 @@ runs:
         "$BUN_BIN" --no-env-file \
           --config="${GITHUB_ACTION_PATH}/bunfig.toml" \
           run ${GITHUB_ACTION_PATH}/src/entrypoints/post-buffered-inline-comments.ts
+
+    - name: Revoke GitHub App installation token
+      if: always() && steps.run.outputs.github_app_token_created == 'true'
+      shell: bash
+      env:
+        GITHUB_APP_TOKEN_CREATED: ${{ steps.run.outputs.github_app_token_created }}
+        MINTED_GITHUB_APP_TOKEN: ${{ steps.run.outputs.github_token }}
+      run: |
+        BUN_BIN="${GITHUB_ACTION_PATH}/bin/bun"
+        [ -x "$BUN_BIN" ] || BUN_BIN="bun"
+        "$BUN_BIN" --no-env-file \
+          --config="${GITHUB_ACTION_PATH}/bunfig.toml" \
+          run ${GITHUB_ACTION_PATH}/src/entrypoints/revoke-app-token.ts

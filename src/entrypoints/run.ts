@@ -9,7 +9,7 @@
 import * as core from "@actions/core";
 import { appendFile, rm } from "fs/promises";
 import { existsSync, readFileSync } from "fs";
-import { setupGitHubToken } from "../github/token";
+import { setupGitHubToken, hasMintedGitHubAppToken } from "../github/token";
 import { checkWritePermissions } from "../github/validation/permissions";
 import {
   assertNoForkPullRequests,
@@ -294,6 +294,10 @@ async function run() {
     // Set remaining action-level outputs
     core.setOutput("branch_name", claudeBranch);
     core.setOutput("github_token", githubToken);
+    core.setOutput(
+      "github_app_token_created",
+      String(hasMintedGitHubAppToken()),
+    );
   }
 }
 

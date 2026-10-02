@@ -49,7 +49,9 @@ export type AgentToolOptions = AgentPermissionOptions & {
   permissionRequest?: (
     event: AgentToolEvent,
   ) => Promise<void | AgentToolHookResult>;
-  afterTool?: (event: AgentToolEvent) => Promise<void>;
+  afterTool?: (
+    event: AgentToolEvent,
+  ) => Promise<void | { updatedMCPToolOutput?: unknown }>;
 };
 
 type ShellJob = {

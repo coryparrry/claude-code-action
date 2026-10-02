@@ -1,6 +1,6 @@
 # Capabilities and Limitations
 
-> This fork runs Codex with `OPENAI_API_KEY`. GitHub triggers, tracking comments, branch handling, signing, and MCP integrations retain the upstream workflow shape. `claude_args` is a compatibility alias; use the preferred `codex_args` name for the same supported argument subset. Legacy `--allowedTools` / `--disallowedTools` support MCP names and simple Bash rules, not the full Claude permission language. Use a supported OpenAI model; there is no native `--max-turns`, Anthropic OAuth, WIF, Bedrock, or Vertex backend. Fork pull requests are rejected. See [configuration](./configuration.md) and [the action inputs](../action.yml).
+> This fork runs OpenAI models through the OpenAI Agents SDK. It preserves the upstream GitHub workflow and adapts runtime controls. See the [feature comparison](./feature-parity.md) for verified coverage and remaining differences.
 
 ## What Codex Can Do
 
@@ -26,9 +26,9 @@
 
 ## How It Works
 
-1. **Trigger Detection**: Listens for comments containing the trigger phrase (default: `@codex`) or issue assignment to a specific user
+1. **Trigger Detection**: The installer enables automatic reviews for trusted users' same-repository, non-draft PRs when opened, updated, reopened or marked ready. It also listens for `/codex` in issue titles/bodies, comments and reviews. Other workflows can configure labels, assignments and custom event prompts.
 2. **Context Gathering**: Analyzes the PR/issue, comments, code changes
-3. **Smart Responses**: Either answers questions or implements changes
+3. **Smart Responses**: Automatic reviews post feedback with read-only code access. Requested tasks answer questions or implement changes.
 4. **Branch Management**: Creates a branch for issue requests and closed PRs; open PR requests use the existing branch
 5. **Communication**: Posts updates at every step to keep you informed
 

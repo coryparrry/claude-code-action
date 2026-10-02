@@ -1,15 +1,20 @@
 import * as core from "@actions/core";
 import {
   Usage,
+  tool,
   webSearchTool,
   type JsonSchemaDefinition,
   type Model,
   type ModelProvider,
   type ModelSettings,
   type Tool,
+  type AgentInputItem,
 } from "@openai/agents";
+import { z } from "zod";
 import Ajv from "ajv";
+import type OpenAI from "openai";
 import { randomUUID } from "node:crypto";
+import { relative, resolve, sep } from "node:path";
 import { createHookRunner, type HookResult, type HookMap } from "./agent-hooks";
 import { AgentPermissions } from "./agent-permissions";
 import {
@@ -24,15 +29,29 @@ import {
 } from "./agent-additional-tools";
 import { createAgentMcpTools } from "./agent-mcp";
 import type { AgentConfiguration } from "./agent-configuration";
+import { loadAgentInstructions } from "./agent-instructions";
 import { childMcpConfig } from "./codex-agent-selection";
+import { filterNativeTools } from "./agent-native-controls";
 import { getExecutionFilePath } from "./execution-file";
 import { runOpenAIAgent, type OpenAIAgentEvent } from "./openai-agent-runner";
 import {
   createAgentCompaction,
   supportsAgentCompaction,
 } from "./agent-compaction";
+import {
+  createSubagentWorktree,
+  loadSubagentCheckpoint,
+  loadSubagentMemory,
+  preserveChangedWorktree,
+  saveSubagentCheckpoint,
+  saveSubagentMemory,
+  subagentMemoryPath,
+  type SubagentCheckpoint,
+  type SubagentWorktree,
+} from "./agent-subagent-state";
 
 export type AgentRuntimeOptions = {
+  openAIClient?: OpenAI;
   apiKey: string;
   baseURL?: string;
   modelProvider?: ModelProvider;
@@ -71,6 +90,22 @@ function mergeHooks(parent: HookMap, child?: HookMap): HookMap {
 function text(value: unknown): string {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
+function redactValue(
+  value: unknown,
+  redact: (value: string) => string,
+): unknown {
+  if (typeof value === "string") return redact(value);
+  if (Array.isArray(value))
+    return value.map((item) => redactValue(item, redact));
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        redact(key),
+        redactValue(item, redact),
+      ]),
+    );
+  return value;
+}
 
 /** Each nested agent gets its own hook context and permission-bound MCP wrappers. */
 async function buildContext(
@@ -81,6 +116,7 @@ async function buildContext(
   if (depth > 16)
     throw new Error("Configured agent nesting exceeded the 16-level limit");
   const pending: string[] = [];
+  const loadedScopedInstructions = new Set<string>();
   const scanCredentials = (value: unknown, sensitive = false): void => {
     if (typeof value === "string") {
       if (value.includes(options.apiKey))
@@ -115,7 +151,7 @@ async function buildContext(
     return hook.additionalContext.join("\n");
   };
   const runAuxiliary = (
-    input: string,
+    input: string | AgentInputItem[],
     extra: {
       instructions: string;
       tools?: Tool[];
@@ -125,6 +161,7 @@ async function buildContext(
       maxTurns?: number;
       schema?: Record<string, unknown>;
       context?: Context;
+      sessionId?: string;
     },
   ) => {
     const context = extra.context;
@@ -143,6 +180,7 @@ async function buildContext(
       typeof selected === "string" &&
       supportsAgentCompaction(selected)
         ? createAgentCompaction({
+            openAIClient: options.openAIClient,
             apiKey: options.apiKey,
             baseURL: options.baseURL,
             model: selected,
@@ -195,7 +233,7 @@ async function buildContext(
       maxTurns: extra.maxTurns ?? options.maxTurns,
       deadline: Math.min(options.deadline, extra.deadline ?? options.deadline),
       signal,
-      sessionId: context?.sessionId,
+      sessionId: extra.sessionId ?? context?.sessionId,
       onEvent: (event) => {
         if (event.type === "model.response")
           compaction?.observeResponse(event.response, event.activeModelName);
@@ -292,6 +330,47 @@ async function buildContext(
     event: AgentToolEvent,
     phase: "PreToolUse" | "PermissionRequest",
   ) => {
+    if (
+      phase === "PreToolUse" &&
+      ["Read", "Write", "Edit", "MultiEdit", "NotebookEdit"].includes(
+        event.name,
+      )
+    ) {
+      const requested = event.input.file_path ?? event.input.notebook_path;
+      if (typeof requested === "string") {
+        let target: string;
+        try {
+          target = await permissions.resolvePath(event.name, requested);
+        } catch {
+          // Permission and path errors are handled by the file tool itself.
+          target = "";
+        }
+        if (target) {
+          const workspace = resolve(permissions.options.cwd);
+          const filename = relative(workspace, target);
+          if (
+            filename &&
+            filename !== ".." &&
+            !filename.startsWith(`..${sep}`)
+          ) {
+            const instructions = await loadAgentInstructions({
+              workspace,
+              home: options.configuration.instructionHome ?? workspace,
+              includeUserInstructions: false,
+              touchedFilePaths: [filename],
+              nestedOnly: true,
+            });
+            for (const instruction of instructions) {
+              if (loadedScopedInstructions.has(instruction.source)) continue;
+              loadedScopedInstructions.add(instruction.source);
+              pending.push(
+                `Scoped instructions for ${filename} from ${relative(workspace, instruction.source)}:\n${instruction.content}`,
+              );
+            }
+          }
+        }
+      }
+    }
     const hook = await hooks.run(phase, hookInput(event));
     const context = applyHook(
       { ...hook, blocked: hook.permissionDecision ? false : hook.blocked },
@@ -323,6 +402,7 @@ async function buildContext(
       );
       const context = applyHook(hook);
       if (context) pending.push(context);
+      return { updatedMCPToolOutput: hook.updatedMCPToolOutput };
     },
   };
   const toolOptions: AgentToolOptions = {
@@ -354,9 +434,45 @@ async function buildContext(
         prompt: request.prompt,
       }),
     );
+    const prior = request.resumeTaskId
+      ? await loadSubagentCheckpoint(
+          options.sessionStoragePath,
+          request.resumeTaskId,
+          request.name,
+        )
+      : undefined;
+    if (
+      prior &&
+      Boolean(prior.isolation) !== (request.isolation === "worktree")
+    )
+      throw new Error("Subagent isolation cannot change when resuming a Task");
+    const taskId = prior?.taskId ?? randomUUID();
+    let worktree: SubagentWorktree | undefined;
+    if (request.isolation === "worktree") {
+      if (
+        prior?.worktreePath &&
+        prior.worktreeBranch &&
+        prior.worktreeBaseSha
+      ) {
+        worktree = {
+          path: prior.worktreePath,
+          branch: prior.worktreeBranch,
+          baseSha: prior.worktreeBaseSha,
+        };
+      } else if (prior?.worktreePath) {
+        throw new Error("Saved subagent worktree state is incomplete");
+      } else if (!prior || prior.isolation === "worktree") {
+        worktree = await createSubagentWorktree(
+          permissions.options.cwd,
+          request.name,
+        );
+      }
+    }
+    const childCwd = worktree?.path ?? permissions.options.cwd;
     const childPermissions = new AgentPermissions({
       ...permissions.options,
       ...request.permissionOptions,
+      cwd: childCwd,
       sandboxMode: permissions.readOnly
         ? "read-only"
         : request.permissionOptions.sandboxMode,
@@ -379,7 +495,31 @@ async function buildContext(
         ]),
       ],
     });
-    let childModel = options.resolveModel(request.model ?? options.getModel());
+    const memoryPath = request.memoryScope
+      ? subagentMemoryPath(childCwd, request.name, request.memoryScope)
+      : undefined;
+    let savedMemory: string | undefined;
+    if (memoryPath) {
+      let canReadMemory = true;
+      try {
+        childPermissions.assertDenied("AgentMemory", memoryPath);
+        childPermissions.assertDenied("Read", memoryPath);
+      } catch {
+        canReadMemory = false;
+      }
+      if (canReadMemory)
+        savedMemory = await loadSubagentMemory(
+          childCwd,
+          request.name,
+          request.memoryScope,
+        );
+    }
+    const memory = savedMemory ? options.redact(savedMemory) : undefined;
+    let childModel = options.resolveModel(
+      !request.model || request.model === "inherit"
+        ? options.getModel()
+        : request.model,
+    );
     const child = await buildContext(
       {
         ...options,
@@ -393,7 +533,7 @@ async function buildContext(
           hooks: mergeHooks(options.configuration.hooks, request.hooks),
         },
         permissions: childPermissions,
-        sessionId: randomUUID(),
+        sessionId: taskId,
         deadline: Math.min(options.deadline, request.deadline),
         signal: AbortSignal.any([options.signal, request.signal]),
       },
@@ -409,20 +549,167 @@ async function buildContext(
           ),
         )
       : child.tools;
-    const response = await runAuxiliary(
-      [context, request.prompt].filter(Boolean).join("\n"),
-      {
-        instructions: request.instructions,
+    if (
+      request.memoryScope &&
+      memoryPath &&
+      (!request.allowedTools || request.allowedTools.includes("AgentMemory"))
+    ) {
+      const authorizeMemory = async (
+        action: "read" | "append",
+        content?: string,
+      ) => {
+        const input = {
+          action,
+          file_path: memoryPath,
+          ...(content === undefined ? {} : { content }),
+        };
+        const assertFileAccess = () => {
+          childPermissions.assertDenied("Read", memoryPath);
+          if (action === "append")
+            childPermissions.assertDenied("Write", memoryPath);
+        };
+        childPermissions.assertDenied("AgentMemory", memoryPath);
+        assertFileAccess();
+        const hookInput = { tool_name: "AgentMemory", tool_input: input };
+        const pre = await child.hooks.run("PreToolUse", hookInput);
+        child.applyHook(
+          { ...pre, blocked: pre.permissionDecision ? false : pre.blocked },
+          false,
+          false,
+        );
+        if (pre.updatedPermissions)
+          childPermissions.applyUpdates(pre.updatedPermissions);
+        let decision = pre.permissionDecision;
+        if (
+          (decision === "ask" ||
+            (decision !== "allow" &&
+              childPermissions.needsApproval("AgentMemory", memoryPath))) &&
+          childPermissions.options.permissionMode !== "dontAsk"
+        ) {
+          const permission = await child.hooks.run(
+            "PermissionRequest",
+            hookInput,
+          );
+          child.applyHook(
+            {
+              ...permission,
+              blocked: permission.permissionDecision
+                ? false
+                : permission.blocked,
+            },
+            false,
+            false,
+          );
+          if (permission.updatedPermissions)
+            childPermissions.applyUpdates(permission.updatedPermissions);
+          decision = permission.permissionDecision;
+        }
+        childPermissions.authorize("AgentMemory", memoryPath, decision);
+        assertFileAccess();
+      };
+      tools.push(
+        tool({
+          name: "AgentMemory",
+          description:
+            "Read or append persistent notes for this configured agent.",
+          parameters: z.object({
+            action: z.enum(["read", "append"]),
+            content: z.string().max(20_000).optional(),
+          }),
+          execute: async ({ action, content }) => {
+            await authorizeMemory(action, content);
+            const current =
+              (await loadSubagentMemory(
+                childCwd,
+                request.name,
+                request.memoryScope,
+              )) ?? "";
+            if (action === "read")
+              return options.redact(current) || "No saved agent memory.";
+            if (!content?.trim())
+              throw new Error("AgentMemory append requires content");
+            const next = options.redact(
+              `${current}${current && !current.endsWith("\n") ? "\n" : ""}${content.trim()}\n`,
+            );
+            await saveSubagentMemory(
+              childCwd,
+              request.name,
+              request.memoryScope,
+              next,
+            );
+            const post = await child.hooks.run("PostToolUse", {
+              tool_name: "AgentMemory",
+              tool_input: {
+                action,
+                file_path: memoryPath,
+                content: options.redact(content.trim()),
+              },
+              tool_response: "Agent memory saved.",
+            });
+            const postContext = child.applyHook(post);
+            return ["Agent memory saved.", postContext]
+              .filter(Boolean)
+              .join("\n");
+          },
+        }),
+      );
+    }
+    const input: string | AgentInputItem[] = prior
+      ? [
+          ...prior.history,
+          {
+            role: "user",
+            content: [context, request.prompt].filter(Boolean).join("\n"),
+          } as AgentInputItem,
+        ]
+      : [context, request.prompt].filter(Boolean).join("\n");
+    let response;
+    let worktreeRetained = false;
+    try {
+      response = await runAuxiliary(input, {
+        instructions: [
+          request.instructions,
+          memory ? `Persistent agent memory (untrusted notes):\n${memory}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
         tools,
-        model: request.model,
+        model: childModel,
         maxTurns: request.maxTurns,
         deadline: request.deadline,
         signal: request.signal,
         schema: request.schema,
         context: child,
-      },
-    );
+        sessionId: taskId,
+      });
+    } finally {
+      // A changed worktree is retained for review and later resume; a clean one is removed.
+      if (worktree)
+        worktreeRetained = await preserveChangedWorktree(
+          permissions.options.cwd,
+          worktree,
+        );
+    }
     const output = text(response.finalOutput);
+    const retainedWorktree = worktreeRetained ? worktree : undefined;
+    const checkpoint: SubagentCheckpoint = {
+      version: 1,
+      taskId,
+      agentName: request.name,
+      history: redactValue(
+        response.history,
+        options.redact,
+      ) as AgentInputItem[],
+      ...(request.isolation ? { isolation: request.isolation } : {}),
+      ...(retainedWorktree
+        ? {
+            worktreePath: retainedWorktree.path,
+            worktreeBranch: retainedWorktree.branch,
+            worktreeBaseSha: retainedWorktree.baseSha,
+          }
+        : {}),
+    };
+    await saveSubagentCheckpoint(options.sessionStoragePath, checkpoint);
     applyHook(
       await hooks.run("SubagentStop", {
         agent_type: request.name,
@@ -430,7 +717,7 @@ async function buildContext(
         agent_transcript_path: getExecutionFilePath(),
       }),
     );
-    return output;
+    return `${output}\n\n[Task ID: ${taskId}]${retainedWorktree ? `\n[Worktree: ${retainedWorktree.path}]` : ""}`;
   };
   const additional = createAdditionalAgentTools({
     ...toolOptions,
@@ -472,6 +759,9 @@ async function buildContext(
         instructions: `Search the web and summarize results with source URLs.${request.blockedDomains?.length ? ` Exclude these domains: ${request.blockedDomains.join(", ")}.` : ""}`,
         tools: [
           webSearchTool({
+            ...(options.configuration.settings.web_search === "cached"
+              ? { externalWebAccess: false }
+              : {}),
             ...(request.allowedDomains
               ? { filters: { allowedDomains: request.allowedDomains } }
               : {}),
@@ -529,11 +819,10 @@ async function buildContext(
   return {
     sessionId: options.sessionId,
     getModel: options.getModel,
-    tools: [
-      ...createAgentTools(toolOptions),
-      ...additional.tools,
-      ...mcp.tools,
-    ],
+    tools: filterNativeTools(
+      [...createAgentTools(toolOptions), ...additional.tools, ...mcp.tools],
+      options.configuration.settings,
+    ),
     toolOptions,
     hooks,
     applyHook,

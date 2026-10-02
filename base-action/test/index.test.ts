@@ -20,6 +20,23 @@ describe("base action entrypoint (offline)", () => {
     for (const key of Object.keys(process.env)) {
       if (key.startsWith("INPUT_")) delete process.env[key];
     }
+    for (const key of [
+      "OPENAI_API_KEY",
+      "OPENAI_PROVIDER",
+      "OPENAI_BASE_URL",
+      "OPENAI_IDENTITY_PROVIDER_ID",
+      "OPENAI_SERVICE_ACCOUNT_ID",
+      "OPENAI_OIDC_AUDIENCE",
+      "AWS_BEARER_TOKEN_BEDROCK",
+      "AWS_REGION",
+      "AWS_DEFAULT_REGION",
+      "AZURE_OPENAI_ENDPOINT",
+      "AZURE_OPENAI_API_KEY",
+      "AZURE_OPENAI_AD_TOKEN",
+      "OPENAI_API_VERSION",
+      "AZURE_OPENAI_DEPLOYMENT",
+    ])
+      delete process.env[key];
     process.env.RUNNER_TEMP = directory;
     process.env.OPENAI_API_KEY = "offline-fake-key";
     process.env.INPUT_PROMPT_FILE = join(directory, "prompt.txt");
@@ -65,7 +82,7 @@ describe("base action entrypoint (offline)", () => {
                 object: "response",
                 created_at: 1,
                 status: "completed",
-                model: "gpt-5.3-codex",
+                model: "gpt-6-luna",
                 output: [
                   {
                     id: "offline-entrypoint-message",
@@ -99,7 +116,7 @@ describe("base action entrypoint (offline)", () => {
       process.env.INPUT_SYSTEM_PROMPT = "Trusted replacement instructions";
       process.env.INPUT_APPEND_SYSTEM_PROMPT = "Follow the repository rules";
       const expectedModel =
-        mode === "compatibility" ? "compatibility-model" : "gpt-5.3-codex";
+        mode === "compatibility" ? "compatibility-model" : "gpt-6-luna";
       if (mode === "compatibility") {
         process.env.INPUT_CODEX_MODEL = "";
         process.env.INPUT_CODEX_EFFORT = "";
@@ -162,11 +179,74 @@ describe("base action entrypoint (offline)", () => {
     expect(output).toHaveBeenCalledWith("conclusion", "failure");
   });
 
-  test("fails before launch when the OpenAI key is missing", async () => {
+  test("fails before launch when the selected provider has no credentials", async () => {
     delete process.env.OPENAI_API_KEY;
     await run();
-    expect(failed.mock.calls[0]?.[0]).toContain("OPENAI_API_KEY is required");
+    expect(failed.mock.calls[0]?.[0]).toContain(
+      "OPENAI_API_KEY or complete OpenAI workload identity credentials are required",
+    );
     expect(output).toHaveBeenCalledWith("conclusion", "failure");
+  });
+
+  test("uses the Bedrock token and region supplied through the action environment fallback", async () => {
+    delete process.env.OPENAI_API_KEY;
+    process.env.OPENAI_PROVIDER = "bedrock";
+    process.env.AWS_BEARER_TOKEN_BEDROCK = "offline-bedrock-token";
+    process.env.AWS_REGION = "us-east-1";
+    process.env.INPUT_SETTING_SOURCES = "project";
+    let requestUrl = "";
+    let authorization: string | null | undefined;
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (...args: Parameters<typeof globalThis.fetch>) => {
+          const [input, init] = args;
+          const request =
+            input instanceof Request
+              ? new Request(input, init)
+              : new Request(String(input), init);
+          requestUrl = request.url;
+          authorization = request.headers.get("authorization");
+          return new Response(
+            JSON.stringify({
+              id: "offline-bedrock-response",
+              object: "response",
+              created_at: 1,
+              status: "completed",
+              model: "gpt-6-luna",
+              output: [
+                {
+                  id: "offline-bedrock-message",
+                  type: "message",
+                  role: "assistant",
+                  status: "completed",
+                  content: [{ type: "output_text", text: "Bedrock reviewed" }],
+                },
+              ],
+              usage: {
+                input_tokens: 4,
+                output_tokens: 3,
+                total_tokens: 7,
+                input_tokens_details: { cached_tokens: 0 },
+                output_tokens_details: { reasoning_tokens: 0 },
+              },
+            }),
+            { headers: { "content-type": "application/json" } },
+          );
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    try {
+      await run();
+      expect(failed.mock.calls).toEqual([]);
+      expect(requestUrl).toContain("bedrock-mantle.us-east-1.api.aws");
+      expect(authorization).toBe("Bearer offline-bedrock-token");
+      expect(JSON.stringify(info.mock.calls)).not.toContain(
+        "offline-bedrock-token",
+      );
+    } finally {
+      fetch.mockRestore();
+    }
   });
 
   test.each(["0", "-1", "1.5", "abc", "9007199254740992"])(

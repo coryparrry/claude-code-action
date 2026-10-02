@@ -26,7 +26,7 @@ function modelResponse(text: string): Response {
     object: "response",
     created_at: 1,
     status: "completed",
-    model: "gpt-5.3-codex",
+    model: "gpt-6-luna",
     output: [
       {
         id: "message-offline",
@@ -177,7 +177,7 @@ describe("buffered inline comment classifier", () => {
       const request = requests[0]!;
       expect(request.path).toBe("/v1/responses");
       expect(request.authorization).toBe("Bearer offline-api-key");
-      expect(request.body.model).toBe("gpt-5.3-codex");
+      expect(request.body.model).toBe("gpt-6-luna");
       expect(request.body.store).toBe(false);
       expect(request.body.tools ?? []).toEqual([]);
       expect(request.body.text.format.type).toBe("json_schema");
@@ -202,6 +202,44 @@ describe("buffered inline comment classifier", () => {
     } finally {
       server.stop(true);
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("forwards OPENAI_API_VERSION to the Azure classifier SDK", async () => {
+    const apiVersion = "2026-01-01-preview";
+    const requests: Array<{ path: string; version: string | null }> = [];
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request) {
+        const url = new URL(request.url);
+        requests.push({
+          path: url.pathname,
+          version: url.searchParams.get("api-version"),
+        });
+        return modelResponse(JSON.stringify({ verdicts: [true, false] }));
+      },
+    });
+    try {
+      expect(
+        await selectCommentsToPost(comments, (bodies) =>
+          classifyComments(bodies, {
+            env: {
+              ...process.env,
+              OPENAI_PROVIDER: "azure",
+              AZURE_OPENAI_ENDPOINT: `http://127.0.0.1:${server.port}`,
+              AZURE_OPENAI_API_KEY: "offline-azure-api-key",
+              OPENAI_API_VERSION: apiVersion,
+              OPENAI_AGENTS_DISABLE_TRACING: "1",
+            },
+          }),
+        ),
+      ).toEqual([comments[0]!]);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.path).toContain("/responses");
+      expect(requests[0]!.version).toBe(apiVersion);
+    } finally {
+      server.stop(true);
     }
   });
 
@@ -256,7 +294,7 @@ describe("buffered inline comment classifier", () => {
       logging.mockRestore();
       server.stop(true);
     }
-  });
+  }, 30_000);
 
   it("keeps the original classification flag and contains no Anthropic runtime import or API", async () => {
     const entrypoint = await readFile(

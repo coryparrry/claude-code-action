@@ -22,7 +22,7 @@ import { parseAllowedTools } from "../agent/parse-tools";
 /**
  * Prepares the tag mode execution context.
  *
- * Tag mode responds to @codex mentions, issue assignments, or labels.
+ * Tag mode responds to /codex mentions, issue assignments, or labels.
  * Creates tracking comments showing progress and has full implementation capabilities.
  */
 export async function prepareTagMode({
