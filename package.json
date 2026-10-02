@@ -39,5 +39,8 @@
     "prettier": "3.5.3",
     "typescript": "^5.8.3",
     "@types/shell-quote": "^1.7.5"
+  },
+  "overrides": {
+    "@aws-sdk/xml-builder": "3.972.24"
   }
 }

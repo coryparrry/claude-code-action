@@ -107,3 +107,20 @@ the reviewed source is published.
 - Independent packaging, provider, runtime and GitHub orchestration reviewers
   checked separate scopes. Material findings were fixed and covered by regression
   tests; no paid API or real GitHub write was needed for these checks.
+
+### PR dependency remediation
+
+The initial PR scan identified vulnerable `fast-xml-parser` 5.2.5 through the
+AWS credential dependency chain. Both action manifests now override
+`@aws-sdk/xml-builder` to 3.972.24, the official adapter paired with parser 5.7.3.
+A parser-only override was incompatible with the older adapter. The paired
+update preserves normal AWS credential XML and numeric character references,
+with regression checks for invalid numeric entities and regex entity names.
+
+After the dependency fix, the full offline suite passed **1,330 tests**,
+**4,534 assertions**, and **0 failures** across 92 files. Both TypeScript
+projects and scoped formatting/diff checks passed.
+
+Independent frozen production installs also passed with the patched dependency
+graph: root installed 235 packages and base installed 186; both completed the
+offline SDK smoke run.
