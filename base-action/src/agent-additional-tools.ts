@@ -35,6 +35,9 @@ export type SubagentRequest = {
   schema?: Record<string, unknown>;
   label?: string;
   model?: string;
+  resumeTaskId?: string;
+  memoryScope?: "user" | "project" | "local";
+  isolation?: "worktree";
   maxTurns?: number;
   allowedTools?: string[];
   disallowedTools?: string[];
@@ -643,6 +646,7 @@ export function createAdditionalAgentTools(
         prompt: optionalString,
         description: optionalString,
         model: optionalString,
+        resume_task_id: optionalString,
         max_turns: z.number().int().positive().max(100).nullable().optional(),
         run_in_background: z.boolean().nullable().optional(),
       },
@@ -662,6 +666,32 @@ export function createAdditionalAgentTools(
             `Unknown configured subagent: ${input.subagent_type}`,
           );
         if (!input.prompt?.trim()) throw new Error("Task requires a prompt");
+        if (
+          agent.metadata.permissionMode !== undefined &&
+          ![
+            "default",
+            "acceptEdits",
+            "dontAsk",
+            "bypassPermissions",
+            "plan",
+          ].includes(String(agent.metadata.permissionMode))
+        )
+          throw new Error("Unsupported subagent permissionMode");
+        if (
+          agent.metadata.memory !== undefined &&
+          !["user", "project", "local"].includes(String(agent.metadata.memory))
+        )
+          throw new Error("Unsupported subagent memory scope");
+        if (
+          agent.metadata.isolation !== undefined &&
+          agent.metadata.isolation !== "worktree"
+        )
+          throw new Error("Unsupported subagent isolation mode");
+        if (
+          input.resume_task_id &&
+          !/^[0-9a-f-]{36}$/i.test(input.resume_task_id)
+        )
+          throw new Error("Invalid subagent resume ID");
         if (!options.runSubagent)
           throw new Error("Task subagent runner is unavailable");
         const maxTurns = input.max_turns ?? agent.metadata.maxTurns;
@@ -709,6 +739,15 @@ export function createAdditionalAgentTools(
               (typeof agent.metadata.model === "string"
                 ? agent.metadata.model
                 : undefined),
+            resumeTaskId: input.resume_task_id ?? undefined,
+            memoryScope:
+              agent.metadata.memory === "user" ||
+              agent.metadata.memory === "project" ||
+              agent.metadata.memory === "local"
+                ? agent.metadata.memory
+                : undefined,
+            isolation:
+              agent.metadata.isolation === "worktree" ? "worktree" : undefined,
             maxTurns: maxTurns as number | undefined,
             allowedTools: stringList(agent.metadata.tools, "Agent tools"),
             disallowedTools: stringList(
@@ -717,11 +756,13 @@ export function createAdditionalAgentTools(
             ),
             permissionOptions: {
               ...permissions.options,
+              ...(agent.metadata.permissionMode &&
+              agent.metadata.permissionMode !== "default"
+                ? { permissionMode: String(agent.metadata.permissionMode) }
+                : {}),
               ...(permissions.readOnly ||
-              ["plan", "readonly", "read-only"].includes(
-                String(agent.metadata.permissionMode),
-              )
-                ? { sandboxMode: "read-only", permissionMode: "read-only" }
+              agent.metadata.permissionMode === "plan"
+                ? { sandboxMode: "read-only", permissionMode: "plan" }
                 : {}),
             },
             deadline,

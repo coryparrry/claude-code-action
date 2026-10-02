@@ -2,13 +2,13 @@
 
 > This fork runs Codex with `OPENAI_API_KEY`. GitHub triggers, tracking comments, branch handling, signing, and MCP integrations retain the upstream workflow shape. `claude_args` is a compatibility alias; use the preferred `codex_args` name for the same supported argument subset. Legacy `--allowedTools` / `--disallowedTools` support MCP names and simple Bash rules, not the full Claude permission language. Use a supported OpenAI model; there is no native `--max-turns`, Anthropic OAuth, WIF, Bedrock, or Vertex backend. Fork pull requests are rejected. See [configuration](./configuration.md) and [the action inputs](../action.yml).
 
-These examples show how to configure Codex to act automatically based on GitHub events. When you provide a `prompt` input, the action automatically runs in agent mode without requiring manual @mentions. Without a `prompt`, it runs in interactive mode, responding to @codex mentions.
+These examples show how to configure Codex to act automatically based on GitHub events. When you provide a `prompt` input, the action automatically runs in agent mode without requiring manual @mentions. Without a `prompt`, it runs in interactive mode, responding to /codex mentions.
 
 ## Mode Detection & Tracking Comments
 
 The action automatically detects which mode to use based on your configuration:
 
-- **Interactive Mode** (no `prompt` input): Responds to @codex mentions, creates tracking comments with progress indicators
+- **Interactive Mode** (no `prompt` input): Responds to /codex mentions, creates tracking comments with progress indicators
 - **Automation Mode** (with `prompt` input): Executes immediately, **does not create tracking comments**
 
 > **Note**: In v1, automation mode intentionally does not create tracking comments by default to reduce noise in automated workflows. If you need progress tracking, use the `track_progress: true` input parameter.

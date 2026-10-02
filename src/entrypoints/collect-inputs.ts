@@ -1,3 +1,5 @@
+import { DEFAULT_TRIGGER_PHRASE } from "../github/constants";
+
 export function collectActionInputsPresence(): string {
   const inputDefaults: Record<string, string> = {
     openai_api_key: "",
@@ -6,7 +8,7 @@ export function collectActionInputsPresence(): string {
     codex_sandbox: "workspace-write",
     codex_version: "0.159.2",
     path_to_codex_executable: "",
-    trigger_phrase: "@codex",
+    trigger_phrase: DEFAULT_TRIGGER_PHRASE,
     assignee_trigger: "",
     label_trigger: "codex",
     base_branch: "",

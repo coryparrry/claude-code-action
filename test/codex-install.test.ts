@@ -9,7 +9,9 @@ afterEach(() => {
 describe("Codex preflight", () => {
   test("fails before preparation without an API key", () => {
     delete process.env.OPENAI_API_KEY;
-    expect(validateCodexInputs).toThrow("requires openai_api_key");
+    expect(validateCodexInputs).toThrow(
+      "OPENAI_API_KEY or complete OpenAI workload identity",
+    );
   });
   test("rejects a legacy Claude engine before execution", () => {
     process.env.ACTION_ENGINE = "claude";

@@ -39,7 +39,7 @@ jobs:
           # Optional: install plugins from a supported plugin marketplace manifest
           # plugins: "my-plugin@my-codex-marketplace"
 
-          # Optional: add custom trigger phrase (default: @codex)
+          # Optional: add custom trigger phrase (default: /codex)
           # trigger_phrase: "/codex"
           # Optional: add assignee trigger for issues
           # assignee_trigger: "codex-bot"
@@ -67,9 +67,9 @@ Additional SDK runtime inputs are `codex_model`, `codex_effort`, `codex_sandbox`
 | `use_sticky_comment`        | Use just one comment to deliver PR comments (only applies for pull_request event workflows)                                                                                                                                        | No                | `false`        |
 | `classify_inline_comments`  | Classify queued inline comments with Codex before posting; set false to skip classification                                                                                                                                        | No                | `true`         |
 | `github_token`              | Repository token; defaults to the workflow token. Set explicitly for non-write-user overrides or custom GitHub apps                                                                                                                | No                | Workflow token |
-| `assignee_trigger`          | The assignee username that triggers the action (e.g. @codex). Only used for issue assignment                                                                                                                                       | No                | -              |
+| `assignee_trigger`          | The assignee username that triggers the action (e.g. /codex). Only used for issue assignment                                                                                                                                       | No                | -              |
 | `label_trigger`             | The label name that triggers the action when applied to an issue (e.g. "claude")                                                                                                                                                   | No                | -              |
-| `trigger_phrase`            | The trigger phrase to look for in comments, issue/PR bodies, and issue titles                                                                                                                                                      | No                | `@codex`       |
+| `trigger_phrase`            | The trigger phrase to look for in comments, issue/PR bodies, and issue titles                                                                                                                                                      | No                | `/codex`       |
 | `branch_prefix`             | The prefix to use for Codex branches (defaults to 'codex/', use 'claude-' for dash format)                                                                                                                                         | No                | `codex/`       |
 | `settings`                  | Codex settings as JSON string or path to settings JSON file                                                                                                                                                                        | No                | ""             |
 | `additional_permissions`    | Additional permissions to enable. Currently supports 'actions: read' for viewing workflow results                                                                                                                                  | No                | ""             |
@@ -130,7 +130,7 @@ For a comprehensive guide on migrating from v0.x to v1.0, including step-by-step
 
 ### Quick Migration Examples
 
-#### Interactive Workflows (with @codex mentions)
+#### Interactive Workflows (with /codex mentions)
 
 **Before (v0.x):**
 
@@ -280,9 +280,9 @@ See `examples/test-failure-analysis.yml` for a working example that:
 For complete details on JSON Schema syntax and Agent SDK structured outputs:
 [base-action structured output reference](../base-action/README.md#outputs)
 
-## Ways to Tag @codex
+## Ways to Tag /codex
 
-These examples show how to interact with Codex using comments in PRs and issues. By default, Codex will be triggered anytime you mention `@codex`, but you can customize the exact trigger phrase using the `trigger_phrase` input in the workflow.
+These examples show how to interact with Codex using comments in PRs and issues. By default, Codex will be triggered anytime you mention `/codex`, but you can customize the exact trigger phrase using the `trigger_phrase` input in the workflow.
 
 Codex will see the full PR context, including any comments.
 
@@ -291,7 +291,7 @@ Codex will see the full PR context, including any comments.
 Add a comment to a PR or issue:
 
 ```
-@codex What does this function do and how could we improve it?
+/codex What does this function do and how could we improve it?
 ```
 
 Codex will analyze the code and provide a detailed explanation with suggestions.
@@ -301,7 +301,7 @@ Codex will analyze the code and provide a detailed explanation with suggestions.
 Ask Codex to implement specific changes:
 
 ```
-@codex Can you add error handling to this function?
+/codex Can you add error handling to this function?
 ```
 
 ### Code Review
@@ -309,7 +309,7 @@ Ask Codex to implement specific changes:
 Get a thorough review:
 
 ```
-@codex Please review this PR and suggest improvements
+/codex Please review this PR and suggest improvements
 ```
 
 Codex will analyze the changes and provide feedback.
@@ -319,7 +319,7 @@ Codex will analyze the changes and provide feedback.
 Upload a screenshot of a bug and ask Codex to fix it:
 
 ```
-@codex Here's a screenshot of a bug I'm seeing [upload screenshot]. Can you fix it?
+/codex Here's a screenshot of a bug I'm seeing [upload screenshot]. Can you fix it?
 ```
 
 Codex can see and analyze images, making it easy to fix visual bugs or UI issues.

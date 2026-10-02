@@ -17,7 +17,7 @@ describe("Codex authentication", () => {
       if (value === undefined) delete process.env.OPENAI_API_KEY;
       else process.env.OPENAI_API_KEY = value;
       expect(validateEnvironmentVariables).toThrow(
-        "OPENAI_API_KEY is required",
+        "OPENAI_API_KEY or complete OpenAI workload identity",
       );
     },
   );
@@ -31,6 +31,8 @@ describe("Codex authentication", () => {
     process.env.ANTHROPIC_API_KEY = "offline-fake-key";
     process.env.CLAUDE_CODE_OAUTH_TOKEN = "offline-fake-token";
     process.env.CLAUDE_CODE_USE_BEDROCK = "1";
-    expect(validateEnvironmentVariables).toThrow("OPENAI_API_KEY is required");
+    expect(validateEnvironmentVariables).toThrow(
+      "OPENAI_API_KEY or complete OpenAI workload identity",
+    );
   });
 });

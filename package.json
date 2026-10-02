@@ -2,7 +2,11 @@
   "name": "@codex-action/github-action",
   "version": "1.0.0",
   "private": true,
+  "bin": {
+    "codex-action": "scripts/install-github-app.mjs"
+  },
   "scripts": {
+    "install-github-app": "node scripts/install-github-app.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "install-hooks": "bun run scripts/install-hooks.sh",

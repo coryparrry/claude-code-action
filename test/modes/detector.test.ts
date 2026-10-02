@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { detectMode } from "../../src/modes/detector";
 import type { GitHubContext } from "../../src/github/context";
+import { checkContainsTrigger } from "../../src/github/validation/trigger";
 
 describe("detectMode with enhanced routing", () => {
   const baseContext = {
@@ -275,5 +276,90 @@ describe("detectMode with enhanced routing", () => {
 
       expect(detectMode(context)).toBe("tag");
     });
+  });
+
+  describe("generated workflow runtime routing", () => {
+    it("triggers automatic PR review with a prompt and progress tracking", () => {
+      const context = {
+        ...baseContext,
+        eventName: "pull_request",
+        eventAction: "opened",
+        payload: {
+          action: "opened",
+          pull_request: { number: 1, title: "Improve handling", body: "" },
+        },
+        entityNumber: 1,
+        isPR: true,
+        inputs: {
+          ...baseContext.inputs,
+          prompt: "Review this pull request for bugs and security issues.",
+          triggerPhrase: "/codex",
+          trackProgress: true,
+        },
+      } as unknown as GitHubContext;
+
+      expect(detectMode(context)).toBe("tag");
+      expect(checkContainsTrigger(context as any)).toBe(true);
+    });
+
+    it.each([
+      {
+        eventName: "issues",
+        eventAction: "opened",
+        payload: {
+          action: "opened",
+          issue: { number: 1, title: "Help", body: "/codex fix this" },
+        },
+        isPR: false,
+      },
+      {
+        eventName: "issue_comment",
+        eventAction: "created",
+        payload: {
+          action: "created",
+          issue: { number: 1 },
+          comment: { body: "/codex fix this" },
+        },
+        isPR: false,
+      },
+      {
+        eventName: "pull_request_review_comment",
+        eventAction: "created",
+        payload: {
+          action: "created",
+          pull_request: { number: 1 },
+          comment: { body: "/codex fix this" },
+        },
+        isPR: true,
+      },
+      {
+        eventName: "pull_request_review",
+        eventAction: "submitted",
+        payload: {
+          action: "submitted",
+          pull_request: { number: 1 },
+          review: { body: "/codex fix this", state: "commented" },
+        },
+        isPR: true,
+      },
+    ] as const)(
+      "routes triggered $eventName commands with progress and no prompt",
+      (event) => {
+        const context = {
+          ...baseContext,
+          ...event,
+          entityNumber: 1,
+          inputs: {
+            ...baseContext.inputs,
+            prompt: "",
+            triggerPhrase: "/codex",
+            trackProgress: true,
+          },
+        } as unknown as GitHubContext;
+
+        expect(detectMode(context)).toBe("tag");
+        expect(checkContainsTrigger(context as any)).toBe(true);
+      },
+    );
   });
 });

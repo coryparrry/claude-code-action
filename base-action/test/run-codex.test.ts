@@ -9,6 +9,7 @@ import {
 } from "@openai/agents";
 import {
   mkdir,
+  readdir,
   mkdtemp,
   readFile,
   realpath,
@@ -17,6 +18,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 import {
   runCodex,
   resolveCodexModel,
@@ -26,6 +28,7 @@ import { agentSessionDirectory } from "../src/agent-sessions";
 
 const API_KEY = "unit-test-api-value-only",
   GITHUB_TOKEN = "unit-test-github-value-only";
+const subagentWorktrees: string[] = [];
 type Reply =
   | ModelResponse
   | ((request: ModelRequest) => Promise<ModelResponse>);
@@ -107,6 +110,32 @@ describe("Codex Agents SDK integration", () => {
     info.mockRestore();
     secret.mockRestore();
     logs.mockRestore();
+    for (const path of subagentWorktrees.splice(0)) {
+      try {
+        execFileSync("git", ["worktree", "remove", "--force", "--", path], {
+          cwd: directory,
+        });
+        const branch = execFileSync(
+          "git",
+          ["branch", "--list", "codex-agent/*"],
+          {
+            cwd: directory,
+            encoding: "utf8",
+          },
+        )
+          .trim()
+          .split("\n")
+          .map((item) => item.trim())
+          .filter(Boolean);
+        for (const name of branch)
+          execFileSync("git", ["branch", "-D", "--", name], {
+            cwd: directory,
+            stdio: "ignore",
+          });
+      } catch {
+        // The fixture may have failed before creating or retaining a worktree.
+      }
+    }
     await rm(directory, { recursive: true, force: true });
   });
   function options(
@@ -356,8 +385,8 @@ describe("Codex Agents SDK integration", () => {
     const names: string[] = [];
     const provider: ModelProvider = {
       getModel: (name) => {
-        names.push(name ?? "gpt-5.3-codex");
-        return name === "gpt-5.3-codex" ? primary : fallback;
+        names.push(name ?? "gpt-6.1-sol");
+        return name === "gpt-6.1-sol" ? primary : fallback;
       },
     };
     await runCodex(
@@ -368,7 +397,7 @@ describe("Codex Agents SDK integration", () => {
         modelProvider: provider,
       }),
     );
-    expect(names).toEqual(["gpt-5.3-codex", "fallback-fixture"]);
+    expect(names).toEqual(["gpt-6.1-sol", "fallback-fixture"]);
     expect((await artifact()).at(-1)?.result).toBe("Fallback result");
   });
 
@@ -524,8 +553,8 @@ describe("Codex Agents SDK integration", () => {
   });
 
   test("model aliases select the documented default", () => {
-    expect(resolveCodexModel("opus")).toBe("gpt-5.3-codex");
-    expect(resolveCodexModel(undefined)).toBe("gpt-5.3-codex");
+    expect(resolveCodexModel("opus")).toBe("gpt-6-astra");
+    expect(resolveCodexModel(undefined)).toBe("gpt-6-luna");
     expect(resolveCodexModel("gpt-fixture")).toBe("gpt-fixture");
   });
 
@@ -586,6 +615,438 @@ describe("Codex Agents SDK integration", () => {
     expect(model.requests[1]?.systemInstructions).toContain(
       "APPENDED CHILD SENTINEL",
     );
+  });
+
+  test("resumes a Task with its prior transcript and the same agent identity", async () => {
+    await mkdir(join(directory, ".codex", "agents"), { recursive: true });
+    await writeFile(
+      join(directory, ".codex", "agents", "reviewer.md"),
+      "---\ntools: [Read]\n---\nStable reviewer identity",
+    );
+    const first = new ScriptedModel([
+      call("Task", {
+        subagent_type: "reviewer",
+        prompt: "Inspect the first file",
+      }),
+      message(`Remember that the first file has a race. ${API_KEY}`),
+      message("First parent turn"),
+    ]);
+    const sessionStoragePath = join(directory, "agent-sessions");
+    const settings = {
+      ...options(first, {
+        settingSources: ["project"],
+        permissionMode: "bypassPermissions",
+        modelProvider: { getModel: () => first },
+        sessionStoragePath,
+      }),
+    };
+    await runCodex(prompt, settings);
+    expect(first.requests).toHaveLength(3);
+    const checkpointDirectory = agentSessionDirectory(
+      sessionStoragePath,
+      directory,
+    );
+    const checkpointFile = (await readdir(checkpointDirectory)).find((file) =>
+      file.startsWith("subagent-"),
+    );
+    const id = checkpointFile?.slice("subagent-".length, -".json".length);
+    expect(id).toBeDefined();
+    const savedCheckpoint = JSON.parse(
+      await readFile(join(checkpointDirectory, checkpointFile!), "utf8"),
+    );
+    expect(JSON.stringify(savedCheckpoint)).not.toContain(API_KEY);
+
+    const second = new ScriptedModel([
+      call("Task", {
+        subagent_type: "reviewer",
+        prompt: "Now inspect the related file",
+        resume_task_id: id,
+      }),
+      message("The related file confirms the race."),
+      message("Second parent turn"),
+    ]);
+    await runCodex(
+      prompt,
+      options(second, {
+        settingSources: ["project"],
+        permissionMode: "bypassPermissions",
+        modelProvider: { getModel: () => second },
+        sessionStoragePath,
+      }),
+    );
+    expect(second.requests).toHaveLength(3);
+    expect(second.requests[1]?.systemInstructions).toContain(
+      "Stable reviewer identity",
+    );
+    expect(JSON.stringify(second.requests[1]?.input)).toContain(
+      "Remember that the first file has a race.",
+    );
+    expect(JSON.stringify(second.requests[1]?.input)).not.toContain(API_KEY);
+    expect(JSON.stringify(second.requests[1]?.input)).toContain(
+      "Now inspect the related file",
+    );
+  });
+
+  test("runs isolated agent writes in a real worktree and reports its path", async () => {
+    await mkdir(join(directory, ".codex", "agents"), { recursive: true });
+    await writeFile(
+      join(directory, ".codex", "agents", "isolated.md"),
+      "---\ntools: [Write]\nisolation: worktree\n---\nCreate the requested file",
+    );
+    execFileSync("git", ["init", "-b", "main"], { cwd: directory });
+    execFileSync("git", ["config", "user.email", "agent@example.invalid"], {
+      cwd: directory,
+    });
+    execFileSync("git", ["config", "user.name", "Agent Test"], {
+      cwd: directory,
+    });
+    execFileSync("git", ["add", "."], { cwd: directory });
+    execFileSync("git", ["commit", "-m", "fixture"], { cwd: directory });
+    const model = new ScriptedModel([
+      call("Task", { subagent_type: "isolated", prompt: "Create result.txt" }),
+      call("Write", { file_path: "result.txt", content: "isolated output" }),
+      message("Child finished"),
+      message("Parent finished"),
+    ]);
+    await runCodex(
+      prompt,
+      options(model, {
+        permissionMode: "bypassPermissions",
+        modelProvider: { getModel: () => model },
+        settingSources: ["project"],
+      }),
+    );
+    expect(model.requests).toHaveLength(4);
+    const parentInput = JSON.stringify(model.requests[3]?.input);
+    const worktreePath = /\[Worktree: ([^\]]+)\]/.exec(parentInput)?.[1];
+    expect(worktreePath).toBeDefined();
+    subagentWorktrees.push(worktreePath!);
+    expect(await Bun.file(join(directory, "result.txt")).exists()).toBe(false);
+    expect(await readFile(join(worktreePath!, "result.txt"), "utf8")).toBe(
+      "isolated output",
+    );
+  });
+
+  test("lets a memory-enabled subagent save notes in its local memory scope", async () => {
+    await mkdir(join(directory, ".codex", "agents"), { recursive: true });
+    await writeFile(
+      join(directory, ".codex", "agents", "rememberer.md"),
+      "---\nmemory: local\n---\nKeep useful notes for later runs",
+    );
+    const verifyMemoryHook = [
+      "let input='';",
+      "process.stdin.on('data', chunk => input += chunk);",
+      "process.stdin.on('end', () => {",
+      "const event = JSON.parse(input);",
+      "if (event.tool_name !== 'AgentMemory' || event.tool_input?.action !== 'append' || !event.tool_response?.includes('Agent memory saved.')) process.exit(1);",
+      "process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:'PostToolUse',additionalContext:'AgentMemory PostToolUse observed'}}));",
+      "});",
+    ].join("");
+    const model = new ScriptedModel([
+      call("Task", {
+        subagent_type: "rememberer",
+        prompt: "Save this finding",
+      }),
+      call("AgentMemory", {
+        action: "append",
+        content: `The parser rejects empty frontmatter. ${API_KEY}`,
+      }),
+      message("Saved the finding"),
+      message("Parent finished"),
+    ]);
+    await runCodex(
+      prompt,
+      options(model, {
+        permissionMode: "bypassPermissions",
+        modelProvider: { getModel: () => model },
+        settingSources: ["project"],
+        sessionStoragePath: join(directory, "agent-sessions"),
+        settings: JSON.stringify({
+          hooks: {
+            PostToolUse: [
+              {
+                hooks: [
+                  {
+                    type: "command",
+                    command: process.execPath,
+                    args: ["-e", verifyMemoryHook],
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      }),
+    );
+    expect(model.requests).toHaveLength(4);
+    expect(JSON.stringify(model.requests[2]?.input)).toContain(
+      "Agent memory saved.",
+    );
+    expect(JSON.stringify(model.requests[2]?.input)).toContain(
+      "AgentMemory PostToolUse observed",
+    );
+    expect(
+      await readFile(
+        join(
+          directory,
+          ".claude",
+          "agent-memory.local",
+          "rememberer",
+          "MEMORY.md",
+        ),
+        "utf8",
+      ),
+    ).toContain("The parser rejects empty frontmatter. [REDACTED]");
+    expect(
+      await readFile(
+        join(
+          directory,
+          ".claude",
+          "agent-memory.local",
+          "rememberer",
+          "MEMORY.md",
+        ),
+        "utf8",
+      ),
+    ).not.toContain(API_KEY);
+  });
+
+  test("parent plan mode blocks persistent memory writes by bypass-configured children", async () => {
+    await mkdir(join(directory, ".codex", "agents"), { recursive: true });
+    await writeFile(
+      join(directory, ".codex", "agents", "rememberer.md"),
+      "---\nmemory: local\npermissionMode: bypassPermissions\ntools: [AgentMemory]\n---\nTry to save a note",
+    );
+    const model = new ScriptedModel([
+      call("Task", {
+        subagent_type: "rememberer",
+        prompt: "Save a note",
+      }),
+      call("AgentMemory", {
+        action: "append",
+        content: "must stay read only",
+      }),
+      async (request) => {
+        expect(JSON.stringify(request.input)).toContain("read-only/plan mode");
+        return message("Memory write correctly blocked");
+      },
+      message("Parent finished"),
+    ]);
+    await runCodex(
+      prompt,
+      options(model, {
+        permissionMode: "plan",
+        allowedTools: ["Task"],
+        modelProvider: { getModel: () => model },
+        settingSources: ["project"],
+      }),
+    );
+    expect(model.requests).toHaveLength(4);
+    expect(
+      await Bun.file(
+        join(
+          directory,
+          ".claude",
+          "agent-memory.local",
+          "rememberer",
+          "MEMORY.md",
+        ),
+      ).exists(),
+    ).toBe(false);
+  });
+
+  test("AgentMemory honors explicit AgentMemory and Write denials", async () => {
+    await mkdir(join(directory, ".codex", "agents"), { recursive: true });
+    await writeFile(
+      join(directory, ".codex", "agents", "rememberer.md"),
+      "---\nmemory: local\npermissionMode: bypassPermissions\ndisallowedTools: [Write]\n---\nTry to save a note",
+    );
+    const model = new ScriptedModel([
+      call("Task", {
+        subagent_type: "rememberer",
+        prompt: "Save a note",
+      }),
+      call("AgentMemory", {
+        action: "append",
+        content: "must be denied",
+      }),
+      async (request) => {
+        expect(JSON.stringify(request.input)).toContain(
+          "Tool permission denied: Write",
+        );
+        return message("Memory write correctly denied");
+      },
+      message("Parent finished"),
+    ]);
+    await runCodex(
+      prompt,
+      options(model, {
+        permissionMode: "bypassPermissions",
+        allowedTools: ["Task"],
+        modelProvider: { getModel: () => model },
+        settingSources: ["project"],
+      }),
+    );
+    expect(model.requests).toHaveLength(4);
+    expect(
+      await Bun.file(
+        join(
+          directory,
+          ".claude",
+          "agent-memory.local",
+          "rememberer",
+          "MEMORY.md",
+        ),
+      ).exists(),
+    ).toBe(false);
+  });
+
+  test("AgentMemory cannot bypass an explicit AgentMemory denial", async () => {
+    await mkdir(join(directory, ".codex", "agents"), { recursive: true });
+    await writeFile(
+      join(directory, ".codex", "agents", "rememberer.md"),
+      "---\nmemory: local\npermissionMode: bypassPermissions\ndisallowedTools: [AgentMemory]\n---\nTry to save a note",
+    );
+    const model = new ScriptedModel([
+      call("Task", {
+        subagent_type: "rememberer",
+        prompt: "Save a note",
+      }),
+      call("AgentMemory", {
+        action: "append",
+        content: "must be denied",
+      }),
+      async (request) => {
+        expect(JSON.stringify(request.input)).toContain(
+          "Tool permission denied: AgentMemory",
+        );
+        return message("Memory write correctly denied");
+      },
+      message("Parent finished"),
+    ]);
+    await runCodex(
+      prompt,
+      options(model, {
+        permissionMode: "bypassPermissions",
+        allowedTools: ["Task"],
+        modelProvider: { getModel: () => model },
+        settingSources: ["project"],
+      }),
+    );
+    expect(model.requests).toHaveLength(4);
+    expect(
+      await Bun.file(
+        join(
+          directory,
+          ".claude",
+          "agent-memory.local",
+          "rememberer",
+          "MEMORY.md",
+        ),
+      ).exists(),
+    ).toBe(false);
+  });
+
+  test("resumes a clean isolated Task by recreating its worktree", async () => {
+    await mkdir(join(directory, ".codex", "agents"), { recursive: true });
+    await writeFile(
+      join(directory, ".codex", "agents", "isolated.md"),
+      "---\ntools: [Read]\nisolation: worktree\n---\nReview in an isolated worktree",
+    );
+    execFileSync("git", ["init", "-b", "main"], { cwd: directory });
+    execFileSync("git", ["config", "user.email", "agent@example.invalid"], {
+      cwd: directory,
+    });
+    execFileSync("git", ["config", "user.name", "Agent Test"], {
+      cwd: directory,
+    });
+    execFileSync("git", ["add", "."], { cwd: directory });
+    execFileSync("git", ["commit", "-m", "fixture"], { cwd: directory });
+    const sessionStoragePath = join(directory, "agent-sessions");
+    const first = new ScriptedModel([
+      call("Task", {
+        subagent_type: "isolated",
+        prompt: "Review the first file",
+      }),
+      message("First isolated run completed without changes"),
+      message("First parent turn"),
+    ]);
+    await runCodex(
+      prompt,
+      options(first, {
+        permissionMode: "bypassPermissions",
+        modelProvider: { getModel: () => first },
+        settingSources: ["project"],
+        sessionStoragePath,
+      }),
+    );
+    const checkpointDirectory = agentSessionDirectory(
+      sessionStoragePath,
+      directory,
+    );
+    const checkpointFile = (await readdir(checkpointDirectory)).find((file) =>
+      file.startsWith("subagent-"),
+    )!;
+    const id = checkpointFile.slice("subagent-".length, -".json".length);
+    const checkpoint = JSON.parse(
+      await readFile(join(checkpointDirectory, checkpointFile), "utf8"),
+    );
+    expect(checkpoint.isolation).toBe("worktree");
+    expect(checkpoint.worktreePath).toBeUndefined();
+
+    const second = new ScriptedModel([
+      call("Task", {
+        subagent_type: "isolated",
+        prompt: "Continue the same review",
+        resume_task_id: id,
+      }),
+      message("Resumed in a recreated worktree"),
+      message("Second parent turn"),
+    ]);
+    await runCodex(
+      prompt,
+      options(second, {
+        permissionMode: "bypassPermissions",
+        modelProvider: { getModel: () => second },
+        settingSources: ["project"],
+        sessionStoragePath,
+      }),
+    );
+    expect(second.requests).toHaveLength(3);
+    expect(JSON.stringify(second.requests[1]?.input)).toContain(
+      "First isolated run completed without changes",
+    );
+    expect(JSON.stringify(second.requests[1]?.input)).toContain(
+      "Continue the same review",
+    );
+  });
+
+  test("parent plan mode keeps a bypass-configured child read-only", async () => {
+    await mkdir(join(directory, ".codex", "agents"), { recursive: true });
+    await writeFile(
+      join(directory, ".codex", "agents", "writer.md"),
+      "---\npermissionMode: bypassPermissions\ntools: [Write]\n---\nTry the requested write",
+    );
+    const model = new ScriptedModel([
+      call("Task", { subagent_type: "writer", prompt: "write denied.txt" }),
+      call("Write", { file_path: "denied.txt", content: "must not exist" }),
+      async (request) => {
+        expect(JSON.stringify(request.input)).toContain("read-only/plan");
+        return message("Write correctly blocked");
+      },
+      message("Parent finished"),
+    ]);
+    await runCodex(
+      prompt,
+      options(model, {
+        permissionMode: "plan",
+        allowedTools: ["Task"],
+        modelProvider: { getModel: () => model },
+        settingSources: ["project"],
+      }),
+    );
+    expect(model.requests).toHaveLength(4);
+    expect(await Bun.file(join(directory, "denied.txt")).exists()).toBe(false);
   });
 
   test("Stop asyncRewake waits for newly launched work and continues inside the original turn cap", async () => {

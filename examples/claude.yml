@@ -3,53 +3,88 @@ name: Codex
 on:
   issue_comment:
     types: [created]
+  issues:
+    types: [opened]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   pull_request_review_comment:
     types: [created]
-  issues:
-    types: [opened, assigned]
   pull_request_review:
     types: [submitted]
 
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
 jobs:
   codex:
-    if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@codex')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@codex')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@codex')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@codex') || contains(github.event.issue.title, '@codex')))
+    if: >-
+      (github.actor == 'your-github-username') &&
+      (
+        ((github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') &&
+          contains(github.event.comment.body, '/codex')) ||
+        (github.event_name == 'pull_request_review' &&
+          contains(github.event.review.body, '/codex')) ||
+        (github.event_name == 'issues' &&
+          (contains(github.event.issue.body, '/codex') ||
+           contains(github.event.issue.title, '/codex')))
+      )
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
-      actions: read # Required for Codex to read CI results on PRs
+    timeout-minutes: 35
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
-          fetch-depth: 1
-
-      - name: Run Codex
-        id: claude
-        uses: coryparrry/claude-code-action@codex/openai-runtime
+          fetch-depth: 0
+      - uses: coryparrry/claude-code-action@d5affec7c70adde54f12056313ccfd6e08bdd1cd
         with:
+          trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          # Optional: Customize the trigger phrase (default: @codex)
-          # trigger_phrase: "/codex"
+          codex_model: "gpt-6-luna"
+          codex_effort: low
+          max_turns: "30"
+          track_progress: "true"
 
-          # Optional: Trigger when specific user is assigned to an issue
-          # assignee_trigger: "codex-bot"
-
-          # Optional: Configure Codex's behavior with CLI arguments
-          # claude_args: |
-          #   --model gpt-5.4
-          #   # No Codex turn limit; use the job timeout-minutes for a time bound.
-          #   --allowedTools "Bash(npm install),Bash(npm run build),Bash(npm run test:*),Bash(npm run lint:*)"
-          #   --append-system-prompt "Follow our coding standards. Ensure all new code has tests. Use TypeScript for new files."
-
-          # Optional: native settings configuration
-          # settings: |
-          #   model_reasoning_effort = "medium"
-          # Set custom environment variables on the step's env: block;
-          # legacy settings.env is unsupported.
+  codex_review:
+    if: >-
+      github.event_name == 'pull_request' &&
+      (github.actor == 'your-github-username') &&
+      !github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: codex-review-${{ github.repository }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Prepare PR diff
+        env:
+          CODEX_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CODEX_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
+      - uses: coryparrry/claude-code-action@d5affec7c70adde54f12056313ccfd6e08bdd1cd
+        with:
+          trigger_phrase: "/codex"
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          codex_model: "gpt-6-luna"
+          codex_effort: low
+          max_turns: "30"
+          track_progress: "true"
+          codex_sandbox: read-only
+          codex_args: >-
+            --allowedTools "mcp__github_inline_comment__create_inline_comment"
+          prompt: |
+            Review this pull request's changes for concrete correctness, security and regression defects.
+            Read the prepared patch in .git/codex-review.diff first; it includes removed lines as well as additions.
+            Use the repository and PR context. Post actionable inline feedback where appropriate and a concise summary.
+            Do not edit files, commit changes or implement fixes during this review.
+            The author can request an implementation in a comment with /codex.

@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach, spyOn } from "bun:test";
 import { prepareMcpConfig } from "../src/mcp/install-mcp-server";
+import { parseAllowedTools } from "../src/modes/agent/parse-tools";
 import * as core from "@actions/core";
 import type { ParsedGitHubContext } from "../src/github/context";
 import {
@@ -203,6 +204,29 @@ describe("prepareMcpConfig", () => {
     expect(parsed.mcpServers.github_inline_comment.env.GITHUB_TOKEN).toBe(
       "test-token",
     );
+    expect(parsed.mcpServers.github_inline_comment.env.PR_NUMBER).toBe("456");
+  });
+
+  test("generated automatic review args enable inline review beside progress updates", async () => {
+    const generatedArgs =
+      '--allowedTools "mcp__github_inline_comment__create_inline_comment"';
+    const result = await prepareMcpConfig({
+      githubToken: "test-token",
+      owner: "test-owner",
+      repo: "test-repo",
+      branch: "test-branch",
+      baseBranch: "main",
+      allowedTools: parseAllowedTools(generatedArgs),
+      mode: "tag",
+      context: {
+        ...mockPRContext,
+        inputs: { ...mockPRContext.inputs, trackProgress: true },
+      },
+    });
+
+    const parsed = JSON.parse(result);
+    expect(parsed.mcpServers.github_comment).toBeDefined();
+    expect(parsed.mcpServers.github_inline_comment).toBeDefined();
     expect(parsed.mcpServers.github_inline_comment.env.PR_NUMBER).toBe("456");
   });
 

@@ -94,12 +94,17 @@ async function stdio() {
   const path = join(directory, "fixture.cjs");
   await writeFile(
     path,
-    `const readline = require('node:readline');\nconst schema = ${JSON.stringify(schema)};\nconst reply = ${reply.toString()};\nlet toolCalls = 0;\nreadline.createInterface({ input: process.stdin }).on('line', line => { const m = JSON.parse(line); if (m.params?.arguments?.value === 'hang') return; const output = reply(m, {HOME: process.env.HOME, CUSTOM_TOKEN: process.env.CUSTOM_TOKEN, OPENAI_API_KEY: process.env.OPENAI_API_KEY, AMBIENT_TOKEN: process.env.AMBIENT_TOKEN}); if(output && m.method === 'tools/call') output.result._meta = { fixtureCallCount: ++toolCalls }; if(output) process.stdout.write(JSON.stringify(output)+'\\n'); });\n`,
+    `const readline = require('node:readline');\nconst schema = ${JSON.stringify(schema)};\nconst reply = ${reply.toString()};\nlet toolCalls = 0;\nreadline.createInterface({ input: process.stdin }).on('line', line => { const m = JSON.parse(line); if (m.params?.arguments?.value === 'hang') return; const output = reply(m, {HOME: process.env.HOME ?? null, CUSTOM_TOKEN: process.env.CUSTOM_TOKEN ?? null, OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? null, GITHUB_APP_TOKEN: process.env.GITHUB_APP_TOKEN ?? null, ACTIONS_ID_TOKEN_REQUEST_TOKEN: process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN ?? null, AZURE_OPENAI_API_KEY: process.env.AZURE_OPENAI_API_KEY ?? null, CODEX_API_KEY: process.env.CODEX_API_KEY ?? null, ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? null, AWS_BEARER_TOKEN_BEDROCK: process.env.AWS_BEARER_TOKEN_BEDROCK ?? null, ENV_FILE_LEAK: process.env.ENV_FILE_LEAK ?? null, AMBIENT_TOKEN: process.env.AMBIENT_TOKEN ?? null}); if(output && m.method === 'tools/call') output.result._meta = { fixtureCallCount: ++toolCalls }; if(output) process.stdout.write(JSON.stringify(output)+'\\n'); });\n`,
+  );
+  await writeFile(
+    join(directory, ".env.local"),
+    "ENV_FILE_LEAK=checkout-env-secret\n",
   );
   return {
     command: process.execPath,
-    args: [path],
+    args: ["--env-file", ".env.local", path],
     env: { CUSTOM_TOKEN: "explicit-secret" },
+    cwd: directory,
   };
 }
 async function connected(
@@ -125,6 +130,12 @@ describe("Agents SDK MCP transport adapter", () => {
       {
         environment: {
           OPENAI_API_KEY: "never-forward",
+          GITHUB_APP_TOKEN: "github-app-secret",
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: "oidc-request-secret",
+          AZURE_OPENAI_API_KEY: "azure-secret",
+          CODEX_API_KEY: "codex-secret",
+          ANTHROPIC_API_KEY: "anthropic-secret",
+          AWS_BEARER_TOKEN_BEDROCK: "bedrock-secret",
           HOME: "/explicit-home",
         },
         beforeTool: async () => ({ updatedInput: { value: "changed" } }),
@@ -146,7 +157,19 @@ describe("Agents SDK MCP transport adapter", () => {
     expect(output.isError).toBe(false);
     expect(JSON.parse(output.content[0].text)).toEqual({
       input: { value: "changed" },
-      environment: { HOME: "/explicit-home", CUSTOM_TOKEN: "explicit-secret" },
+      environment: {
+        HOME: "/explicit-home",
+        CUSTOM_TOKEN: "explicit-secret",
+        OPENAI_API_KEY: null,
+        GITHUB_APP_TOKEN: null,
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: null,
+        AZURE_OPENAI_API_KEY: null,
+        CODEX_API_KEY: null,
+        ANTHROPIC_API_KEY: null,
+        AWS_BEARER_TOKEN_BEDROCK: null,
+        ENV_FILE_LEAK: null,
+        AMBIENT_TOKEN: "",
+      },
     });
     expect(
       JSON.parse(await invoke(result.tools, "mcp__fixture__fail")).isError,
@@ -259,6 +282,55 @@ describe("Agents SDK MCP transport adapter", () => {
     await expect(invoke(result.tools, "mcp__fixture__echo")).rejects.toThrow(
       "permission denied",
     );
+  });
+
+  test("dontAsk blocks MCP approval callbacks for tools without an allow rule", async () => {
+    const permissions = new AgentPermissions({
+      cwd: process.cwd(),
+      permissionMode: "dontAsk",
+    });
+    let permissionRequests = 0;
+    const result = await connected(
+      { fixture: await stdio() },
+      {
+        permissions,
+        permissionRequest: async () => {
+          permissionRequests++;
+          return { permissionDecision: "allow" };
+        },
+      },
+    );
+    await expect(invoke(result.tools, "mcp__fixture__echo")).rejects.toThrow(
+      "without approval",
+    );
+    expect(permissionRequests).toBe(0);
+  });
+
+  test("PostToolUse may replace the MCP result returned to the SDK", async () => {
+    const outputs: string[] = [];
+    const result = await connected(
+      { fixture: await stdio() },
+      {
+        afterTool: async (event) => {
+          if (event.output) outputs.push(event.output);
+          return {
+            updatedMCPToolOutput: {
+              content: [{ type: "text", text: "sanitized replacement" }],
+              isError: false,
+            },
+          };
+        },
+      },
+    );
+    const value = JSON.parse(await invoke(result.tools, "mcp__fixture__echo"));
+    expect(JSON.parse(outputs[0]!)).toMatchObject({
+      content: [{ type: "text", text: expect.any(String) }],
+      isError: false,
+    });
+    expect(value).toEqual({
+      content: [{ type: "text", text: "sanitized replacement" }],
+      isError: false,
+    });
   });
 
   test("allow rules approve calls rather than hiding unlisted tools; permission hooks can approve and rewrite", async () => {

@@ -1,4 +1,9 @@
 .DS_Store
 node_modules
 
+# Local API credentials are also excluded from npm packaging.
+.env
+.env.*
+!.env.example
+
 **/.claude/settings.local.json

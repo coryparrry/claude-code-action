@@ -34,18 +34,31 @@ describe("Codex-only base action", () => {
     }
   });
 
-  test("offers only Codex execution and OpenAI authentication", () => {
+  test("offers Codex execution and native OpenAI providers", () => {
     const metadata = readFileSync(join(base, "action.yml"), "utf8");
     expect(metadata).toContain('name: "Codex Base Action"');
     expect(metadata).not.toContain("npm install --global");
     expect(metadata).not.toContain("Install Codex CLI");
-    expect(metadata).toContain("defaults to gpt-5.3-codex");
+    expect(metadata).toContain("defaults to gpt-6-luna");
     expect(metadata).toContain("bun-version: 1.4.2");
-    expect(metadata).toContain("OPENAI_API_KEY: ${{ inputs.openai_api_key }}");
+    expect(metadata).toContain(
+      "OPENAI_API_KEY: ${{ inputs.openai_api_key || env.OPENAI_API_KEY }}",
+    );
+    expect(metadata).toContain(
+      "AWS_BEARER_TOKEN_BEDROCK: ${{ inputs.bedrock_api_key || env.AWS_BEARER_TOKEN_BEDROCK }}",
+    );
+    expect(metadata).toContain("defaults to gpt-6-luna");
+    const inputs = metadata.slice(
+      metadata.indexOf("inputs:"),
+      metadata.indexOf("outputs:"),
+    );
+    expect(inputs).toContain("openai_provider:");
+    expect(inputs).toContain("bedrock_api_key:");
+    expect(inputs).not.toMatch(/openai_api_key:[\s\S]{0,140}required: true/);
     expect(metadata).toContain("claude_args:");
     expect(metadata).toContain("codex_args:");
     expect(metadata).not.toMatch(
-      /anthropic|bedrock|vertex|foundry|claude_code_oauth_token/i,
+      /anthropic|vertex|foundry|claude_code_oauth_token/i,
     );
   });
 

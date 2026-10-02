@@ -12,7 +12,7 @@ The action intelligently detects the appropriate execution mode based on your wo
 
 Activated when Codex detects @mentions, issue assignments, or labels—without an explicit `prompt`.
 
-- **Triggers**: `@codex` mentions in comments, issue assignment to claude user, label application
+- **Triggers**: `/codex` mentions in comments, issue assignment to claude user, label application
 - **Features**: Creates tracking comments with progress checkboxes, full implementation capabilities
 - **Use case**: Interactive code assistance, Q&A, and implementation requests
 
@@ -21,7 +21,7 @@ Activated when Codex detects @mentions, issue assignments, or labels—without a
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
-    # No prompt needed - responds to @codex mentions
+    # No prompt needed - responds to /codex mentions
 ```
 
 ### Automation Mode (Agent Mode)
@@ -29,7 +29,7 @@ Activated when Codex detects @mentions, issue assignments, or labels—without a
 Automatically activated when you provide a `prompt` input.
 
 - **Triggers**: Any GitHub event when `prompt` input is provided
-- **Features**: Direct execution without requiring @codex mentions, streamlined for automation
+- **Features**: Direct execution without requiring /codex mentions, streamlined for automation
 - **Use case**: Automated PR reviews, scheduled tasks, workflow automation
 
 ```yaml
@@ -47,7 +47,7 @@ Automatically activated when you provide a `prompt` input.
 The action uses this logic to determine the mode:
 
 1. **If `prompt` is provided** → Runs in **agent mode** for automation
-2. **If no `prompt` but @codex is mentioned** → Runs in **tag mode** for interaction
+2. **If no `prompt` but /codex is mentioned** → Runs in **tag mode** for interaction
 3. **If neither** → No action is taken
 
 This automatic detection ensures your workflows are simpler and more intuitive, without needing to understand or configure different modes.

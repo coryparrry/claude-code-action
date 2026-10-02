@@ -9,6 +9,8 @@ import {
 import Ajv from "ajv";
 import type { AgentToolEvent, AgentToolHookResult } from "./agent-tools";
 import { AgentPermissions } from "./agent-permissions";
+import { boundMcpOutput } from "./agent-mcp-output";
+import { prepareMcpStdioCommand, scrubMcpEnvironment } from "./mcp-environment";
 
 export type AgentMcpInvocationContext = {
   skipHooks?: boolean;
@@ -27,7 +29,9 @@ export type AgentMcpOptions = {
   permissionRequest?: (
     event: AgentToolEvent,
   ) => Promise<void | AgentToolHookResult>;
-  afterTool?: (event: AgentToolEvent) => Promise<void>;
+  afterTool?: (
+    event: AgentToolEvent,
+  ) => Promise<void | { updatedMCPToolOutput?: unknown }>;
 };
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -96,6 +100,14 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
     "MCP_TOOL_TIMEOUT",
     60_000,
   );
+  const rawOutputLimit = options.environment.MAX_MCP_OUTPUT_TOKENS ?? "25000";
+  if (
+    !/^\d+$/.test(rawOutputLimit) ||
+    !Number.isSafeInteger(Number(rawOutputLimit)) ||
+    Number(rawOutputLimit) < 1
+  )
+    throw new Error("MAX_MCP_OUTPUT_TOKENS must be a positive integer");
+  const outputLimit = Number(rawOutputLimit);
   const permissions =
     options.permissions ??
     new AgentPermissions({
@@ -126,6 +138,7 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
     context?: AgentMcpInvocationContext,
   ) => invoke(`mcp__${server}__${name}`, args, context);
   const servers: MCPServer[] = [];
+  const childCleanups: (() => Promise<void>)[] = [];
   const secrets = new Set<string>();
   const credentialName = (name: string) =>
     /(?:key|token|secret|password|credential|authorization)/i.test(name);
@@ -177,7 +190,11 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
           clearTimeout(timer);
         }
       }),
-    ).then(() => undefined);
+    )
+      .then(async () => {
+        await Promise.allSettled(childCleanups.map((cleanup) => cleanup()));
+      })
+      .then(() => undefined);
     return closing;
   };
   const onAbort = () => {
@@ -342,7 +359,7 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
           throw new Error("MCP stdio requires command and string args");
         // The transport merges its default environment even when env is supplied.
         // Override every such default to prevent ambient HOME/PATH inheritance.
-        const defaults = [
+        const defaults = new Set([
           "HOME",
           "LOGNAME",
           "PATH",
@@ -366,13 +383,12 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
           "USERNAME",
           "USERPROFILE",
           "WINDIR",
-        ];
+          ...Object.keys(process.env),
+        ]);
         const env = {
-          ...Object.fromEntries(defaults.map((key) => [key, ""])),
-          ...options.environment,
+          ...Object.fromEntries([...defaults].map((key) => [key, ""])),
+          ...scrubMcpEnvironment(options.environment),
         };
-        for (const key of Object.keys(env))
-          if (/^(OPENAI_|CODEX_)/i.test(key)) delete env[key];
         const explicit = Object.fromEntries(
           Object.entries(strings(entry.env, "MCP stdio env")).map(
             ([key, value]) => [key, expand(value)],
@@ -382,10 +398,15 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
         Object.assign(env, explicit);
         if (entry.cwd !== undefined && typeof entry.cwd !== "string")
           throw new Error("MCP cwd must be a string");
+        const prepared = await prepareMcpStdioCommand(
+          expand(entry.command),
+          (entry.args as string[] | undefined)?.map(expand) ?? [],
+        );
+        if (prepared.cleanup) childCleanups.push(prepared.cleanup);
         server = new MCPServerStdio({
           ...common,
-          command: expand(entry.command),
-          args: (entry.args as string[] | undefined)?.map(expand),
+          command: prepared.command,
+          args: prepared.args,
           env,
           cwd: entry.cwd as string | undefined,
         });
@@ -430,6 +451,7 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
               permissions.authorize(eventName, undefined, decision);
             if (
               !context?.skipHooks &&
+              permissions.options.permissionMode !== "dontAsk" &&
               (decision === "ask" ||
                 (decision !== "allow" &&
                   permissions.needsApproval(eventName))) &&
@@ -468,17 +490,23 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
               toolTimeout,
               context,
             );
-            const output = JSON.stringify(result);
-            if (!context?.skipHooks)
-              await bounded(
+            let output = JSON.stringify(result);
+            if (!context?.skipHooks) {
+              const postHook = await bounded(
                 async () =>
                   options.afterTool?.({ name: eventName, input, output }),
                 toolTimeout,
                 context,
               );
-            return hook?.additionalContext
-              ? `${output}\n${hook.additionalContext}`
-              : output;
+              if (postHook?.updatedMCPToolOutput !== undefined)
+                output = JSON.stringify(postHook.updatedMCPToolOutput);
+            }
+            return boundMcpOutput(
+              hook?.additionalContext
+                ? `${output}\n${hook.additionalContext}`
+                : output,
+              outputLimit,
+            );
           } catch (error) {
             if (!controller.signal.aborted && !context?.skipHooks)
               await bounded(

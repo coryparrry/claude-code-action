@@ -264,6 +264,36 @@ describe("AgentPermissions", () => {
     ).not.toThrow();
   });
 
+  test("Bash deny wildcards span space-separated command arguments", async () => {
+    const cwd = await fixture();
+    const permissions = new AgentPermissions({
+      cwd,
+      allowedTools: ["Bash"],
+      disallowedTools: ["Bash(npm run test *)"],
+    });
+    expect(() =>
+      permissions.assertTool("Bash", "npm run test -- --filter mcp"),
+    ).toThrow("denied");
+    expect(() => permissions.assertTool("Bash", "npm run build")).not.toThrow();
+  });
+
+  test("Bash(git push *) denies bare git push and push arguments", async () => {
+    const cwd = await fixture();
+    const permissions = new AgentPermissions({
+      cwd,
+      allowedTools: ["Bash"],
+      disallowedTools: ["Bash(git push *)"],
+    });
+    for (const command of [
+      "git push",
+      "git push origin",
+      "git push origin main",
+      "git push --force-with-lease origin main",
+    ])
+      expect(() => permissions.assertTool("Bash", command)).toThrow("denied");
+    expect(() => permissions.assertTool("Bash", "git status")).not.toThrow();
+  });
+
   test("path scopes, aliases, and glob matching", async () => {
     const cwd = await fixture();
     await mkdir(join(cwd, "src"));

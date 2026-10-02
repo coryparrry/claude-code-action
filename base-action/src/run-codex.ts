@@ -1,6 +1,7 @@
 import * as core from "@actions/core";
 import {
   Usage,
+  OpenAIProvider,
   type AgentInputItem,
   type JsonSchemaDefinition,
   type Model,
@@ -20,6 +21,9 @@ import {
   type DirectCompatibilityOptions,
 } from "./codex-compat";
 import { workflowToolEnvironment } from "./codex-tool-environment";
+import { nativeModelSettings } from "./agent-native-controls";
+import { scrubMcpEnvironment } from "./mcp-environment";
+import { createOpenAIAuthentication } from "./openai-auth";
 import { loadAgentConfiguration } from "./agent-configuration";
 import { AgentPermissions } from "./agent-permissions";
 import type { BackgroundAgentTask } from "./agent-tools";
@@ -89,14 +93,20 @@ export type CodexOptions = Omit<
   modelPrices?: Record<string, ModelPrice>;
   workspace?: string;
 };
-const DEFAULT_MODEL = "gpt-5.3-codex";
+const DEFAULT_MODEL = "gpt-6-luna";
 export function resolveCodexModel(
   model: string | Model | undefined,
 ): string | Model {
   if (!model) return DEFAULT_MODEL;
-  return typeof model === "string" &&
-    /^(?:default|opus|sonnet|haiku)(?:\[1m\])?$/.test(model)
-    ? DEFAULT_MODEL
+  if (typeof model !== "string") return model;
+  const alias = /^(default|opus|sonnet|haiku)(?:\[1m\])?$/.exec(model)?.[1];
+  return alias
+    ? ({
+        default: DEFAULT_MODEL,
+        opus: "gpt-6-astra",
+        sonnet: "gpt-6.1-sol",
+        haiku: DEFAULT_MODEL,
+      }[alias] ?? model)
     : model;
 }
 async function readPrompt(
@@ -135,10 +145,23 @@ export async function runCodex(
   promptPath: string,
   options: CodexOptions,
 ): Promise<CodexRunResult> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey?.trim())
-    throw new Error("OPENAI_API_KEY is required to run Codex");
-  core.setSecret(apiKey);
+  const authenticationSecrets: string[] = [];
+  let registerAuthentication = (value: string) => {
+    authenticationSecrets.push(value);
+    core.setSecret(value);
+  };
+  const authentication = await createOpenAIAuthentication(
+    {
+      ...process.env,
+      ...(options.baseURL ? { OPENAI_BASE_URL: options.baseURL } : {}),
+    },
+    { register: (value) => registerAuthentication(value) },
+  );
+  const apiKey = authentication.credential;
+  const baseURL = options.baseURL ?? authentication.baseURL;
+  const modelProvider =
+    options.modelProvider ??
+    new OpenAIProvider({ openAIClient: authentication.client });
   const sandbox = options.sandbox ?? "workspace-write";
   if (!["read-only", "workspace-write"].includes(sandbox))
     throw new Error("Codex sandbox must be read-only or workspace-write");
@@ -162,7 +185,7 @@ export async function runCodex(
   let debug =
     options.showFullOutput === "true" ||
     process.env.ACTIONS_STEP_DEBUG === "true";
-  const secrets = new Set<string>([apiKey]);
+  const secrets = new Set<string>([apiKey, ...authenticationSecrets]);
   for (const [name, value] of Object.entries(process.env))
     if (
       value &&
@@ -175,6 +198,7 @@ export async function runCodex(
       core.setSecret(value);
     }
   };
+  registerAuthentication = register;
   const redact = (input: string): string => {
     for (const value of [...secrets].sort((a, b) => b.length - a.length))
       input = input.split(value).join("[REDACTED]");
@@ -417,13 +441,17 @@ export async function runCodex(
     );
     if (
       effort &&
-      !["none", "minimal", "low", "medium", "high", "xhigh"].includes(effort)
+      !["none", "minimal", "low", "medium", "high", "xhigh", "max"].includes(
+        effort,
+      )
     )
       throw new Error("Unsupported Codex reasoning effort");
     const modelSettings: ModelSettings = {
+      ...nativeModelSettings(configuration.settings),
       ...(effort
         ? {
             reasoning: {
+              ...nativeModelSettings(configuration.settings).reasoning,
               effort: effort as NonNullable<
                 ModelSettings["reasoning"]
               >["effort"],
@@ -473,7 +501,7 @@ export async function runCodex(
       sandboxMode: sandbox,
       permissionMode: selectedAgent?.readonly
         ? "read-only"
-        : compatibility.permissionMode,
+        : (selectedAgent?.permissionMode ?? compatibility.permissionMode),
       additionalDirectories: compatibility.additionalDirectories,
       allowedTools: compatibility.allowedTools,
       disallowedTools: [
@@ -546,19 +574,21 @@ export async function runCodex(
       model: typeof model === "string" ? model : "custom-model",
       tools: [],
     });
-    const mcpEnvironment = Object.fromEntries(
-      Object.entries(process.env).filter(
-        ([name, value]) =>
-          value !== undefined &&
-          !/OPENAI_|CODEX_API_KEY|ANTHROPIC_/i.test(name) &&
-          !value.includes(apiKey),
+    const mcpEnvironment = scrubMcpEnvironment(
+      Object.fromEntries(
+        Object.entries(process.env).filter(
+          (entry): entry is [string, string] =>
+            entry[1] !== undefined &&
+            ![...secrets].some((secret) => entry[1]!.includes(secret)),
+        ),
       ),
-    ) as Record<string, string>;
+    );
     Object.assign(mcpEnvironment, toolEnvironment);
     runtime = await createCodexAgentRuntime({
+      openAIClient: authentication.client,
       apiKey,
-      baseURL: options.baseURL,
-      modelProvider: options.modelProvider,
+      baseURL,
+      modelProvider,
       getModel: () => model,
       setModel: (next) => {
         model = resolveCodexModel(next);
@@ -596,7 +626,7 @@ export async function runCodex(
       register,
       redact,
       emit,
-      sessionStoragePath: options.sessionStoragePath,
+      sessionStoragePath: sessionDirectory,
       removeSecretAliases: () => {
         for (const [name, value] of Object.entries(toolEnvironment))
           if (
@@ -660,8 +690,9 @@ export async function runCodex(
     const validate = schema ? ajv.compile(schema) : undefined;
     if (typeof model === "string" && supportsAgentCompaction(model))
       compaction = createAgentCompaction({
+        openAIClient: authentication.client,
         apiKey,
-        baseURL: options.baseURL,
+        baseURL,
         model,
         sessionId,
         signal: controller.signal,
@@ -704,10 +735,10 @@ export async function runCodex(
         : userPrompt,
       {
         apiKey,
-        baseURL: options.baseURL,
+        baseURL,
         model,
         fallbackModel,
-        modelProvider: options.modelProvider,
+        modelProvider,
         resolveModel: () => model,
         includePartialMessages: compatibility.includePartialMessages,
         instructions,

@@ -17,6 +17,7 @@ const DEFAULT_CONTEXT_WINDOWS: Record<string, number> = {
 };
 
 export type AgentCompactionOptions = {
+  openAIClient?: OpenAI;
   apiKey: string;
   baseURL?: string;
   model: string;
@@ -123,11 +124,12 @@ export function createAgentCompaction(options: AgentCompactionOptions) {
     options.underlyingSession ??
     new MemorySession({ sessionId: options.sessionId });
   const fetch = globalThis.fetch;
-  const client = new OpenAI({
-    apiKey: options.apiKey,
-    baseURL,
+  const clientOptions = {
     maxRetries: 0,
-    fetch: async (input, init) => {
+    fetch: async (
+      input: Parameters<typeof fetch>[0],
+      init?: Parameters<typeof fetch>[1],
+    ) => {
       currentSignal.throwIfAborted();
       requestModel = activeModel;
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -137,7 +139,10 @@ export function createAgentCompaction(options: AgentCompactionOptions) {
         : currentSignal;
       return fetch(input, { ...init, body: JSON.stringify(body), signal });
     },
-  });
+  };
+  const client = options.openAIClient
+    ? options.openAIClient.withOptions(clientOptions)
+    : new OpenAI({ apiKey: options.apiKey, baseURL, ...clientOptions });
   const before = async (trigger: "auto" | "context_limit") => {
     currentSignal.throwIfAborted();
     await options.onBeforeCompact?.({ model: activeModel, trigger });

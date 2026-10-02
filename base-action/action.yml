@@ -15,9 +15,41 @@ inputs:
     default: ""
   openai_api_key:
     description: "OpenAI API key used by Codex"
-    required: true
+    required: false
+  openai_provider:
+    description: "OpenAI API provider: openai, bedrock or azure"
+    required: false
+    default: ""
+  openai_identity_provider_id:
+    description: "OpenAI workload identity provider ID (requires id-token: write)"
+    required: false
+    default: ""
+  openai_service_account_id:
+    description: "OpenAI workload identity mapped service account ID"
+    required: false
+    default: ""
+  openai_oidc_audience:
+    description: "Audience configured for the OpenAI workload identity provider"
+    required: false
+    default: ""
+  bedrock_api_key:
+    description: "AWS Bedrock bearer token for OpenAI models; region comes from AWS_REGION"
+    required: false
+    default: ""
+  azure_openai_endpoint:
+    description: "Azure OpenAI endpoint for the selected deployment"
+    required: false
+    default: ""
+  azure_openai_api_key:
+    description: "Azure OpenAI API key (alternative to Azure AD token)"
+    required: false
+    default: ""
+  azure_openai_ad_token:
+    description: "Azure AD token for Azure OpenAI (alternative to API key)"
+    required: false
+    default: ""
   codex_model:
-    description: "OpenAI model used by the Agents SDK; defaults to gpt-5.3-codex"
+    description: "OpenAI model used by the Agents SDK; defaults to gpt-6-luna"
     required: false
     default: ""
   codex_effort:
@@ -187,7 +219,15 @@ runs:
         INPUT_PERMISSION_MODE: ${{ inputs.permission_mode }}
         INPUT_CONTINUE_SESSION: ${{ inputs.continue_session }}
         INPUT_RESUME_SESSION: ${{ inputs.resume_session }}
-        OPENAI_API_KEY: ${{ inputs.openai_api_key }}
+        OPENAI_API_KEY: ${{ inputs.openai_api_key || env.OPENAI_API_KEY }}
+        OPENAI_PROVIDER: ${{ inputs.openai_provider || env.OPENAI_PROVIDER }}
+        OPENAI_IDENTITY_PROVIDER_ID: ${{ inputs.openai_identity_provider_id || env.OPENAI_IDENTITY_PROVIDER_ID }}
+        OPENAI_SERVICE_ACCOUNT_ID: ${{ inputs.openai_service_account_id || env.OPENAI_SERVICE_ACCOUNT_ID }}
+        OPENAI_OIDC_AUDIENCE: ${{ inputs.openai_oidc_audience || env.OPENAI_OIDC_AUDIENCE }}
+        AWS_BEARER_TOKEN_BEDROCK: ${{ inputs.bedrock_api_key || env.AWS_BEARER_TOKEN_BEDROCK }}
+        AZURE_OPENAI_ENDPOINT: ${{ inputs.azure_openai_endpoint || env.AZURE_OPENAI_ENDPOINT }}
+        AZURE_OPENAI_API_KEY: ${{ inputs.azure_openai_api_key || env.AZURE_OPENAI_API_KEY }}
+        AZURE_OPENAI_AD_TOKEN: ${{ inputs.azure_openai_ad_token || env.AZURE_OPENAI_AD_TOKEN }}
         INPUT_CODEX_MODEL: ${{ inputs.codex_model }}
         INPUT_CODEX_EFFORT: ${{ inputs.codex_effort }}
         INPUT_CODEX_SANDBOX: ${{ inputs.codex_sandbox }}

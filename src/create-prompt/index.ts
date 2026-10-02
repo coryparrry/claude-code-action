@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import * as core from "@actions/core";
+import { DEFAULT_TRIGGER_PHRASE } from "../github/constants";
 import { writeFile, mkdir, rm } from "fs/promises";
 import type { FetchDataResult } from "../github/data/fetcher";
 import {
@@ -111,7 +112,7 @@ export function prepareContext(
   const repository = context.repository.full_name;
   const eventName = context.eventName;
   const eventAction = context.eventAction;
-  const triggerPhrase = context.inputs.triggerPhrase || "@codex";
+  const triggerPhrase = context.inputs.triggerPhrase || DEFAULT_TRIGGER_PHRASE;
   const assigneeTrigger = context.inputs.assigneeTrigger;
   const labelTrigger = context.inputs.labelTrigger;
   const prompt = context.inputs.prompt;

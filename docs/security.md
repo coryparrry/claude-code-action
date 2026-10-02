@@ -72,7 +72,7 @@ Note that the runtime executing the tool also reads project config. `bunx <tool>
 
 ## Pull Request Creation
 
-In its default configuration, **Codex does not create pull requests automatically** when responding to `@codex` mentions. Instead:
+In its default configuration, **Codex does not create pull requests automatically** when responding to `/codex` mentions. Instead:
 
 - Codex commits code changes to a new branch
 - Codex provides a **link to the GitHub PR creation page** in its response

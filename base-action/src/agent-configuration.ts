@@ -3,6 +3,7 @@ import {
   substitutePluginConfiguration,
 } from "./agent-plugin-options";
 import { materializePluginCommands } from "./agent-plugin-commands";
+import { loadAgentInstructions } from "./agent-instructions";
 export { substitutePluginConfiguration } from "./agent-plugin-options";
 import {
   mkdir,
@@ -47,6 +48,8 @@ export type AgentPlugin = {
   sensitiveConfigKeys?: string[];
 };
 export type AgentConfiguration = {
+  instructionHome?: string;
+  includeUserInstructions?: boolean;
   strictMcpConfig?: boolean;
   settings: ObjectValue;
   sources: string[];
@@ -584,6 +587,8 @@ export async function loadAgentConfiguration(
   if (selected.some((scope) => !["user", "project", "local"].includes(scope)))
     throw new Error("setting-sources must contain only user,project,local");
   const config: AgentConfiguration = {
+    instructionHome: home,
+    includeUserInstructions: selected.includes("user"),
     strictMcpConfig: options.strictMcpConfig,
     settings: {},
     sources: [],
@@ -815,14 +820,14 @@ export async function loadAgentConfiguration(
     );
   }
   if (config.settings.disableAllHooks === true) config.hooks = {};
-  for (const root of [...(selected.includes("user") ? [home] : []), workspace])
-    for (const file of ["AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md"]) {
-      const path = join(root, file);
-      if (await exists(path)) {
-        const content = await readFile(path, "utf8");
-        config.projectInstructions += `\n\nInstructions from ${path}:\n${content}`;
-      }
-    }
+  const instructions = await loadAgentInstructions({
+    workspace,
+    home,
+    includeUserInstructions: selected.includes("user"),
+  });
+  for (const instruction of instructions) {
+    config.projectInstructions += `\n\nInstructions from ${instruction.source}:\n${instruction.content}`;
+  }
   await selectOutputStyle(config);
   return config;
 }

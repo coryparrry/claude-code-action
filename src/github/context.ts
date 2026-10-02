@@ -8,7 +8,11 @@ import type {
   PullRequestReviewCommentEvent,
   WorkflowRunEvent,
 } from "@octokit/webhooks-types";
-import { GITHUB_ACTIONS_BOT_ID, GITHUB_ACTIONS_BOT_LOGIN } from "./constants";
+import {
+  GITHUB_ACTIONS_BOT_ID,
+  GITHUB_ACTIONS_BOT_LOGIN,
+  DEFAULT_TRIGGER_PHRASE,
+} from "./constants";
 // Custom types for GitHub Actions events that aren't webhooks
 export type WorkflowDispatchEvent = {
   action?: never;
@@ -147,7 +151,7 @@ export function parseGitHubContext(): GitHubContext {
     actor: context.actor,
     inputs: {
       prompt: process.env.PROMPT || "",
-      triggerPhrase: process.env.TRIGGER_PHRASE ?? "@codex",
+      triggerPhrase: process.env.TRIGGER_PHRASE ?? DEFAULT_TRIGGER_PHRASE,
       assigneeTrigger: process.env.ASSIGNEE_TRIGGER ?? "",
       labelTrigger: process.env.LABEL_TRIGGER ?? "",
       baseBranch: process.env.BASE_BRANCH,

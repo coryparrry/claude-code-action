@@ -1,65 +1,37 @@
 # Setup Guide
 
-> This fork runs Codex with `OPENAI_API_KEY`. GitHub triggers, tracking comments, branch handling, signing, and MCP integrations retain the upstream workflow shape. `claude_args` is a compatibility alias; use the preferred `codex_args` name for the same supported argument subset. Legacy `--allowedTools` / `--disallowedTools` support MCP names and simple Bash rules, not the full Claude permission language. Use a supported OpenAI model; there is no native `--max-turns`, Anthropic OAuth, WIF, Bedrock, or Vertex backend. Fork pull requests are rejected. See [configuration](./configuration.md) and [the action inputs](../action.yml).
+> This fork runs OpenAI models through the OpenAI Agents SDK. It preserves the upstream GitHub workflow and adapts runtime controls. See the [feature comparison](./feature-parity.md) for verified coverage and remaining differences.
+
+## Guided setup
+
+Run `npm run install-github-app` from the cloned action repository. The installer
+uses GitHub CLI to sign in, lets you select repositories and a Linux or macOS
+runner, configures `OPENAI_API_KEY` securely and proposes the workflow in draft
+PRs. It defaults to Luna 6 and the signed-in GitHub user as the trusted trigger
+actor. Review and merge the setup PRs to activate automatic PR reviews and
+`/codex` requests with progress tracking.
+
+This provides the guided setup flow for this fork using the built-in workflow
+token and `github-actions[bot]`. It does not install the Anthropic-hosted GitHub
+App. Node.js and GitHub CLI are required; Bun is not required for installation.
+See [the installer guide](./installer.md) for running from other directories,
+multiple repositories, previews and automation.
 
 ## Manual Setup (Direct API)
 
 **Requirements**: You must be a repository admin to complete these steps.
 
 1. Add `OPENAI_API_KEY` to repository Actions secrets.
-2. Copy [`examples/claude.yml`](../examples/claude.yml) into `.github/workflows/`. The filename is retained for compatibility; the workflow runs Codex.
+2. Copy [`examples/claude.yml`](../examples/claude.yml) into `.github/workflows/codex.yml` and replace `your-github-username` with the trusted user's login. The example filename is retained for compatibility; the workflow runs Codex with automatic reviews and `/codex` requests.
 3. Grant the workflow token the repository permissions it needs. The action uses `github_token: ${{ secrets.GITHUB_TOKEN }}` and does not require installing the Anthropic GitHub app or granting `id-token: write`.
 
-<details>
-<summary>Historical upstream reference — not supported by the Codex runtime</summary>
-
-## Workload Identity Federation
-
-Workload Identity Federation (WIF) lets the action authenticate to the Claude API by exchanging the workflow's GitHub Actions OIDC token for a short-lived Anthropic access token — no `ANTHROPIC_API_KEY` secret to create, store, or rotate.
-
-### One-time setup in the Claude Console
-
-You need admin access to your Anthropic organization (Console → **Settings → Workload identity**):
-
-1. **Register an issuer** for GitHub Actions with issuer URL `https://token.actions.githubusercontent.com` (JWKS source: `discovery`).
-2. **Create a service account** (Settings → Service accounts) and add it to the workspace it should act in. Note the `svac_...` ID.
-3. **Create a federation rule** targeting that service account, matched to your repository's OIDC claims (for example a subject prefix of `repo:your-org/your-repo:`). Note the `fdrl_...` rule ID.
-
-See the [Workload Identity Federation documentation](https://platform.claude.com/docs/en/manage-claude/workload-identity-federation) for full details.
-
-### Workflow configuration
-
-```yaml
-jobs:
-  claude-response:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
-      id-token: write # required: used to fetch the GitHub OIDC token
-    steps:
-      - uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_federation_rule_id: fdrl_xxxxxxxxxxxx
-          anthropic_organization_id: 00000000-0000-0000-0000-000000000000
-          anthropic_service_account_id: svac_xxxxxxxxxxxx
-          # Optional when the federation rule targets a single workspace:
-          anthropic_workspace_id: wrkspc_xxxxxxxxxxxx
-```
-
-These values are identifiers, not credentials, so they can live directly in the workflow file (or in repository variables).
-
-Notes:
-
-- The workflow must grant `id-token: write` permission so the action can fetch a GitHub OIDC token. The default GitHub App authentication path already requires this permission.
-- Do not set `anthropic_api_key` or `claude_code_oauth_token` alongside the federation inputs — a static credential takes precedence and federation will not be used.
-- The GitHub OIDC token is requested with audience `https://api.anthropic.com` by default, so set the federation rule's expected audience to that value (or leave the rule's audience unmatched). Use `anthropic_oidc_audience` only if your rule expects a different audience.
-- Inline comment classification (`classify_inline_comments`) currently requires `anthropic_api_key`; with federation it is skipped and unconfirmed inline comments are posted directly.
-
-</details>
-
 ## Using a Custom GitHub App
+
+The action can mint and revoke its own installation token. Supply `github_app_id`
+and `github_app_private_key` (and optionally `github_app_installation_id`). Do not
+also supply `github_token`. `additional_permissions` requests permissions from
+the installed App; it cannot elevate a workflow token. The App must already be
+installed on the target repository with those permissions.
 
 If you need a separate GitHub bot identity, you can create your own GitHub App to use with this action. This gives you complete control over permissions and access.
 
@@ -230,9 +202,48 @@ We also recommend that you always use short-lived tokens when possible
 
 ### Best Practices for Authentication
 
-1. ✅ Always use `${{ secrets.OPENAI_API_KEY }}` or `${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}` in workflows
+1. ✅ Keep API credentials in Actions secrets, or use OpenAI workload identity federation.
 2. ✅ Never commit API keys or tokens to version control
 3. ✅ Regularly rotate your API keys and tokens
 4. ✅ Use environment secrets for organization-wide access
 5. ❌ Never share API keys or tokens in pull requests or issues
 6. ❌ Avoid logging workflow variables that might contain keys
+
+## OpenAI workload identity federation
+
+Register a GitHub Actions identity provider and service account in your OpenAI
+organization. Restrict the trust policy to the intended repository and workflow.
+Then grant the job `id-token: write` and configure:
+
+```yaml
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+steps:
+  - uses: actions/checkout@v4
+  - uses: your-owner/your-fork@your-reviewed-ref
+    with:
+      openai_identity_provider_id: ${{ vars.OPENAI_IDENTITY_PROVIDER_ID }}
+      openai_service_account_id: ${{ vars.OPENAI_SERVICE_ACCOUNT_ID }}
+```
+
+Do not also supply `openai_api_key`. The action exchanges GitHub OIDC credentials
+for short-lived OpenAI credentials and refreshes them during longer runs.
+See [OpenAI's GitHub Actions WIF guide](https://developers.openai.com/api/docs/guides/workload-identity-federation/github-actions).
+
+## OpenAI models on cloud providers
+
+For Amazon Bedrock, set `openai_provider: bedrock`, provide `bedrock_api_key` from
+an Actions secret, and set `AWS_REGION` on the step. Use the Bedrock model ID
+available in that region. This adapter uses bearer credentials; it does not
+perform AWS OIDC-to-SigV4 authentication.
+See [OpenAI's Bedrock guide](https://developers.openai.com/api/docs/guides/amazon-bedrock).
+
+For Azure, set `openai_provider: azure`, `azure_openai_endpoint`, and either
+`azure_openai_api_key` or `azure_openai_ad_token`. Set `OPENAI_API_VERSION` in the
+step environment and, if needed, `AZURE_OPENAI_DEPLOYMENT`. Entra tokens are
+provided by the calling workflow; this adapter does not acquire or refresh them.
+Google Vertex AI and Claude subscription credentials are not accepted by this
+OpenAI API runtime.
