@@ -19,14 +19,17 @@ import {
 } from "../src/openai-agent-runner";
 import { runCodex } from "../src/run-codex";
 
+type Reply =
+  | ModelResponse
+  | ((request: ModelRequest) => Promise<ModelResponse>);
 class ScriptedModel implements Model {
   readonly requests: ModelRequest[] = [];
-  constructor(private readonly replies: ModelResponse[]) {}
+  constructor(private readonly replies: Reply[]) {}
   async getResponse(request: ModelRequest): Promise<ModelResponse> {
     this.requests.push(request);
     const reply = this.replies[this.requests.length - 1];
     if (!reply) throw new Error("Unexpected model request");
-    return reply;
+    return typeof reply === "function" ? reply(request) : reply;
   }
   async *getStreamedResponse(): AsyncGenerator<never> {
     throw new Error("This fixture uses the nonstreaming SDK loop");
@@ -159,6 +162,86 @@ describe("empty final response recovery with the real Agents SDK", () => {
     ).toHaveLength(2);
     expect(JSON.stringify(model.requests[1]?.input)).toContain(
       "Review this PR",
+    );
+  });
+
+  test.each(["deadline", "cancellation"])(
+    "completion recovery retains the original %s",
+    async (interruption) => {
+      const controller = new AbortController();
+      let ready!: () => void;
+      const started = new Promise<void>((resolve) => {
+        ready = resolve;
+      });
+      const model = new ScriptedModel([
+        message(""),
+        async () => {
+          ready();
+          return new Promise<ModelResponse>(() => {});
+        },
+      ]);
+      const outcome = runOpenAIAgent(
+        "Review this PR",
+        options(model, {
+          signal: controller.signal,
+          deadline: Date.now() + 1000,
+        }),
+      ).catch((error: unknown) => error);
+      await started;
+      if (interruption === "cancellation") controller.abort();
+      const error = await outcome;
+      expect(error).toBeInstanceOf(OpenAIAgentRunError);
+      expect((error as Error).message).toContain(
+        interruption === "deadline" ? "timed out" : "cancelled",
+      );
+      expect(model.requests).toHaveLength(2);
+      expect(
+        (error as OpenAIAgentRunError).partialResult.usage.inputTokens,
+      ).toBe(10);
+    },
+  );
+
+  test("a Stop hook can authorize new tool work after tool-free completion recovery", async () => {
+    const model = new ScriptedModel([
+      message(""),
+      message("Review complete"),
+      response([
+        {
+          type: "function_call",
+          name: "post_review",
+          callId: "new-work",
+          arguments: "{}",
+        },
+      ]),
+      message("Additional review complete"),
+    ]);
+    let posts = 0;
+    let stops = 0;
+    const result = await runOpenAIAgent(
+      "Review this PR",
+      options(model, {
+        maxTurns: 4,
+        tools: [
+          tool({
+            name: "post_review",
+            description: "Post feedback",
+            parameters: z.object({}),
+            execute: () => {
+              posts++;
+              return "Posted additional feedback";
+            },
+          }),
+        ],
+        onSessionFinal: () =>
+          ++stops === 1 ? "Post the additional requested feedback" : undefined,
+      }),
+    );
+    expect(result.finalOutput).toBe("Additional review complete");
+    expect(posts).toBe(1);
+    expect(stops).toBe(2);
+    expect(model.requests[1]?.tools).toHaveLength(0);
+    expect(model.requests[2]?.tools.map((tool) => tool.name)).toContain(
+      "post_review",
     );
   });
 });

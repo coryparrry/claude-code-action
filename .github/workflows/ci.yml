@@ -67,3 +67,52 @@ jobs:
 
       - name: Verify isolated production installs and offline SDK execution
         run: bun --no-env-file scripts/verify-action-package.mjs
+
+  action-boundaries:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [recovery, repeat-tool, empty-failure]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Start isolated inference fixture
+        id: fixture
+        env:
+          BOUNDARY_CASE: ${{ matrix.scenario }}
+        run: |
+          node scripts/action-boundary-fixture.mjs "$BOUNDARY_CASE" "$RUNNER_TEMP/boundary-endpoint.txt" > "$RUNNER_TEMP/boundary-fixture.log" 2>&1 &
+          echo "pid=$!" >> "$GITHUB_OUTPUT"
+          for attempt in {1..50}; do
+            test -s "$RUNNER_TEMP/boundary-endpoint.txt" && break
+            sleep 0.1
+          done
+          test -s "$RUNNER_TEMP/boundary-endpoint.txt"
+          echo "OPENAI_BASE_URL=$(cat "$RUNNER_TEMP/boundary-endpoint.txt")" >> "$GITHUB_ENV"
+      - name: Exercise the actual composite action
+        id: runtime
+        continue-on-error: true
+        uses: ./base-action
+        with:
+          openai_api_key: offline-boundary-fixture-key
+          codex_model: gpt-6-luna
+          prompt: Review this change and report the result.
+          permission_mode: bypassPermissions
+          codex_sandbox: workspace-write
+          codex_args: --no-session-persistence
+          max_turns: "5"
+      - name: Verify outcomes, reports and side effects
+        env:
+          BOUNDARY_CASE: ${{ matrix.scenario }}
+          BOUNDARY_OUTCOME: ${{ steps.runtime.outcome }}
+          BOUNDARY_CONCLUSION: ${{ steps.runtime.outputs.conclusion }}
+          BOUNDARY_REPORT: ${{ steps.runtime.outputs.execution_file }}
+        run: node scripts/verify-action-boundary-result.mjs
+      - name: Stop inference fixture
+        if: ${{ always() && steps.fixture.outputs.pid != '' }}
+        env:
+          FIXTURE_PID: ${{ steps.fixture.outputs.pid }}
+        run: kill "$FIXTURE_PID"
