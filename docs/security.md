@@ -33,7 +33,7 @@ For `workflow_run` events, the action checks the repository access of the actor 
 ```yaml
 # Preferred — check out the base ref (default).
 - uses: actions/checkout@v6 # no `ref:` → base branch
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
 ```
 
 <details>
@@ -49,7 +49,7 @@ For `workflow_run` events, the action checks the repository access of the actor 
     # For workflow_run use: ${{ github.event.workflow_run.head_sha }}
     ref: ${{ github.event.pull_request.head.sha }}
     path: pr-head
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     claude_args: "--add-dir pr-head"
 ```
@@ -119,7 +119,7 @@ By default, commits made by Codex are unsigned. You can enable commit signing us
 This uses GitHub's API to create commits, which automatically signs them as verified from the GitHub App:
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     use_commit_signing: true
 ```
@@ -131,7 +131,7 @@ This is the simplest option and requires no additional setup. However, because i
 This uses an SSH key to sign commits via git CLI. Use this option when you need both signed commits AND standard git operations (rebasing, cherry-picking, etc.):
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     ssh_signing_key: ${{ secrets.SSH_SIGNING_KEY }}
     bot_id: "YOUR_GITHUB_USER_ID"

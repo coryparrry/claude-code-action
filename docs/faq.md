@@ -103,7 +103,7 @@ Yes! Codex can access GitHub Actions workflow runs, job logs, and test results o
 
 2. Configure the action with additional permissions:
    ```yaml
-   - uses: coryparrry/claude-code-action@codex/openai-runtime
+   - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
      with:
        additional_permissions: |
          actions: read
@@ -234,7 +234,7 @@ For specialized environments like Nix, NixOS, or custom container setups where y
 **Using a custom Codex executable:**
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -245,7 +245,7 @@ For specialized environments like Nix, NixOS, or custom container setups where y
 **Using a custom Bun executable:**
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}

@@ -138,7 +138,7 @@ If you prefer to configure the app manually or need custom permissions:
              private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
          # Use Codex with your custom app's token
-         - uses: coryparrry/claude-code-action@codex/openai-runtime
+         - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
            with:
              openai_api_key: ${{ secrets.OPENAI_API_KEY }}
              github_token: ${{ steps.app-token.outputs.token }}

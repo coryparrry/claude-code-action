@@ -20,7 +20,7 @@ jobs:
   codex-response:
     runs-on: ubuntu-latest
     steps:
-      - uses: coryparrry/claude-code-action@codex/openai-runtime
+      - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -135,7 +135,7 @@ For a comprehensive guide on migrating from v0.x to v1.0, including step-by-step
 **Before (v0.x):**
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     mode: "tag"
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -147,7 +147,7 @@ For a comprehensive guide on migrating from v0.x to v1.0, including step-by-step
 **After (v1.0):**
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -160,7 +160,7 @@ For a comprehensive guide on migrating from v0.x to v1.0, including step-by-step
 **Before (v0.x):**
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     mode: "agent"
     direct_prompt: "Update the API documentation"
@@ -173,7 +173,7 @@ For a comprehensive guide on migrating from v0.x to v1.0, including step-by-step
 **After (v1.0):**
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     prompt: |
       REPO: ${{ github.repository }}
@@ -192,7 +192,7 @@ For a comprehensive guide on migrating from v0.x to v1.0, including step-by-step
 **Before (v0.x):**
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     override_prompt: |
       Analyze PR #$PR_NUMBER for security issues.
@@ -202,7 +202,7 @@ For a comprehensive guide on migrating from v0.x to v1.0, including step-by-step
 **After (v1.0):**
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     prompt: |
       Analyze PR #${{ github.event.pull_request.number }} for security issues.
@@ -220,7 +220,7 @@ Get validated JSON results from Codex that automatically become GitHub Action ou
 ```yaml
 - name: Detect flaky tests
   id: analyze
-  uses: coryparrry/claude-code-action@codex/openai-runtime
+  uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}

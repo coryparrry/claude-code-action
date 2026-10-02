@@ -40,7 +40,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: coryparrry/claude-code-action@codex/openai-runtime
+      - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -94,7 +94,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: coryparrry/claude-code-action@codex/openai-runtime
+      - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -158,7 +158,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: coryparrry/claude-code-action@codex/openai-runtime
+      - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -216,7 +216,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: coryparrry/claude-code-action@codex/openai-runtime
+      - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -273,7 +273,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: coryparrry/claude-code-action@codex/openai-runtime
+      - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -349,7 +349,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: coryparrry/claude-code-action@codex/openai-runtime
+      - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -400,7 +400,7 @@ jobs:
       issues: write
     steps:
       - uses: actions/checkout@v4
-      - uses: coryparrry/claude-code-action@codex/openai-runtime
+      - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -470,7 +470,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
-      - uses: coryparrry/claude-code-action@codex/openai-runtime
+      - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -526,7 +526,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: coryparrry/claude-code-action@codex/openai-runtime
+      - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}

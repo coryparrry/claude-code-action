@@ -9,7 +9,7 @@ You can add custom MCP (Model Context Protocol) servers to extend Codex's capabi
 ### Basic Example: Adding a Sequential Thinking Server
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -41,7 +41,7 @@ For MCP servers that require sensitive information like API keys or tokens, you 
     }
     EOF
 
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -74,7 +74,7 @@ For Python-based MCP servers managed with `uv`, you need to specify the director
     }
     EOF
 
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -96,7 +96,7 @@ For example, if your Python MCP server is at `mcp_servers/weather.py`, you would
 You can add multiple MCP servers by using multiple `--mcp-config` flags:
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -136,7 +136,7 @@ To allow Codex to view workflow run results, job logs, and CI status:
 2. **Configure the action with additional permissions**:
 
    ```yaml
-   - uses: coryparrry/claude-code-action@codex/openai-runtime
+   - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
      with:
        openai_api_key: ${{ secrets.OPENAI_API_KEY }}
        github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -169,7 +169,7 @@ jobs:
   codex-ci-helper:
     runs-on: ubuntu-latest
     steps:
-      - uses: coryparrry/claude-code-action@codex/openai-runtime
+      - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -194,7 +194,7 @@ jobs:
 Set environment variables on the action step using GitHub Actions `env:`. Nonsecret legacy `settings.env` values are supported; reserved runtime controls and credential variables are excluded. Do not place model or GitHub credentials into custom settings or MCP environment values.
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   env:
     NODE_ENV: test
     CI: "true"
@@ -211,7 +211,7 @@ Set environment variables on the action step using GitHub Actions `env:`. Nonsec
 You can pass custom environment variables to Codex execution using the `settings` input. This is useful for CI/test setups that require specific environment variables:
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     settings: |
       {
@@ -247,7 +247,7 @@ Use the compatibility tool filters to select supported command and MCP capabilit
 **Note**: Pass custom stdio or streamable HTTP servers explicitly through `--mcp-config` or supported `settings` MCP keys. HTTP servers accept `url`, `headers` (or `http_headers`), and `bearer_token_env_var`; SSE transport is supported as well. The action loads supported project configuration before SDK execution.
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     claude_args: |
       --allowedTools "Bash(npm install),Bash(npm run test),Edit,Read,Write"
@@ -262,7 +262,7 @@ Use the compatibility tool filters to select supported command and MCP capabilit
 Specify a Codex model using `claude_args`:
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     claude_args: |
       --model gpt-6-luna
@@ -276,7 +276,7 @@ You can provide Codex settings to customize behavior such as model selection and
 ### Option 1: Settings File
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     settings: "path/to/settings.json"
     # ... other inputs
@@ -287,7 +287,7 @@ You can provide Codex settings to customize behavior such as model selection and
 `settings` accepts inline TOML or JSON, or a settings file. Supported configuration includes model, permissions, nonsecret environment, hooks, MCP servers, commands, skills, agents and plugins. Native reasoning summary, verbosity, shell, edit and web-search controls are mapped to SDK settings and tools. `codex_args` and the `claude_args` alias use the same validated action-control parser. Unsupported arguments fail instead of silently doing nothing.
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -322,7 +322,7 @@ Execution uses the pinned OpenAI Agents SDK. A custom Codex CLI executable is no
 Use `path_to_bun_executable` to provide your own Bun runtime instead of the default installation:
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     path_to_bun_executable: "/path/to/custom/bun"
     # ... other inputs

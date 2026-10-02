@@ -17,7 +17,7 @@ Activated when Codex detects @mentions, issue assignments, or labels—without a
 - **Use case**: Interactive code assistance, Q&A, and implementation requests
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -33,7 +33,7 @@ Automatically activated when you provide a `prompt` input.
 - **Use case**: Automated PR reviews, scheduled tasks, workflow automation
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -57,7 +57,7 @@ This automatic detection ensures your workflows are simpler and more intuitive, 
 For specialized use cases, you can fine-tune behavior using `claude_args`:
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     prompt: "Review this PR"
     claude_args: |

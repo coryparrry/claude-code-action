@@ -37,7 +37,7 @@ on:
       - "src/api/**/*.ts"
 
 steps:
-  - uses: coryparrry/claude-code-action@codex/openai-runtime
+  - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
     with:
       prompt: |
         Update the API documentation in README.md to reflect
@@ -63,7 +63,7 @@ jobs:
       github.event.pull_request.user.login == 'developer1' ||
       github.event.pull_request.user.login == 'external-contributor'
     steps:
-      - uses: coryparrry/claude-code-action@codex/openai-runtime
+      - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           prompt: |
             Please provide a thorough review of this pull request.
@@ -80,7 +80,7 @@ Perfect for automatically reviewing PRs from new team members, external contribu
 Use the `prompt` input with GitHub context variables for dynamic automation:
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     prompt: |
       Analyze PR #${{ github.event.pull_request.number }} in ${{ github.repository }} for security vulnerabilities.
@@ -113,7 +113,7 @@ You can access any GitHub context variable using the standard GitHub Actions syn
 For more control over Codex's behavior, use the `claude_args` input to pass supported compatibility arguments:
 
 ```yaml
-- uses: coryparrry/claude-code-action@codex/openai-runtime
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     prompt: "Review this PR for performance issues"
     claude_args: |

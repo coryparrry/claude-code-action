@@ -61,12 +61,10 @@ Implemented means source and offline test coverage, unless stated otherwise.
 
 ## Delivery and verification limits
 
-The updated installer generates the automated workflow using inputs supported by
-the earlier published action commit it pins. An existing installation needs a
-workflow update; rerunning the installer proposes one for a managed workflow.
-The broader local runtime changes below are not delivered until a reviewed action
-revision is published and its pin is updated. No target repository was installed
-or updated during this audit.
+The installer pins the reviewed action source revision in its generated workflows.
+An existing installation needs a workflow update; rerunning the installer proposes
+one for a managed workflow. The pinned revision includes the runtime changes in
+this comparison. No consumer repository was installed or updated during this audit.
 Cloud authentication tests use offline fixtures; they do not prove live provider
 accounts, deployments, billing or permissions are configured correctly.
 
