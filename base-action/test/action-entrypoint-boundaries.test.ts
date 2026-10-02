@@ -152,11 +152,15 @@ afterEach(async () => {
 
 describe("shipped action boundaries", () => {
   test("completed tools and an empty response recover through the HTTP provider and Actions outputs", async () => {
-    const result = await runAction([
-      write("posted once"),
-      message(""),
-      message("Review complete"),
-    ]);
+    const result = await runAction(
+      [write("posted once"), message(""), message("Review complete")],
+      {
+        INPUT_PERMISSION_MODE: "auto",
+        INPUT_ALLOWED_TOOLS: "Write",
+        INPUT_CODEX_ARGS: "",
+        INPUT_CLAUDE_ARGS: "--permission-mode auto --no-session-persistence",
+      },
+    );
     expect(result.exitCode, result.stdout + result.stderr).toBe(0);
     expect(result.outputs.conclusion).toBe("success");
     expect(result.outputs.execution_file).toBe(

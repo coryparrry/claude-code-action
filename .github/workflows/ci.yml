@@ -69,7 +69,7 @@ jobs:
         run: bun --no-env-file scripts/verify-action-package.mjs
 
   action-boundaries:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-firewall
     strategy:
       fail-fast: false
       matrix:
@@ -100,9 +100,10 @@ jobs:
           openai_api_key: offline-boundary-fixture-key
           codex_model: gpt-6-luna
           prompt: Review this change and report the result.
-          permission_mode: bypassPermissions
+          permission_mode: auto
+          allowed_tools: Write
           codex_sandbox: workspace-write
-          codex_args: --no-session-persistence
+          claude_args: --permission-mode auto --no-session-persistence
           max_turns: "5"
       - name: Verify outcomes, reports and side effects
         env:
