@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
-import * as core from "@actions/core";
+import { usesApiCommitSigning } from "../github/operations/commit-signing";
+
 import { DEFAULT_TRIGGER_PHRASE } from "../github/constants";
 import { writeFile, mkdir, rm } from "fs/promises";
 import type { FetchDataResult } from "../github/data/fetcher";
@@ -88,7 +89,10 @@ export function buildDisallowedToolsString(
   // If user has explicitly allowed some default disallowed tools, remove them
   if (allowedTools && allowedTools.length > 0) {
     disallowedTools = disallowedTools.filter(
-      (tool) => !allowedTools.includes(tool),
+      (tool) =>
+        !allowedTools.some(
+          (rule) => rule === tool || rule.startsWith(`${tool}(`),
+        ),
     );
   }
 
@@ -774,7 +778,7 @@ ${eventData.eventName === "issue_comment" || eventData.eventName === "pull_reque
         eventData.prNumber &&
         context.githubContext?.inputs.includeFixLinks
           ? `
-      - Include a link to the affected PR changes alongside findings: [View changes](https://github.com/${context.repository}/pull/${eventData.prNumber}/files). Include the file path, line numbers, and specific fix so the reader can act on it.`
+      - Include a link to the affected PR changes alongside findings: [View changes](${GITHUB_SERVER_URL}/${context.repository}/pull/${eventData.prNumber}/files). Include the file path, line numbers, and specific fix so the reader can act on it.`
           : ""
       }
       - ${eventData.isPR ? `IMPORTANT: Submit your review feedback by updating the ${runtime.name} comment using mcp__github_comment__update_codex_comment. This will be displayed as your PR review.` : `Remember that this feedback must be posted to the GitHub comment using mcp__github_comment__update_codex_comment.`}
@@ -947,7 +951,7 @@ export async function createPrompt(
     const promptContent = generatePrompt(
       preparedContext,
       githubData,
-      context.inputs.useCommitSigning,
+      usesApiCommitSigning(context.inputs),
       "tag",
     );
 
@@ -971,22 +975,12 @@ export async function createPrompt(
       console.log("========================");
     }
 
-    // NOTE: these env var exports are dead — nothing reads ALLOWED_TOOLS / DISALLOWED_TOOLS.
-    // The live path is modes/tag/index.ts which builds --allowedTools into claudeArgs directly.
-    // Kept only so the H1 report's pointed-to file stays in sync with the live fix.
-    const hasActionsReadPermission = false;
-
-    const allAllowedTools = buildAllowedToolsString(
-      [],
-      hasActionsReadPermission,
-      context.inputs.useCommitSigning,
-    );
-    const allDisallowedTools = buildDisallowedToolsString([], []);
-
-    core.exportVariable("ALLOWED_TOOLS", allAllowedTools);
-    core.exportVariable("DISALLOWED_TOOLS", allDisallowedTools);
+    // Tool policy is assembled by the mode and explicit action inputs. Prompt
+    // generation must not overwrite ALLOWED_TOOLS/DISALLOWED_TOOLS: the runtime
+    // reads them after this function returns.
   } catch (error) {
-    core.setFailed(`Create prompt failed with error: ${error}`);
-    process.exit(1);
+    throw new Error(`Create prompt failed with error: ${error}`, {
+      cause: error,
+    });
   }
 }

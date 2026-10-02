@@ -35,18 +35,25 @@ export async function createInitialComment(
       context.isPR &&
       isPullRequestEvent(context)
     ) {
-      const comments = await octokit.rest.issues.listComments({
-        owner,
-        repo,
-        issue_number: context.entityNumber,
-      });
-      const existingComment = comments.data.find((comment) => {
-        return (
-          comment.user?.login.toLowerCase() ===
-            context.inputs.botName.toLowerCase() &&
-          !!comment.body?.includes(CODEX_COMMENT_MARKER)
-        );
-      });
+      // Tracking comments may be older than GitHub's first result page.
+      let existingComment;
+      for (let page = 1; ; page++) {
+        const comments = await octokit.rest.issues.listComments({
+          owner,
+          repo,
+          issue_number: context.entityNumber,
+          per_page: 100,
+          page,
+        });
+        existingComment = comments.data.find((comment) => {
+          return (
+            comment.user?.login.toLowerCase() ===
+              context.inputs.botName.toLowerCase() &&
+            !!comment.body?.includes(CODEX_COMMENT_MARKER)
+          );
+        });
+        if (existingComment || comments.data.length < 100) break;
+      }
       if (existingComment) {
         response = await octokit.rest.issues.updateComment({
           owner,

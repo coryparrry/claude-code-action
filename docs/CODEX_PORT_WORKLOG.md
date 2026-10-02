@@ -61,3 +61,66 @@ commits also introduce no new distinct PAT patterns. GitGuardian's precise
 flagged line is unavailable, so this is evidence of inherited fixtures rather
 than a definitive classification of its alert. No credential values were
 printed and no history rewrite or credential revocation was performed.
+
+## GitHub Action review — 2026-10-02
+
+Scope: the root/base GitHub Actions, excluding the standalone installer CLI.
+Compared current upstream `97c53473391bff1901034d4b454b5bac7ab7a029` with
+local baseline `e582297`. All 28 shared non-vendor action inputs and six
+upstream outputs are present; the detailed comparison and remaining differences
+are in [feature-parity.md](./feature-parity.md).
+
+Changes cover exact custom Bun executables and paths with spaces; the current
+SDK's Node 22 requirement; preserved user tool policies; SSH-signing precedence;
+GitHub Enterprise links; sticky-comment pagination/fallback; per-run inline
+buffers and retry-safe delivery; scoped agent tools, permissions and shell job
+limits; optional/open JSON schemas; MCP images/PDFs with bounded diagnostics;
+WIF token expiry; and AWS SigV4 credentials from a caller's OIDC login step.
+
+CI now freezes dependency resolution, checks both TypeScript projects and
+verifies isolated production installations plus a real offline SDK turn for
+each action. Primary setup docs describe direct Actions workflows and current
+OpenAI provider contracts.
+
+Independent review additionally caught a parent permission grant overriding a
+scoped agent rule and mutation of a signed AWS compaction body after a model
+switch. Both are covered by offline regression checks. Review also caught preparation
+helpers terminating the process before App-token cleanup and two tool-option
+parsing cases; these are included in the corrected orchestration contracts.
+
+No live model/cloud account, hosted workflow, release tag or consumer installation
+is claimed by this local audit. Existing example commit pins need updating when
+the reviewed source is published.
+
+### Final verification for this audit
+
+- `bun --no-env-file test --timeout 30000`: **1,326 passed, 0 failed**,
+  4,530 assertions across 91 files. A temporary PATH entry made the selected Bun
+  executable available to existing child-process fixtures. Local HTTP fixtures
+  required permission to bind loopback sockets outside the sandbox.
+- `node node_modules/typescript/bin/tsc --noEmit`: passed.
+- `node node_modules/typescript/bin/tsc --noEmit -p base-action/tsconfig.json`: passed.
+- `prettier --check .` and `git diff --check`: passed.
+- `BUN_EXECUTABLE=<bun-1.4.2> node scripts/verify-action-package.mjs`: passed.
+  Frozen production installs completed independently for root (231 packages) and
+  base (182 packages); both ran the real Agents SDK with an offline model.
+- Independent packaging, provider, runtime and GitHub orchestration reviewers
+  checked separate scopes. Material findings were fixed and covered by regression
+  tests; no paid API or real GitHub write was needed for these checks.
+
+### PR dependency remediation
+
+The initial PR scan identified vulnerable `fast-xml-parser` 5.2.5 through the
+AWS credential dependency chain. Both action manifests now override
+`@aws-sdk/xml-builder` to 3.972.24, the official adapter paired with parser 5.7.3.
+A parser-only override was incompatible with the older adapter. The paired
+update preserves normal AWS credential XML and numeric character references,
+with regression checks for invalid numeric entities and regex entity names.
+
+After the dependency fix, the full offline suite passed **1,330 tests**,
+**4,534 assertions**, and **0 failures** across 92 files. Both TypeScript
+projects and scoped formatting/diff checks passed.
+
+Independent frozen production installs also passed with the patched dependency
+graph: root installed 235 packages and base installed 186; both completed the
+offline SDK smoke run.

@@ -293,7 +293,13 @@ describe("OpenAI Agents SDK runner", () => {
     expect(selected).toEqual(["codex-test-model"]);
   });
 
-  test("uses an explicitly supplied OpenAI-compatible endpoint and API key", async () => {
+  test("sends the endpoint, API key and caller schema through the actual Responses provider", async () => {
+    const schema = {
+      type: "object" as const,
+      properties: { status: { type: "string" }, optional: { type: "string" } },
+      required: ["status"],
+      additionalProperties: true as const,
+    };
     let body: Record<string, unknown> | undefined;
     let authorization: string | undefined;
     let path: string | undefined;
@@ -324,7 +330,7 @@ describe("OpenAI Agents SDK runner", () => {
                   content: [
                     {
                       type: "output_text",
-                      text: "HTTP response",
+                      text: '{"status":"HTTP response"}',
                       annotations: [],
                     },
                   ],
@@ -352,14 +358,23 @@ describe("OpenAI Agents SDK runner", () => {
         options(new ScriptedModel([]), {
           model: "offline-codex",
           baseURL: "http://offline-endpoint.test/v1",
+          schema,
         }),
       );
-      expect(result.finalOutput).toBe("HTTP response");
+      expect(result.finalOutput).toEqual({ status: "HTTP response" });
       expect(path).toBe("http://offline-endpoint.test/v1/responses");
       expect(authorization).toBe("Bearer offline-api-key");
       expect(body?.model).toBe("offline-codex");
       expect(body?.instructions).toBe("Trusted action instructions");
       expect(body?.store).toBe(false);
+      expect(body?.text).toMatchObject({
+        format: {
+          type: "json_schema",
+          name: "action_result",
+          strict: false,
+          schema,
+        },
+      });
     } finally {
       if (savedBaseURL === undefined) delete process.env.OPENAI_BASE_URL;
       else process.env.OPENAI_BASE_URL = savedBaseURL;
@@ -773,7 +788,7 @@ describe("OpenAI Agents SDK runner", () => {
     expect(output.finalOutput).toEqual({ ok: true });
     expect(model.requests[0]?.outputType).toMatchObject({
       type: "json_schema",
-      strict: true,
+      strict: false,
     });
     const invalid = new ScriptedModel([message('{"ok":"wrong"}')]);
     await expect(

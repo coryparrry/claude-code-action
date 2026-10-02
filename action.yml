@@ -49,7 +49,7 @@ inputs:
     required: false
     default: ""
   codex_sandbox:
-    description: "Codex sandbox: read-only or workspace-write"
+    description: "Tool and file access policy: read-only or workspace-write; does not provide OS process isolation"
     required: false
     default: "workspace-write"
   trigger_phrase:
@@ -106,7 +106,7 @@ inputs:
     description: "Optional repository token; defaults to the workflow GitHub token"
     required: false
   use_sticky_comment:
-    description: "Use just one comment to deliver issue/PR comments"
+    description: "Reuse one tracking comment for pull_request and pull_request_target workflows"
     required: false
     default: "false"
   use_commit_signing:
@@ -285,7 +285,7 @@ runs:
     - name: Setup Node.js
       uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
       with:
-        node-version: ${{ env.NODE_VERSION || '18.x' }}
+        node-version: ${{ env.NODE_VERSION || '22.x' }}
         cache: ${{ inputs.use_node_cache == 'true' && 'npm' || '' }}
         package-manager-cache: false
     - name: Install Bun
@@ -317,9 +317,11 @@ runs:
 
     - name: Install Dependencies
       shell: bash
+      env:
+        BUN_EXECUTABLE: ${{ inputs.path_to_bun_executable || 'bun' }}
       run: |
         cd "$GITHUB_ACTION_PATH"
-        bun install --production --frozen-lockfile
+        "$BUN_EXECUTABLE" --no-env-file install --production --frozen-lockfile
 
     - name: Run Codex Action
       id: run
@@ -330,10 +332,11 @@ runs:
         # that aborts the run with exit code 1. Bun already auto-discovers the
         # action's own tsconfig.json by walking up from the entry file, so the
         # override is redundant. See oven-sh/bun#25730.
-        bun --no-env-file \
+        "$BUN_EXECUTABLE" --no-env-file \
           --config="${GITHUB_ACTION_PATH}/bunfig.toml" \
-          run ${GITHUB_ACTION_PATH}/src/entrypoints/run.ts
+          run "${GITHUB_ACTION_PATH}/src/entrypoints/run.ts"
       env:
+        BUN_EXECUTABLE: ${{ inputs.path_to_bun_executable || 'bun' }}
         PROMPT: ${{ inputs.prompt }}
         TRIGGER_PHRASE: ${{ inputs.trigger_phrase }}
         ASSIGNEE_TRIGGER: ${{ inputs.assignee_trigger }}
@@ -400,18 +403,19 @@ runs:
     - name: Cleanup SSH signing key
       if: always() && inputs.ssh_signing_key != ''
       shell: bash
+      env:
+        BUN_EXECUTABLE: ${{ inputs.path_to_bun_executable || 'bun' }}
       run: |
-        BUN_BIN="${GITHUB_ACTION_PATH}/bin/bun"
-        [ -x "$BUN_BIN" ] || BUN_BIN="bun"
         # No --tsconfig-override: see the "Run Codex Action" step above.
-        "$BUN_BIN" --no-env-file \
+        "$BUN_EXECUTABLE" --no-env-file \
           --config="${GITHUB_ACTION_PATH}/bunfig.toml" \
-          run ${GITHUB_ACTION_PATH}/src/entrypoints/cleanup-ssh-signing.ts
+          run "${GITHUB_ACTION_PATH}/src/entrypoints/cleanup-ssh-signing.ts"
 
     - name: Post buffered inline comments
       if: always() && inputs.buffer_inline_comments != 'false' && inputs.classify_inline_comments != 'false' && steps.run.outputs.conclusion != '' && steps.run.outputs.skipped_due_to_fork != 'true'
       shell: bash
       env:
+        BUN_EXECUTABLE: ${{ inputs.path_to_bun_executable || 'bun' }}
         OPENAI_API_KEY: ${{ inputs.openai_api_key || env.OPENAI_API_KEY }}
         OPENAI_PROVIDER: ${{ inputs.openai_provider || env.OPENAI_PROVIDER }}
         OPENAI_IDENTITY_PROVIDER_ID: ${{ inputs.openai_identity_provider_id || env.OPENAI_IDENTITY_PROVIDER_ID }}
@@ -429,22 +433,19 @@ runs:
         REPO_NAME: ${{ github.event.repository.name }}
         PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
       run: |
-        BUN_BIN="${GITHUB_ACTION_PATH}/bin/bun"
-        [ -x "$BUN_BIN" ] || BUN_BIN="bun"
         # No --tsconfig-override: see the "Run Codex Action" step above.
-        "$BUN_BIN" --no-env-file \
+        "$BUN_EXECUTABLE" --no-env-file \
           --config="${GITHUB_ACTION_PATH}/bunfig.toml" \
-          run ${GITHUB_ACTION_PATH}/src/entrypoints/post-buffered-inline-comments.ts
+          run "${GITHUB_ACTION_PATH}/src/entrypoints/post-buffered-inline-comments.ts"
 
     - name: Revoke GitHub App installation token
       if: always() && steps.run.outputs.github_app_token_created == 'true'
       shell: bash
       env:
+        BUN_EXECUTABLE: ${{ inputs.path_to_bun_executable || 'bun' }}
         GITHUB_APP_TOKEN_CREATED: ${{ steps.run.outputs.github_app_token_created }}
         MINTED_GITHUB_APP_TOKEN: ${{ steps.run.outputs.github_token }}
       run: |
-        BUN_BIN="${GITHUB_ACTION_PATH}/bin/bun"
-        [ -x "$BUN_BIN" ] || BUN_BIN="bun"
-        "$BUN_BIN" --no-env-file \
+        "$BUN_EXECUTABLE" --no-env-file \
           --config="${GITHUB_ACTION_PATH}/bunfig.toml" \
-          run ${GITHUB_ACTION_PATH}/src/entrypoints/revoke-app-token.ts
+          run "${GITHUB_ACTION_PATH}/src/entrypoints/revoke-app-token.ts"

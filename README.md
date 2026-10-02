@@ -6,30 +6,12 @@ This is an independent adaptation, not an official OpenAI or Anthropic release. 
 
 ## Quickstart
 
-From this checkout, run the guided installer:
+Use this repository as a GitHub Action in your workflow. No local installer is required.
 
-```bash
-npm run install-github-app
-```
-
-It guides you through GitHub login, repository selection, the OpenAI API-key
-secret and a Linux or macOS runner. Review the setup before it writes anything.
-The installer opens a draft workflow PR in each selected repository; merge it
-onto the default branch to enable automatic PR reviews. Trusted users' non-draft,
-same-repository PRs are reviewed when opened, updated, reopened or marked ready.
-Use `/codex` in issue titles/bodies, comments or reviews to ask questions or request
-implementations. Both jobs show progress; automatic reviews use read-only code
-access and newer runs cancel older reviews for the same PR.
-The generated workflow explicitly uses **Luna 6 (`gpt-6-luna`)** and a reviewed
-action commit. Existing repository secrets are reused, and existing workflows
-are preserved.
-
-The installer needs Node.js and [GitHub CLI](https://cli.github.com/), but does not
-need Bun or the action's SDK dependencies. To use it from any directory, run
-`npm link --ignore-scripts` in this checkout, then `codex-action install`.
-See [installer options and troubleshooting](docs/installer.md).
-
-### Manual setup
+The examples pin the existing action baseline
+`0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71`. That pin does not include these
+audit changes; update `uses:` to the reviewed, published commit containing
+those changes before relying on their behavior. No new release tag is assumed.
 
 Add your existing OpenAI key as the repository Actions secret `OPENAI_API_KEY`. Save this workflow as `.github/workflows/codex.yml` in the repository where you want the action to operate. Replace `your-github-username` with the trusted user's login. The workflow must be on the default branch for `issue_comment` events.
 
@@ -130,11 +112,13 @@ Mention `/codex` in an issue or PR comment to ask a question, review code, or re
 
 For an existing installation, change the workflow's mention condition to
 `/codex` and set `trigger_phrase: "/codex"` on the action step. Both
-must agree, including when the workflow pins an older action revision. The
-guided installer now generates both settings explicitly. Custom trigger phrases
-remain supported.
+must agree, including when the workflow pins an older action revision. Custom trigger phrases remain supported.
 
-The example pins the reviewed action commit. The action uses the workflow GitHub token. A repository-scoped `github_token` can be supplied when a custom bot or additional permissions are needed. Set `bot_name` to that token's comment author login for sticky comments. Changes pushed with the default workflow token follow GitHub's normal restrictions on triggering other workflows.
+The action uses the workflow GitHub token. A repository-scoped `github_token` can be supplied when a custom bot or additional permissions are needed. Set `bot_name` to that token's comment author login for sticky comments. Changes pushed with the default workflow token follow GitHub's normal restrictions on triggering other workflows.
+
+For authentication alternatives and custom GitHub Apps, see the [setup guide](docs/setup.md).
+An optional [local installer](docs/installer.md) can propose a workflow PR; it is
+separate from using or releasing the action.
 
 ## Automated prompts
 
@@ -174,10 +158,10 @@ Preparation builds the GitHub context and scoped MCP configuration. The SDK then
 | `plugins`, `plugin_marketplaces`                       | Configuration components loaded by this action; supported Codex and legacy manifest formats do not select a Claude runtime. |
 | Commands, skills, Task, Workflow                       | Repository/plugin instructions, command arguments, subagents, and workflow execution in the SDK loop.                       |
 | `mcp_config`, tool selection                           | Custom stdio/HTTP MCP servers and existing GitHub integrations.                                                             |
-| `structured_output`                                    | Validated JSON result for a supplied schema.                                                                                |
+| `structured_output` output                             | Validated JSON result for a schema supplied with `codex_args: --json-schema ...`.                                           |
 | Progress, sticky comments, inline review               | Existing GitHub presentation, classification, signing, branch handling, and cleanup.                                        |
 
-`codex_args` takes precedence over the legacy `claude_args` name. Both describe action configuration; they are not arbitrary arguments to a CLI subprocess. Legacy `.claude` settings, command, and plugin format names are compatibility inputs, not a Claude execution backend. Authentication supports OpenAI API keys, OpenAI WIF, Bedrock bearer credentials and Azure OpenAI credentials. See [setup](docs/setup.md) and the [feature comparison](docs/feature-parity.md) for limits. `additional_permissions` requests installed App permissions; it cannot elevate a workflow token.
+`codex_args` takes precedence over the legacy `claude_args` name. Both describe action configuration; they are not arbitrary arguments to a CLI subprocess. Legacy `.claude` settings, command, and plugin format names are compatibility inputs, not a Claude execution backend. Authentication supports OpenAI API keys, OpenAI WIF, Bedrock bearer or AWS signing credentials and Azure OpenAI credentials. See [setup](docs/setup.md) and the [feature comparison](docs/feature-parity.md) for limits. `additional_permissions` requests installed App permissions; it cannot elevate a workflow token.
 
 See [all action inputs](action.yml), the [base-action reference](base-action/README.md), and the retained [workflow feature guides](docs/usage.md). The available adapter surfaces are distinct from live qualification: offline checks do not establish a complete model-driven GitHub task end to end.
 
@@ -197,8 +181,8 @@ API authentication uses the OpenAI key supplied to the SDK model client. Shell s
 
 ## Verification status
 
-Verification uses offline model/transport fixtures, configuration parsing, and relevant upstream regression suites. A live Luna tool-loop test passed during initial qualification. Live GitHub task execution and the newly added cloud authentication paths remain unverified. See [the port worklog](docs/CODEX_PORT_WORKLOG.md) for the completed checks.
+Verification covers offline model/transport fixtures, configuration parsing, and relevant upstream regression suites. These checks do not establish a complete model-driven GitHub task, live cloud authentication, or a published release. See [the feature comparison](docs/feature-parity.md) for scope and remaining differences, and [the port worklog](docs/CODEX_PORT_WORKLOG.md) for recorded checks.
 
-Fork CI runs offline tests, formatting, type checking, and the inherited workflow checks with Bun `1.4.2`. Original documentation and examples are retained and adapted; provider-specific historical references are identified explicitly. Upstream model-calling CI remains preserved under `examples/upstream-workflows` without running in this fork.
+Fork CI runs offline tests, formatting, type checking, and the inherited workflow checks with Bun `1.4.2`. The [cloud provider guide](docs/cloud-providers.md) describes the supported OpenAI authentication contracts. Upstream model-calling CI remains preserved under `examples/upstream-workflows` without running in this fork.
 
 Nonsecret build/test variables from the workflow environment and `settings.env` reach Codex tools. Reserved runtime controls and credential variables remain excluded.

@@ -205,6 +205,47 @@ describe("buffered inline comment classifier", () => {
     }
   });
 
+  it("forwards temporary AWS credentials to the isolated Bedrock classifier", async () => {
+    const requests: Array<{
+      authorization: string | null;
+      sessionToken: string | null;
+    }> = [];
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request) {
+        requests.push({
+          authorization: request.headers.get("authorization"),
+          sessionToken: request.headers.get("x-amz-security-token"),
+        });
+        return modelResponse(JSON.stringify({ verdicts: [true, false] }));
+      },
+    });
+    try {
+      const selected = await selectCommentsToPost(comments, (bodies) =>
+        classifyComments(bodies, {
+          env: {
+            PATH: process.env.PATH,
+            OPENAI_PROVIDER: "bedrock",
+            AWS_REGION: "us-east-1",
+            AWS_ACCESS_KEY_ID: "offline-access-key",
+            AWS_SECRET_ACCESS_KEY: "offline-secret-key",
+            AWS_SESSION_TOKEN: "offline-session-token",
+            AWS_BEDROCK_BASE_URL: `http://127.0.0.1:${server.port}/v1`,
+            AWS_BEDROCK_ENDPOINT: "mantle",
+            OPENAI_AGENTS_DISABLE_TRACING: "1",
+          },
+        }),
+      );
+      expect(requests).toHaveLength(1);
+      expect(selected).toEqual([comments[0]!]);
+      expect(requests[0]!.authorization).toStartWith("AWS4-HMAC-SHA256 ");
+      expect(requests[0]!.sessionToken).toBe("offline-session-token");
+    } finally {
+      server.stop(true);
+    }
+  });
+
   it("forwards OPENAI_API_VERSION to the Azure classifier SDK", async () => {
     const apiVersion = "2026-01-01-preview";
     const requests: Array<{ path: string; version: string | null }> = [];

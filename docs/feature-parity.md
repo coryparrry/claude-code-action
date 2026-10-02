@@ -1,77 +1,80 @@
-# Original action feature comparison
+# Claude Action feature comparison
 
-## Headline workflow features
+This compares the Codex action source with
+[Claude Code Action at `97c53473391bff1901034d4b454b5bac7ab7a029`](https://github.com/anthropics/claude-code-action/tree/97c53473391bff1901034d4b454b5bac7ab7a029)
+(2026-10-01). The scope is the published GitHub Action experience. Local
+installer tooling and exact Claude/Codex CLI command parity are outside this
+audit.
 
-The ten headline features are supported by the OpenAI action and its generated
-installation workflow. The checks below cover source behavior and offline
-fixtures; a complete installed, model-driven GitHub task remains unverified.
+The action preserves the main GitHub workflows while replacing the Claude
+runtime with an OpenAI Agents SDK loop. **Full parity and live end-to-end
+qualification are not established.** “Implemented” below describes source
+behavior covered by offline tests, not successful execution against every
+provider or a consumer repository.
 
-| Original headline feature   | OpenAI equivalent                                                                                         |
-| --------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Intelligent mode detection  | Context selects interactive or agent execution; progress-enabled PR reviews use the GitHub tracking flow. |
-| Interactive code assistant  | `/codex` questions use repository, issue and PR context.                                                  |
-| Code review                 | Automatic reviews on PR open/update/reopen/ready events, with inline feedback and a summary.              |
-| Code implementation         | `/codex` requests can edit files, implement features and push commits using the existing branch handling. |
-| PR/issue integration        | Issue titles/bodies, issue and PR comments, inline review comments and submitted review text.             |
-| Flexible tool access        | Local file and shell tools plus GitHub MCP; configuration enables additional supported tools and servers. |
-| Progress tracking           | Both installed jobs enable tracking comments and instruct the model to update task checkboxes.            |
-| Structured outputs          | A supplied JSON schema validates the result exposed as the `structured_output` Action output.             |
-| Runs on your infrastructure | The SDK executes on the selected GitHub runner and makes provider API calls.                              |
-| Simplified configuration    | Unified `prompt` and `codex_args`, with `claude_args` retained as a compatibility alias.                  |
+## GitHub Action features
 
-The default installer restricts both jobs to selected trusted users. Automatic
-reviews skip drafts and fork PRs, use read-only code access, and cancel an older
-review when a new run starts for the same PR. Interactive requests retain write
-access for requested implementation work. Custom prompts and schema outputs are
-configured when an automation needs them; they do not require a separate runtime.
+| Upstream feature                     | Codex action behavior                                                                                                                | Status                                     |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| Mode detection and automated prompts | Selects interactive or agent execution from the event and `prompt`; progress-enabled PR reviews use tracking comments.               | Implemented                                |
+| Mentions, labels, and assignees      | Supports `/codex` requests, configurable trigger text, label and assignee triggers.                                                  | Implemented                                |
+| Issue and PR context                 | Reads issue/PR bodies, comments, inline review comments, and submitted reviews.                                                      | Implemented                                |
+| Code review                          | Reviews changes and can post inline comments and a summary; supports buffering and classifying inline feedback.                      | Implemented; live task unverified          |
+| Code implementation                  | Can edit files, use branch handling, commit, and push within granted permissions; supports commit signing.                           | Implemented; live task unverified          |
+| Progress and sticky comments         | Tracking comments, task checkboxes, sticky replies, execution reports, and cleanup.                                                  | Implemented                                |
+| Structured outputs                   | Validates a supplied JSON schema and exposes `structured_output`; also exposes conclusion, execution-file, and session outputs.      | Implemented                                |
+| Runner execution                     | Runs on the calling GitHub runner and uses provider APIs for inference.                                                              | Implemented                                |
+| Configuration                        | `prompt`, `codex_args`, action inputs, and supported settings; `claude_args` remains a compatibility alias.                          | Adapted                                    |
+| Custom GitHub App                    | Mints repository-scoped installation tokens, requests available App permissions, and attempts final revocation.                      | Implemented; live App setup unverified     |
+| Fork PRs                             | Rejects fork PR execution before model work, including comments and associated workflow events. Upstream supports fork PR workflows. | Intentional policy difference              |
+| Fix links                            | `include_fix_links` links to the PR's changes; default is `false`. It does not launch the upstream hosted Claude coding UI.          | Adapted; hosted vendor service unavailable |
 
-## Runtime and provider comparison
+The [README workflow](../README.md#quickstart) limits triggers to a trusted
+actor, skips drafts and fork PRs, and cancels an older automatic review when a
+new run starts for the same PR. It grants read-only repository access for
+reviews and write access for requested implementations. These are workflow
+choices; other events and trusted actors must be configured in the calling
+workflow.
 
-Full parity is **not established**. This comparison uses upstream commit
-`12dd8d74c712f5f3669365b2369b558c495b1104` and the current local OpenAI port.
-Implemented means source and offline test coverage, unless stated otherwise.
+## Model runtime and tools
 
-| Original capability                                                     | OpenAI adaptation                                                                     | Status                                                          |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Mentions, labels, assignees, prompts, automated events                  | Retained GitHub triggers with Codex defaults                                          | Implemented                                                     |
-| Context, progress comments, branches, commits, signing, inline feedback | Retained GitHub orchestration and registered tools                                    | Implemented; complete live GitHub task unverified               |
-| API key                                                                 | OpenAI Responses API                                                                  | Implemented; earlier live Luna tool-loop test passed            |
-| Workload identity federation                                            | GitHub OIDC exchanged for renewable OpenAI service-account credentials                | Implemented; live setup unverified                              |
-| Custom GitHub App and extra permissions                                 | Repository-scoped installation tokens and final cleanup                               | Implemented; live setup unverified                              |
-| Bedrock                                                                 | OpenAI SDK regional adapter with bearer credentials                                   | Partial; role/OIDC/SigV4 route missing                          |
-| Foundry                                                                 | Azure OpenAI SDK with API key or supplied Entra token                                 | Partial; no Entra token acquisition/refresh                     |
-| Subscription/OAuth credentials                                          | Requires a ChatGPT/Codex subscription backend                                         | Missing; WIF is a separate mechanism                            |
-| Vertex AI                                                               | No corresponding provider adapter                                                     | Missing                                                         |
-| Model tiers, reasoning effort                                           | Haiku → Luna; Sonnet → Sol; Opus → Astra; explicit OpenAI IDs                         | Implemented                                                     |
-| Turns, fallback, schema, costs                                          | SDK turn limits, eligible fallback, validated JSON, estimated costs                   | Implemented; cost limit stops after responses                   |
-| File, shell, web, notebook, LSP, Task, Skill, workflow tools            | Registered SDK tools                                                                  | Implemented supported schemas                                   |
-| Permissions and hooks                                                   | Tool/file/domain/command rules, permission modes, hook decisions and output rewriting | Implemented tool policy                                         |
-| Native settings                                                         | Reasoning summary, verbosity, shell/edit and web-search controls                      | Implemented supported controls                                  |
-| Instructions, imports, path rules                                       | AGENTS/CLAUDE files, imports, nested discovery and scoped rules                       | Implemented                                                     |
-| Commands, skills, agents, plugins, marketplaces                         | Supported manifests interpreted by this action                                        | Implemented formats; ecosystems differ                          |
-| Subagent inheritance, resume, memory, worktrees                         | Scoped checkpoints/notes, inherited policy/model, Git worktrees                       | Implemented                                                     |
-| Session resume and compaction                                           | Workspace-scoped storage and OpenAI compaction                                        | Implemented; cross-job persistence needs configuration          |
-| MCP stdio, HTTP, SSE and output limits                                  | SDK transports, conservative output bounds, isolated credentials                      | Implemented; output bound approximates tokens using UTF-8 bytes |
-| Lazy MCP tool search                                                    | Tools registered up front                                                             | Missing ToolSearch/deferred discovery                           |
-| Human questions and plan approval                                       | Trusted hook answers in headless execution                                            | Partial; no live human question UI                              |
-| Fork PR execution                                                       | Currently skipped before model work                                                   | Missing by current policy                                       |
-| Guided installation                                                     | Standalone repository/key/runner/workflow-PR wizard                                   | Implemented; native slash command and hosted App absent         |
-| Custom runtime executable                                               | Pinned Agents SDK; custom Bun path supported                                          | Custom Codex CLI execution missing                              |
-| OS filesystem/network sandbox                                           | File-tool and permission policy only                                                  | Missing; worktrees do not provide an OS sandbox                 |
+| Capability                           | Codex adaptation                                                                                                             | Limit                                                                                                                |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Model selection and reasoning effort | Explicit OpenAI model IDs and supported effort values; legacy model tiers map to OpenAI tiers.                               | Model availability depends on the provider/account.                                                                  |
+| Turns, fallback, schema, and costs   | SDK turn limits, eligible model-request fallback, validated JSON, and estimated token costs.                                 | Cost checks happen after responses; they are not a provider spending cap.                                            |
+| Repository tools                     | File, shell, web, notebook, LSP, Task, Skill, and Workflow tools registered with the SDK.                                    | Supported schemas and behavior are action implementations, not the Claude runtime.                                   |
+| Permissions and hooks                | Tool, file, domain, and command rules; unattended permission decisions; supported hook decisions and output rewriting.       | These are tool policies, not an OS filesystem/network sandbox.                                                       |
+| Instructions and components          | AGENTS/CLAUDE instructions, imports, path rules, supported command/skill/agent/plugin manifests.                             | Vendor ecosystems and available components differ.                                                                   |
+| Subagents and worktrees              | Inherited policy/model, scoped checkpoints and notes, isolated Git worktrees.                                                | A worktree is not process isolation.                                                                                 |
+| Resume and compaction                | Workspace-scoped history and OpenAI compaction.                                                                              | Cross-job history requires explicitly configured persistent storage.                                                 |
+| MCP                                  | stdio, HTTP, and SSE transports, credential scoping, bounded output, and tool selection.                                     | Tools are registered up front; deferred discovery is absent.                                                         |
+| MCP images and other rich media      | Native image parts for PNG/JPEG/WebP/GIF and native file parts for embedded PDFs; text and resource metadata remain bounded. | Unsupported audio/SVG/binary content is omitted with a textual notice. Resource links are not fetched automatically. |
+| Human questions and planning         | Trusted hook answers support headless execution.                                                                             | No live human-question or plan-approval UI.                                                                          |
 
-## Delivery and verification limits
+## Authentication and cloud providers
 
-The installer pins the reviewed action source revision in its generated workflows.
-An existing installation needs a workflow update; rerunning the installer proposes
-one for a managed workflow. The pinned revision includes the runtime changes in
-this comparison. No consumer repository was installed or updated during this audit.
-Cloud authentication tests use offline fixtures; they do not prove live provider
-accounts, deployments, billing or permissions are configured correctly.
+| Provider capability          | Codex action behavior                                                                           | Status                                                                                       |
+| ---------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Direct API key               | OpenAI Responses API with an OpenAI API key.                                                    | Implemented                                                                                  |
+| Workload identity federation | GitHub OIDC exchanged for renewable API Platform service-account credentials.                   | Implemented; live trust policy unverified                                                    |
+| Amazon Bedrock               | OpenAI SDK regional provider with bearer tokens or SigV4 using AWS environment credentials.     | Implemented; role acquisition/refresh belongs to the calling workflow, live setup unverified |
+| Azure / Microsoft Foundry    | Azure OpenAI with API key or a supplied Entra access token; model input is the deployment name. | Adapted; no Entra token acquisition/refresh or Anthropic Foundry backend                     |
+| Google Vertex AI             | No corresponding OpenAI provider adapter.                                                       | Unsupported                                                                                  |
+| Subscription/OAuth login     | No Claude or ChatGPT subscription login backend. OpenAI WIF is separate API authentication.     | Unsupported                                                                                  |
 
-Use the [setup guide](./setup.md) for actual authentication contracts. Primary
-references: [OpenAI GitHub WIF](https://developers.openai.com/api/docs/guides/workload-identity-federation/github-actions),
-[OpenAI Bedrock](https://developers.openai.com/api/docs/guides/amazon-bedrock),
-and [OpenAI pricing](https://developers.openai.com/api/docs/pricing).
+The [cloud provider guide](./cloud-providers.md) describes the credential and
+model-name contracts. Accepting an input with a similar name does not establish
+provider parity.
 
-Vendor-specific account, hosted-service and CLI capabilities require a separate
-implementation. Accepting a similar input name does not establish parity.
+## Delivery and verification
+
+The example workflows retain the existing immutable baseline
+`0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71`. That pin does not include the
+changes from this audit. Release the reviewed
+source and update consumer workflow refs before treating those changes as
+delivered. No new release tag or consumer-repository installation is claimed.
+
+Offline regression and transport fixtures establish local behavior, including
+failure paths. They do not verify live model access, cloud account policy,
+billing, deployment availability, or a complete model-driven GitHub task.
+Recorded verification belongs in the [port worklog](./CODEX_PORT_WORKLOG.md).

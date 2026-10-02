@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { createHash } from "node:crypto";
 import {
   MemorySession,
   Usage,
@@ -9,6 +10,7 @@ import {
 } from "@openai/agents";
 import { z } from "zod";
 import { createAgentCompaction } from "../src/agent-compaction";
+import { createOpenAIAuthentication } from "../src/openai-auth";
 import {
   runOpenAIAgent,
   OpenAIAgentRunError,
@@ -158,6 +160,41 @@ describe("SDK context compaction", () => {
     compact.observeResponse(response(320_000), "gpt-5.3-codex");
     await compact.session.runCompaction();
     expect(requests[0]?.model).toBe("gpt-5.3-codex");
+  });
+
+  test("selects the fallback model before AWS compaction payload signing", async () => {
+    const requests = fakeCompact({
+      onRequest(request, body) {
+        expect(request.headers.get("authorization")).toStartWith(
+          "AWS4-HMAC-SHA256 ",
+        );
+        expect(request.headers.get("x-amz-content-sha256")).toBe(
+          createHash("sha256").update(JSON.stringify(body)).digest("hex"),
+        );
+      },
+    });
+    const authentication = await createOpenAIAuthentication(
+      {
+        OPENAI_PROVIDER: "bedrock",
+        AWS_REGION: "us-east-1",
+        AWS_ACCESS_KEY_ID: "offline-access-key",
+        AWS_SECRET_ACCESS_KEY: "offline-secret-key",
+      },
+      { register: () => undefined },
+    );
+    const signal = new AbortController().signal;
+    const compact = createAgentCompaction({
+      openAIClient: authentication.client,
+      apiKey: authentication.credential,
+      baseURL: authentication.baseURL,
+      model: "gpt-original",
+      signal,
+    });
+    await compact.forceCompact({ signal, activeModelName: "gpt-fallback" }, [
+      { role: "user", content: "Offline signed compaction" },
+    ]);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.model).toBe("gpt-fallback");
   });
 
   test("only compacts a completed prefix while preserving pending tool calls", async () => {

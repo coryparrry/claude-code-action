@@ -1,6 +1,6 @@
 # Solutions & Use Cases
 
-> This fork runs Codex with `OPENAI_API_KEY`. GitHub triggers, tracking comments, branch handling, signing, and MCP integrations retain the upstream workflow shape. `claude_args` is a compatibility alias; use the preferred `codex_args` name for the same supported argument subset. Legacy `--allowedTools` / `--disallowedTools` support MCP names and simple Bash rules, not the full Claude permission language. Use a supported OpenAI model; there is no native `--max-turns`, Anthropic OAuth, WIF, Bedrock, or Vertex backend. Fork pull requests are rejected. See [configuration](./configuration.md) and [the action inputs](../action.yml).
+> This fork runs OpenAI models through the OpenAI Agents SDK. Use `codex_args` for supported action controls; `claude_args` is a compatibility alias. Fork PRs are rejected before execution. Start with the [current workflow](../README.md#quickstart), [provider setup](./cloud-providers.md), and [feature comparison](./feature-parity.md). Historical Claude-specific examples do not establish support in this runtime.
 
 This guide provides complete, ready-to-use solutions for common automation scenarios with Codex Action. Each solution includes working examples, configuration details, and expected outcomes.
 
@@ -193,6 +193,10 @@ jobs:
 ---
 
 ## Review PRs from External Contributors
+
+This retained example does not enable fork PR reviews. The current action
+rejects fork PRs and checks repository access before model work; changing the
+workflow condition does not bypass those policies.
 
 **When to use:** Apply stricter review criteria for external or new contributors.
 

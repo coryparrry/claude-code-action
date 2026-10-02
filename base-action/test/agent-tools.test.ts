@@ -76,6 +76,68 @@ describe("real SDK local tools", () => {
     expect(tasks.has(result.shell_id)).toBe(false);
   });
 
+  test("completed background shells preserve output without consuming active slots", async () => {
+    const tasks = new Map<string, BackgroundAgentTask>();
+    const { invoke } = await setup({ backgroundTasks: tasks });
+    let firstId = "";
+    try {
+      for (let index = 0; index < 33; index++) {
+        const result = JSON.parse(
+          await invoke("Bash", {
+            command: `printf completed-${index}`,
+            run_in_background: true,
+          }),
+        );
+        firstId ||= result.shell_id;
+        const task = tasks.get(result.shell_id);
+        expect(task).toBeDefined();
+        await task!.done;
+      }
+      expect(tasks.size).toBe(33);
+      expect(await invoke("BashOutput", { bash_id: firstId })).toContain(
+        "completed-0\n[exit code: 0",
+      );
+    } finally {
+      await Promise.all([...tasks.values()].map((task) => task.stop()));
+    }
+  });
+
+  test("background shells reject excess active work and recover a stopped slot", async () => {
+    const tasks = new Map<string, BackgroundAgentTask>();
+    const { cwd, invoke } = await setup({ backgroundTasks: tasks });
+    try {
+      for (let index = 0; index < 32; index++) {
+        const result = JSON.parse(
+          await invoke("Bash", {
+            command: "exec sleep 30",
+            run_in_background: true,
+          }),
+        );
+        expect(tasks.has(result.shell_id)).toBe(true);
+      }
+      expect(
+        await invoke("Bash", {
+          command: "printf rejected > rejected.txt",
+          run_in_background: true,
+        }),
+      ).toContain("Background shell limit reached");
+      expect(tasks.size).toBe(32);
+      await expect(access(join(cwd, "rejected.txt"))).rejects.toThrow();
+      await tasks.values().next().value!.stop();
+      const accepted = JSON.parse(
+        await invoke("Bash", {
+          command: "printf recovered",
+          run_in_background: true,
+        }),
+      );
+      const task = tasks.get(accepted.shell_id)!;
+      await task.done;
+      expect(task.getOutput()).toContain("recovered");
+    } finally {
+      await Promise.all([...tasks.values()].map((task) => task.stop()));
+    }
+  });
+
   test("plan entry shares readonly state and exit needs explicit approval before restoring mode", async () => {
     let exitRequests = 0;
     const { invoke } = await setup({

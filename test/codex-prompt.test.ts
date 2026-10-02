@@ -176,6 +176,30 @@ describe("Codex action-owned instructions", () => {
     }
     expect(prompt).not.toContain("[Fix this →](https://claude.ai/code?q=");
     expect(legacy).not.toContain("[Fix this →](https://claude.ai/code?q=");
+    // API configuration is read at import time; verify enterprise links in a
+    // fresh process rather than relying on this test module's cached host.
+    const enterprise = Bun.spawnSync({
+      cmd: [
+        process.execPath,
+        "--no-env-file",
+        "--eval",
+        `
+        import { generatePrompt } from ${JSON.stringify(`${import.meta.dir}/../src/create-prompt/index.ts`)};
+        const data = ${JSON.stringify(prData)};
+        data.imageUrlMap = new Map();
+        const context = ${JSON.stringify(prContext)};
+        context.githubContext.inputs.includeFixLinks = true;
+        process.stdout.write(generatePrompt(context, data, false, "tag"));
+      `,
+      ],
+      env: { ...process.env, GITHUB_SERVER_URL: "https://github.example.com" },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(enterprise.exitCode).toBe(0);
+    expect(enterprise.stdout.toString()).toContain(
+      "[View changes](https://github.example.com/owner/repo/pull/1/files)",
+    );
   });
 
   test("brands initial, final and failure comments without rewriting body content", () => {

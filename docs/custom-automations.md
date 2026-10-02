@@ -1,6 +1,6 @@
 # Custom Automations
 
-> This fork runs Codex with `OPENAI_API_KEY`. GitHub triggers, tracking comments, branch handling, signing, and MCP integrations retain the upstream workflow shape. `claude_args` is a compatibility alias; use the preferred `codex_args` name for the same supported argument subset. Legacy `--allowedTools` / `--disallowedTools` support MCP names and simple Bash rules, not the full Claude permission language. Use a supported OpenAI model; there is no native `--max-turns`, Anthropic OAuth, WIF, Bedrock, or Vertex backend. Fork pull requests are rejected. See [configuration](./configuration.md) and [the action inputs](../action.yml).
+> This fork runs OpenAI models through the OpenAI Agents SDK. Use `codex_args` for supported action controls; `claude_args` is a compatibility alias. Fork PRs are rejected before execution. Start with the [current workflow](../README.md#quickstart), [provider setup](./cloud-providers.md), and [feature comparison](./feature-parity.md). Historical Claude-specific examples do not establish support in this runtime.
 
 These examples show how to configure Codex to act automatically based on GitHub events. When you provide a `prompt` input, the action automatically runs in agent mode without requiring manual @mentions. Without a `prompt`, it runs in interactive mode, responding to /codex mentions.
 
@@ -19,12 +19,11 @@ This action supports the following GitHub events ([learn more GitHub event trigg
 
 - `pull_request` or `pull_request_target` - When PRs are opened or synchronized
 - `issue_comment` - When comments are created on issues or PRs
-- `pull_request_comment` - When comments are made on PR diffs
 - `issues` - When issues are opened or assigned
 - `pull_request_review` - When PR reviews are submitted
 - `pull_request_review_comment` - When comments are made on PR reviews
 - `repository_dispatch` - Custom events triggered via API
-- `workflow_dispatch` - Manual workflow triggers (coming soon)
+- `workflow_dispatch` - Manual workflow triggers
 
 ## Automated Documentation Updates
 

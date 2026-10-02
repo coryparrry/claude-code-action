@@ -4,7 +4,7 @@ import { validateOpenAIAuthentication } from "../../base-action/src/openai-auth"
  * Classification failures preserve the original fallback: post all candidates.
  * Calls explicitly marked confirmed=false are always discarded.
  */
-import { readFileSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,8 +12,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createOctokit } from "../github/api/client";
 import { redactSecrets } from "../github/utils/sanitizer";
-
-const BUFFER_PATH = "/tmp/inline-comments-buffer.jsonl";
+import { getInlineCommentBufferPath } from "../mcp/inline-comment-buffer";
 
 export type BufferedComment = {
   ts: string;
@@ -99,6 +98,11 @@ export async function classifyComments(
       "ACTIONS_ID_TOKEN_REQUEST_URL",
       "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
       "AWS_BEARER_TOKEN_BEDROCK",
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SESSION_TOKEN",
+      "AWS_BEDROCK_BASE_URL",
+      "AWS_BEDROCK_ENDPOINT",
       "AWS_REGION",
       "AWS_DEFAULT_REGION",
       "AZURE_OPENAI_ENDPOINT",
@@ -240,10 +244,22 @@ async function postComment(
   }
 }
 
-export async function main() {
+type PostBufferedCommentsOptions = {
+  env?: NodeJS.ProcessEnv;
+  octokit?: ReturnType<typeof createOctokit>["rest"];
+  classify?: (bodies: string[]) => Promise<boolean[] | null>;
+};
+
+export async function main(options: PostBufferedCommentsOptions = {}) {
+  const env = options.env ?? process.env;
+  const bufferPath = getInlineCommentBufferPath(env);
+  if (!bufferPath) {
+    console.log("No inline comment buffer configured");
+    return;
+  }
   let raw: string;
   try {
-    raw = readFileSync(BUFFER_PATH, "utf8");
+    raw = readFileSync(bufferPath, "utf8");
   } catch {
     console.log("No buffered inline comments");
     return;
@@ -261,10 +277,10 @@ export async function main() {
 
   console.log(`Found ${comments.length} buffered inline comment(s)`);
 
-  const githubToken = process.env.GITHUB_TOKEN;
-  const owner = process.env.REPO_OWNER;
-  const repo = process.env.REPO_NAME;
-  const prNumber = process.env.PR_NUMBER;
+  const githubToken = env.GITHUB_TOKEN;
+  const owner = env.REPO_OWNER;
+  const repo = env.REPO_NAME;
+  const prNumber = env.PR_NUMBER;
 
   if (!githubToken || !owner || !repo || !prNumber) {
     console.log(
@@ -281,17 +297,23 @@ export async function main() {
     console.log(`  ${neverPost.length} with confirmed=false — not posting`);
   }
 
-  if (candidates.length === 0) {
-    return;
-  }
-
-  const toPost = await selectCommentsToPost(candidates);
+  const toPost = await selectCommentsToPost(candidates, options.classify);
+  // The model session has ended, so this step exclusively owns the buffer.
+  // Persist each successful delivery so a retry only sees undelivered entries.
+  let remaining = [...toPost];
+  const saveRemaining = () =>
+    writeFileSync(
+      bufferPath,
+      remaining.map((comment) => JSON.stringify(comment) + "\n").join(""),
+      { mode: 0o600 },
+    );
+  saveRemaining();
   if (!toPost.length) {
     console.log("No real comments to post");
     return;
   }
 
-  const octokit = createOctokit(githubToken).rest;
+  const octokit = options.octokit ?? createOctokit(githubToken).rest;
   const pull_number = parseInt(prNumber, 10);
   const pr = await octokit.pulls.get({ owner, repo, pull_number });
   const headSha = pr.data.head.sha;
@@ -302,6 +324,8 @@ export async function main() {
     if (await postComment(octokit, owner, repo, pull_number, headSha, c)) {
       console.log(`  posted ${c.path}:${c.line}`);
       posted++;
+      remaining = remaining.filter((comment) => comment !== c);
+      saveRemaining();
     }
   }
   console.log(`Posted ${posted}/${toPost.length}`);

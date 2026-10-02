@@ -83,7 +83,7 @@ describe("Codex-only base action", () => {
         expect(metadata).toContain(`  ${control}:`);
         expect(metadata).toContain(`inputs.${control} }}`);
       }
-      expect(metadata).toContain("env.NODE_VERSION || '18.x'");
+      expect(metadata).toContain("env.NODE_VERSION || '22.x'");
       expect(metadata).toContain("inputs.use_node_cache == 'true'");
       expect(metadata).toContain("bun-version: 1.4.2");
       expect(metadata).not.toContain("path_to_codex_executable");

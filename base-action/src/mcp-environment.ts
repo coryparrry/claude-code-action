@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 
 const AMBIENT_CREDENTIAL =
-  /^(?:GITHUB_APP_|ACTIONS_ID_TOKEN_REQUEST_|OPENAI_|AZURE_OPENAI_|CODEX_API_KEY$|ANTHROPIC_|AWS_BEARER_TOKEN_BEDROCK$|BUN_OPTIONS$|BUN_CONFIG$|NODE_OPTIONS$)/i;
+  /^(?:GITHUB_APP_|ACTIONS_ID_TOKEN_REQUEST_|OPENAI_|AZURE_OPENAI_|CODEX_API_KEY$|ANTHROPIC_|AWS_(?:BEARER_TOKEN_BEDROCK|ACCESS_KEY_ID|SECRET_ACCESS_KEY|SESSION_TOKEN)$|BUN_OPTIONS$|BUN_CONFIG$|NODE_OPTIONS$)/i;
 
 /** Remove action/model credentials before a child MCP process receives its env. */
 export function scrubMcpEnvironment(

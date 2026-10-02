@@ -7,7 +7,7 @@ const ALLOWED_TOOLS_FLAGS = new Set(["allowedTools", "allowed-tools"]);
 /**
  * Strip comment lines from a shell argument string.
  * Lines whose first non-whitespace character is `#` are removed entirely.
- * Mirrors stripShellComments in base-action/src/parse-sdk-options.ts.
+ * Mirrors the compatibility tokenizer in base-action/src/codex-compat.ts.
  */
 function stripShellComments(input: string): string {
   return input
@@ -48,33 +48,51 @@ function tokenize(claudeArgs: string): string[] {
  * so `--allowedTools "Read" "Grep" "mcp__github__get_commit"` captures all
  * three values, and commented-out lines are ignored.
  */
-export function parseAllowedTools(claudeArgs: string): string[] {
-  if (!claudeArgs?.trim()) return [];
-
+export function parseAllowedTools(
+  claudeArgs: string,
+  directAllowedTools: string = "",
+): string[] {
   const args = tokenize(claudeArgs);
   const tools: string[] = [];
   const seen = new Set<string>();
 
+  // Mirror the runtime's delimiter rules without splitting scoped arguments.
+  const appendTools = (value: string) => {
+    let rule = "";
+    let depth = 0;
+    const appendRule = () => {
+      const trimmed = rule.trim();
+      if (trimmed && !seen.has(trimmed)) {
+        seen.add(trimmed);
+        tools.push(trimmed);
+      }
+      rule = "";
+    };
+    for (const character of value) {
+      if (character === "(") depth++;
+      else if (character === ")") depth = Math.max(0, depth - 1);
+      if (depth === 0 && /[\s,]/.test(character)) appendRule();
+      else rule += character;
+    }
+    appendRule();
+  };
+
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (!arg?.startsWith("--")) continue;
-
-    const flag = arg.slice(2);
+    const separator = arg.indexOf("=");
+    const flag = arg.slice(2, separator < 0 ? undefined : separator);
     if (!ALLOWED_TOOLS_FLAGS.has(flag)) continue;
-
-    // Consume all consecutive non-flag values, e.g.
-    //   --allowedTools "Read" "Grep" "mcp__github__get_commit"
+    if (separator >= 0) {
+      appendTools(arg.slice(separator + 1));
+      continue;
+    }
+    // Space-separated flags accumulate consecutive non-flag arguments;
+    // equals-form flags consume only their own value, as the runtime does.
     while (i + 1 < args.length && !args[i + 1]!.startsWith("--")) {
-      i++;
-      for (const tool of args[i]!.split(",")) {
-        const trimmed = tool.trim();
-        if (trimmed && !seen.has(trimmed)) {
-          seen.add(trimmed);
-          tools.push(trimmed);
-        }
-      }
+      appendTools(args[++i]!);
     }
   }
-
+  appendTools(directAllowedTools);
   return tools;
 }

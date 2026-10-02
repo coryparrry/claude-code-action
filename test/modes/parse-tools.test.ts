@@ -2,6 +2,35 @@ import { describe, test, expect } from "bun:test";
 import { parseAllowedTools } from "../../src/modes/agent/parse-tools";
 
 describe("parseAllowedTools", () => {
+  test.each(["--allowedTools", "--allowed-tools"])(
+    "supports equals-form %s while preserving scoped rules",
+    (flag) => {
+      expect(
+        parseAllowedTools(
+          `${flag}="mcp__github_inline_comment__create_inline_comment,WebFetch(domain:docs.example.com)" --allowed-tools 'Bash(git log --format=a,b)'`,
+        ),
+      ).toEqual([
+        "mcp__github_inline_comment__create_inline_comment",
+        "WebFetch(domain:docs.example.com)",
+        "Bash(git log --format=a,b)",
+      ]);
+    },
+  );
+
+  test("combines direct action tool policy with compatibility tools", () => {
+    expect(
+      parseAllowedTools(
+        '--allowed-tools "Read,mcp__github_comment__*"',
+        "Read\nmcp__github_inline_comment__create_inline_comment, Bash(git log --format=a,b)",
+      ),
+    ).toEqual([
+      "Read",
+      "mcp__github_comment__*",
+      "mcp__github_inline_comment__create_inline_comment",
+      "Bash(git log --format=a,b)",
+    ]);
+  });
+
   test("parses unquoted tools", () => {
     const args = "--allowedTools mcp__github__*,mcp__github_comment__*";
     expect(parseAllowedTools(args)).toEqual([

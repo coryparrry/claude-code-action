@@ -202,7 +202,7 @@ describe("OpenAI provider authentication", () => {
         OPENAI_PROVIDER: "bedrock",
         AWS_BEARER_TOKEN_BEDROCK: "offline-token",
       },
-      "Bedrock requires AWS_BEARER_TOKEN_BEDROCK and AWS_REGION",
+      "Bedrock requires AWS_REGION or AWS_DEFAULT_REGION",
     ],
     [
       {
@@ -212,6 +212,37 @@ describe("OpenAI provider authentication", () => {
         AZURE_OPENAI_ENDPOINT: "https://example.openai.azure.com",
       },
       "Credentials for multiple OpenAI providers are configured",
+    ],
+    [
+      {
+        OPENAI_PROVIDER: "bedrock",
+        AWS_BEDROCK_ENDPOINT: "invalid",
+      },
+      "AWS_BEDROCK_ENDPOINT must be mantle or runtime",
+    ],
+    [
+      {
+        OPENAI_PROVIDER: "bedrock",
+        AWS_REGION: "us-east-1",
+        AWS_ACCESS_KEY_ID: "access-without-secret",
+      },
+      "both AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY",
+    ],
+    [
+      {
+        OPENAI_PROVIDER: "bedrock",
+        AWS_REGION: "us-east-1",
+        AWS_BEARER_TOKEN_BEDROCK: "bearer-token",
+        AWS_SESSION_TOKEN: "session-without-keys",
+      },
+      "mutually exclusive",
+    ],
+    [
+      {
+        OPENAI_PROVIDER: "azure",
+        OPENAI_BASE_URL: "https://example.com/v1",
+      },
+      "OPENAI_BASE_URL is only supported with OPENAI_PROVIDER=openai",
     ],
     [
       {

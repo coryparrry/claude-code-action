@@ -417,7 +417,8 @@ export function createAdditionalAgentTools(
           (decision === "ask" ||
             (decision !== "allow" &&
               permissions.needsApproval(name, target))) &&
-          options.permissionRequest
+          options.permissionRequest &&
+          permissions.options.permissionMode !== "dontAsk"
         ) {
           const request = await options.permissionRequest({
             name,

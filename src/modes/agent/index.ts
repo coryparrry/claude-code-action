@@ -1,3 +1,4 @@
+import { usesApiCommitSigning } from "../../github/operations/commit-signing";
 import { mkdir, rm, writeFile } from "fs/promises";
 import { prepareMcpConfig } from "../../mcp/install-mcp-server";
 import { parseAllowedTools } from "./parse-tools";
@@ -32,7 +33,7 @@ export async function prepareAgentMode({
   // Configure git authentication for agent mode (same as tag mode)
   // SSH signing takes precedence if provided
   const useSshSigning = !!context.inputs.sshSigningKey;
-  const useApiCommitSigning = context.inputs.useCommitSigning && !useSshSigning;
+  const useApiCommitSigning = usesApiCommitSigning(context.inputs);
 
   if (useSshSigning) {
     // Setup SSH signing for commits
@@ -92,7 +93,10 @@ export async function prepareAgentMode({
   // Parse allowed tools from codex_args or the claude_args compatibility alias.
   const userClaudeArgs =
     process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "";
-  const allowedTools = parseAllowedTools(userClaudeArgs);
+  const allowedTools = parseAllowedTools(
+    userClaudeArgs,
+    process.env.ALLOWED_TOOLS,
+  );
 
   // Check for branch info from environment variables (useful for auto-fix workflows)
   const claudeBranch = process.env.CODEX_BRANCH || undefined;

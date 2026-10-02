@@ -2,18 +2,20 @@
 
 Run a Codex model through the OpenAI Agents SDK with an inline prompt or a prompt file. This base action skips the GitHub trigger and comment orchestration in the repository's main action.
 
-Use the base action from your copy of this fork:
+Use the base action from this repository:
 
 ```yaml
-- uses: actions/checkout@v4
-- uses: your-owner/your-fork/base-action@your-pinned-ref
+- uses: actions/checkout@v6
+- uses: coryparrry/claude-code-action/base-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     prompt: "Review the repository and describe any clear defects."
     codex_sandbox: read-only
 ```
 
-Authentication supports an OpenAI API key, OpenAI workload identity federation, Amazon Bedrock bearer credentials, or Azure OpenAI credentials. The runtime uses `@openai/agents` pinned to `0.18.0` with the OpenAI Responses API and `gpt-6-luna` by default. The Agents SDK owns the model/tool loop; this action does not install or run the Codex CLI, Claude Code, or the Claude Agent SDK. Agent tools enforce the configured read-only or workspace-write policy; unattended permission decisions follow the supplied tool policy. The runtime restricts inherited environment variables and redacts known credentials from logs and execution reports. Workspace-write permits repository changes; review those changes before publishing them.
+The example retains the existing baseline SHA. Current audit changes are local until published; update the ref to the reviewed, published commit containing them.
+
+Authentication supports an OpenAI API key, OpenAI workload identity federation, Amazon Bedrock credentials, or Azure OpenAI credentials. See the [provider guide](../docs/cloud-providers.md) for required configuration and limits. The runtime uses `@openai/agents` pinned to `0.18.0` with the OpenAI Responses API and `gpt-6-luna` by default. The Agents SDK owns the model/tool loop; this action does not install or run the Codex CLI, Claude Code, or the Claude Agent SDK. Agent tools enforce the configured read-only or workspace-write policy; unattended permission decisions follow the supplied tool policy. The runtime restricts inherited environment variables and redacts known credentials from logs and execution reports. Workspace-write permits repository changes; review those changes before publishing them.
 
 ## Inputs
 
@@ -30,15 +32,15 @@ Authentication supports an OpenAI API key, OpenAI workload identity federation, 
 | `azure_openai_endpoint`       | Azure OpenAI endpoint for the selected deployment                        | Empty               |
 | `azure_openai_api_key`        | Azure OpenAI API key (alternative to Azure AD token)                     | Empty               |
 | `azure_openai_ad_token`       | Azure AD token for Azure OpenAI (alternative to API key)                 | Empty               |
-| `codex_model`                 | OpenAI model used by the Agents SDK; defaults to gpt-6-luna              | Empty               |
+| `codex_model`                 | Provider model ID (Azure: deployment name); defaults to gpt-6-luna       | Empty               |
 | `codex_effort`                | Optional reasoning effort: none, minimal, low, medium, high, or xhigh    | Empty               |
-| `codex_sandbox`               | Codex sandbox: read-only or workspace-write                              | `workspace-write`   |
+| `codex_sandbox`               | Tool policy: read-only or workspace-write; not an OS sandbox             | `workspace-write`   |
 | `codex_timeout_minutes`       | Positive integer timeout for the agent run                               | `30`                |
 | `mcp_config`                  | JSON object with stdio or streamable HTTP mcpServers                     | `{"mcpServers":{}}` |
 | `append_system_prompt`        | Additional instructions appended to the prompt                           | Empty               |
 | `path_to_bun_executable`      | Use an existing Bun executable instead of installing Bun                 | Empty               |
 | `show_full_output`            | Show redacted Codex events in the Actions log                            | `false`             |
-| `codex_args`                  | Codex and supported legacy CLI arguments                                 | Empty               |
+| `codex_args`                  | Supported action controls; not arbitrary CLI subprocess arguments        | Empty               |
 | `claude_args`                 | Compatibility alias for codex_args                                       | Empty               |
 | `settings`                    | Codex configuration or supported legacy settings                         | Empty               |
 | `plugins`                     | Newline-separated Codex plugin names                                     | Empty               |
@@ -89,7 +91,7 @@ The Agents SDK owns the execution loop. The action registers tools, permission c
 
 ## Trust model
 
-The base action runs the supplied prompt in the caller's working directory. It does not perform the main action's actor checks, fork guards, tracking comments, or base-branch configuration restoration. The caller must trust the checkout, prompt, and configured MCP/plugin servers. Use the [main action](../README.md) when you need those GitHub boundaries. Read-only sandboxing restricts repository writes; it does not make untrusted prompt content safe or remove MCP write capabilities.
+The base action runs the supplied prompt in the caller's working directory. It does not perform the main action's actor checks, fork guards, tracking comments, or base-branch configuration restoration. The caller must trust the checkout, prompt, and configured MCP/plugin servers. Use the [main action](../README.md) when you need those GitHub boundaries. The read-only tool policy restricts repository writes; it does not make untrusted prompt content safe or remove MCP write capabilities. This action does not create an OS filesystem or network sandbox.
 
 ## Runtime Environment
 
