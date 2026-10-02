@@ -1,13 +1,19 @@
 #!/usr/bin/env bun
 
 import * as core from "@actions/core";
+import { rm } from "node:fs/promises";
 import { preparePrompt } from "./prepare-prompt";
 import { runCodex } from "./run-codex";
 import { validateEnvironmentVariables } from "./validate-env";
-import { setExecutionFileOutputIfPresent } from "./execution-file";
+import {
+  getExecutionFilePath,
+  setExecutionFileOutputIfPresent,
+} from "./execution-file";
 
 export async function run() {
   try {
+    const previousExecutionFile = getExecutionFilePath();
+    if (previousExecutionFile) await rm(previousExecutionFile, { force: true });
     validateEnvironmentVariables();
     const promptConfig = await preparePrompt({
       prompt: process.env.INPUT_PROMPT || "",

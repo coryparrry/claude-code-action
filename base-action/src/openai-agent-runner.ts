@@ -369,18 +369,33 @@ export async function runOpenAIAgent(
       });
       let nextInput: string | AgentInputItem[] = input;
       let continuations = 0;
+      let completionRecoveryUsed = false;
+      let completionOnly = false;
       while (true) {
         const remainingTurns = maxTurns - turns;
         if (remainingTurns <= 0)
           throw new MaxTurnsExceededError(
             "Stop continuation exceeded maxTurns",
           );
+        // Recovery may summarize completed work but cannot execute another tool.
+        const activeAgent = completionOnly
+          ? agent.clone({
+              tools: [],
+              mcpServers: [],
+              modelSettings: { ...agent.modelSettings, toolChoice: "none" },
+            })
+          : agent;
         // Owned public state exposes committed history even when cancellation races a stalled model.
         const state = options.session
           ? undefined
-          : new RunState(new RunContext(), nextInput, agent, remainingTurns);
+          : new RunState(
+              new RunContext(),
+              nextInput,
+              activeAgent,
+              remainingTurns,
+            );
         activeState = state;
-        const result = await runner.run(agent, state ?? nextInput, {
+        const result = await runner.run(activeAgent, state ?? nextInput, {
           maxTurns: remainingTurns,
           signal: controller.signal,
           session: options.session,
@@ -411,6 +426,7 @@ export async function runOpenAIAgent(
                 }
               : undefined,
         });
+        completionOnly = false;
         if (controller.signal.aborted) throw new Error(interruption);
         if (result.finalOutput === undefined)
           throw new Error("Agent did not produce a final assistant message");
@@ -420,6 +436,23 @@ export async function runOpenAIAgent(
         hookContext = [];
         completedUsage.add(result.runContext.usage);
         activeState = undefined;
+        if (
+          typeof result.finalOutput === "string" &&
+          !result.finalOutput.trim()
+        ) {
+          if (completionRecoveryUsed)
+            throw new Error(
+              "Agent did not produce a final assistant message after completion recovery",
+            );
+          completionRecoveryUsed = true;
+          completionOnly = true;
+          const request =
+            "Provide a non-empty final response summarizing the completed work and any unresolved issues. Do not repeat tool calls or side effects that have already completed.";
+          nextInput = options.session
+            ? request
+            : [...history, { role: "user", content: request }];
+          continue;
+        }
         const candidateUsage = new Usage();
         candidateUsage.add(completedUsage);
         if (options.additionalUsage)

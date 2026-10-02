@@ -54,7 +54,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
+      - uses: coryparrry/claude-code-action@2280ffca83bedda2c1c3480ee4f53dd492cb88d2
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -89,7 +89,7 @@ jobs:
           CODEX_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
-      - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
+      - uses: coryparrry/claude-code-action@2280ffca83bedda2c1c3480ee4f53dd492cb88d2
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -101,9 +101,11 @@ jobs:
           codex_args: >-
             --allowedTools "mcp__github_inline_comment__create_inline_comment"
           prompt: |
-            Review this pull request's changes for concrete correctness, security and regression defects.
+            Review this pull request for code quality, bugs, security and performance issues.
             Read the prepared patch in .git/codex-review.diff first; it includes removed lines as well as additions.
-            Use the repository and PR context. Post actionable inline feedback where appropriate and a concise summary.
+            Use the repository and PR context. Provide actionable inline feedback and a summary.
+            For final inline findings, call mcp__github_inline_comment__create_inline_comment with confirmed: true, using verified paths, line numbers and sides from the patch.
+            If GitHub rejects a comment, correct its location and retry, or explain the finding in the summary. Claim an inline comment was posted only after the tool returns its GitHub URL.
             Do not edit files, commit changes or implement fixes during this review.
             The author can request an implementation in a comment with /codex.
 ```
@@ -135,7 +137,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
-      - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
+      - uses: coryparrry/claude-code-action@2280ffca83bedda2c1c3480ee4f53dd492cb88d2
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           codex_sandbox: read-only

@@ -31,6 +31,9 @@ The installer opens draft setup PRs. Review and merge them onto each repository'
 default branch. The generated workflow then automatically reviews same-repository,
 non-draft PRs opened, updated, reopened or marked ready by a selected trusted user.
 Reviews post feedback with progress tracking and use read-only code access.
+Final inline findings use Claude Action's immediate-post convention, so rejected
+locations can be corrected during the review. Buffered delivery finishes before
+the tracking comment shows completion; failed delivery fails the action.
 A preparation step saves the PR's base-to-head patch inside `.git/` so reviews
 can inspect additions and deleted lines without granting the agent shell access.
 A newer review run cancels an older review for the same PR.
@@ -48,6 +51,11 @@ Check the Actions tab for the run. The workflow allows only the selected trusted
 users to trigger either job. Fork PRs remain disabled by the action. Automatic
 reviews call the selected model on each qualifying PR event; `/codex` requests
 call it when explicitly requested.
+
+Command and review jobs save execution reports in the run's Actions artifacts
+for seven days, including failed runs that produced a report. Reports can contain
+private prompts, repository content and tool output; access follows the
+repository's GitHub permissions.
 
 ## Run from any directory
 
