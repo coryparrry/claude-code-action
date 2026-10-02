@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: coryparrry/claude-code-action@b66bd874dd993d7fdc1ac3f7cd4186c95904445e
+      - uses: coryparrry/claude-code-action@43a2ba1c9a47672152dbaa447bef74f74939ee27
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -72,7 +72,7 @@ jobs:
           CODEX_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
-      - uses: coryparrry/claude-code-action@b66bd874dd993d7fdc1ac3f7cd4186c95904445e
+      - uses: coryparrry/claude-code-action@43a2ba1c9a47672152dbaa447bef74f74939ee27
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
