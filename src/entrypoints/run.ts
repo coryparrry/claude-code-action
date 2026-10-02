@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 
+import { usesApiCommitSigning } from "../github/operations/commit-signing";
+
 /**
  * Unified entrypoint for the Codex GitHub Action.
  * Merges all previously separate action.yml steps (prepare, install, run, cleanup)
@@ -35,6 +37,7 @@ import { checkContainsTrigger } from "../github/validation/trigger";
 import { restoreConfigFromBase } from "../github/operations/restore-config";
 import { validateBranchName } from "../github/operations/branch";
 import { actionRuntimeOptions } from "./runtime-options";
+import { initializeInlineCommentBuffer } from "../mcp/inline-comment-buffer";
 import { collectActionInputsPresence } from "./collect-inputs";
 import { updateCommentLink } from "./update-comment-link";
 import { formatTurnsFromData } from "./format-turns";
@@ -94,6 +97,10 @@ async function run() {
   // Track whether we've completed prepare phase, so we can attribute errors correctly
   let prepareCompleted = false;
   try {
+    core.exportVariable(
+      "CODEX_INLINE_COMMENTS_BUFFER",
+      initializeInlineCommentBuffer(),
+    );
     const previousExecutionFile = getExecutionFilePath();
     if (previousExecutionFile) await rm(previousExecutionFile, { force: true });
     if (process.env.OPENAI_API_KEY) core.setSecret(process.env.OPENAI_API_KEY);
@@ -274,7 +281,7 @@ async function run() {
           outputFile: executionFile,
           prepareSuccess,
           prepareError,
-          useCommitSigning: context.inputs.useCommitSigning,
+          useCommitSigning: usesApiCommitSigning(context.inputs),
           restoredConfigPaths,
         });
       } catch (error) {

@@ -99,3 +99,37 @@ test("supports a configured custom token author", async () => {
   ).toBe(123);
   expect(create).not.toHaveBeenCalled();
 });
+
+test("reuses a tracking comment beyond the first page", async () => {
+  const list = mock(async ({ page }: { page: number }) => ({
+    data:
+      page === 1
+        ? Array.from({ length: 100 }, (_, id) => ({
+            id,
+            user: { login: "reviewer" },
+            body: "Existing discussion",
+          }))
+        : [
+            {
+              id: 123,
+              user: { login: "github-actions[bot]" },
+              body: CODEX_COMMENT_MARKER,
+            },
+          ],
+  }));
+  const update = mock(async () => ({ data: { id: 123 } }));
+  const create = mock(async () => ({ data: { id: 456 } }));
+  const octokit = {
+    rest: {
+      issues: {
+        listComments: list,
+        updateComment: update,
+        createComment: create,
+      },
+    },
+  } as unknown as Octokit;
+  const result = await createInitialComment(octokit, context());
+  expect(result.id).toBe(123);
+  expect(list.mock.calls.map(([params]) => params.page)).toEqual([1, 2]);
+  expect(create).not.toHaveBeenCalled();
+});

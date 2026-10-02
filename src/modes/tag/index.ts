@@ -1,3 +1,4 @@
+import { usesApiCommitSigning } from "../../github/operations/commit-signing";
 import { checkHumanActor } from "../../github/validation/actor";
 import { createInitialComment } from "../../github/operations/comments/create-initial";
 import { setupBranch } from "../../github/operations/branch";
@@ -13,7 +14,7 @@ import {
   extractOriginalTitle,
   extractOriginalBody,
 } from "../../github/data/fetcher";
-import { createPrompt } from "../../create-prompt";
+import { createPrompt, buildDisallowedToolsString } from "../../create-prompt";
 import { isEntityContext } from "../../github/context";
 import type { GitHubContext } from "../../github/context";
 import type { Octokits } from "../../github/api/client";
@@ -69,7 +70,7 @@ export async function prepareTagMode({
   // Configure git authentication
   // SSH signing takes precedence if provided
   const useSshSigning = !!context.inputs.sshSigningKey;
-  const useApiCommitSigning = context.inputs.useCommitSigning && !useSshSigning;
+  const useApiCommitSigning = usesApiCommitSigning(context.inputs);
 
   if (useSshSigning) {
     // Setup SSH signing for commits
@@ -122,8 +123,12 @@ export async function prepareTagMode({
 
   const userClaudeArgs =
     process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "";
-  const userAllowedMCPTools = parseAllowedTools(userClaudeArgs).filter((tool) =>
-    tool.startsWith("mcp__github_"),
+  const userAllowedTools = parseAllowedTools(
+    userClaudeArgs,
+    process.env.ALLOWED_TOOLS,
+  );
+  const userAllowedMCPTools = userAllowedTools.filter(
+    (tool) => tool === "mcp__github" || tool.startsWith("mcp__github_"),
   );
 
   const gitPushWrapper = `${process.env.GITHUB_ACTION_PATH}/scripts/git-push.sh`;
@@ -185,6 +190,13 @@ export async function prepareTagMode({
   // acceptEdits: file edits auto-allowed inside cwd ($GITHUB_WORKSPACE), denied outside.
   // Headless SDK has no prompt handler, so anything that falls through to "ask" is denied.
   claudeArgs += ` --permission-mode acceptEdits --allowedTools "${tagModeTools.join(",")}"`;
+  const defaultDisallowedTools = buildDisallowedToolsString(
+    [],
+    userAllowedTools,
+  );
+  if (defaultDisallowedTools) {
+    claudeArgs += ` --disallowedTools "${defaultDisallowedTools}"`;
+  }
 
   // Append user's claude_args (which may have more --mcp-config flags)
   if (userClaudeArgs) {

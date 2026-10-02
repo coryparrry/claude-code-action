@@ -1,3 +1,4 @@
+import { usesApiCommitSigning } from "../github/operations/commit-signing";
 import * as core from "@actions/core";
 import { GITHUB_API_URL, GITHUB_SERVER_URL } from "../github/api/config";
 import type { GitHubContext } from "../github/context";
@@ -115,7 +116,7 @@ export async function prepareMcpConfig(
 
     if (shouldIncludeCommentServer) {
       baseMcpConfig.mcpServers.github_comment = {
-        command: "bun",
+        command: process.execPath,
         args: bunServerArgs("src/mcp/github-comment-server.ts"),
         env: {
           GITHUB_TOKEN: githubToken,
@@ -129,9 +130,9 @@ export async function prepareMcpConfig(
     }
 
     // Include file ops server when commit signing is enabled
-    if (context.inputs.useCommitSigning) {
+    if (usesApiCommitSigning(context.inputs)) {
       baseMcpConfig.mcpServers.github_file_ops = {
-        command: "bun",
+        command: process.execPath,
         args: bunServerArgs("src/mcp/github-file-ops-server.ts"),
         env: {
           GITHUB_TOKEN: githubToken,
@@ -154,13 +155,15 @@ export async function prepareMcpConfig(
       (hasGitHubMcpTools || hasInlineCommentTools)
     ) {
       baseMcpConfig.mcpServers.github_inline_comment = {
-        command: "bun",
+        command: process.execPath,
         args: bunServerArgs("src/mcp/github-inline-comment-server.ts"),
         env: {
           GITHUB_TOKEN: githubToken,
           REPO_OWNER: owner,
           REPO_NAME: repo,
           PR_NUMBER: context.entityNumber?.toString() || "",
+          CODEX_INLINE_COMMENTS_BUFFER:
+            process.env.CODEX_INLINE_COMMENTS_BUFFER || "",
           GITHUB_API_URL: GITHUB_API_URL,
           BUFFER_INLINE_COMMENTS:
             context.inputs.bufferInlineComments &&
@@ -203,7 +206,7 @@ export async function prepareMcpConfig(
         );
       } else {
         baseMcpConfig.mcpServers.github_ci = {
-          command: "bun",
+          command: process.execPath,
           args: bunServerArgs("src/mcp/github-actions-server.ts"),
           env: {
             // Use workflow github token, not app token
@@ -241,7 +244,8 @@ export async function prepareMcpConfig(
     // User's config will be passed as separate --mcp-config flags
     return JSON.stringify(baseMcpConfig, null, 2);
   } catch (error) {
-    core.setFailed(`Install MCP server failed with error: ${error}`);
-    process.exit(1);
+    throw new Error(`Install MCP server failed with error: ${error}`, {
+      cause: error,
+    });
   }
 }

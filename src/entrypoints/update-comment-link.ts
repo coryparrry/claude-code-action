@@ -67,14 +67,20 @@ export async function updateCommentLink(
     if (isPullRequestReviewCommentEvent(context)) {
       // For PR review comments, use the pulls API
       console.log(`Fetching PR review comment ${commentId}`);
-      const { data: prComment } = await octokit.rest.pulls.getReviewComment({
-        owner,
-        repo,
-        comment_id: commentId,
-      });
-      comment = prComment;
-      isPRReviewComment = true;
-      console.log("Successfully fetched as PR review comment");
+      try {
+        const { data: prComment } = await octokit.rest.pulls.getReviewComment({
+          owner,
+          repo,
+          comment_id: commentId,
+        });
+        comment = prComment;
+        isPRReviewComment = true;
+        console.log("Successfully fetched as PR review comment");
+      } catch (error) {
+        // Initial reply creation can fall back to an issue comment. Its ID
+        // cannot be fetched through the review-comment endpoint.
+        if ((error as { status?: number }).status !== 404) throw error;
+      }
     }
 
     // For all other event types, use the issues API
@@ -270,7 +276,9 @@ async function run() {
       outputFile: process.env.OUTPUT_FILE,
       prepareSuccess: process.env.PREPARE_SUCCESS !== "false",
       prepareError: process.env.PREPARE_ERROR,
-      useCommitSigning: process.env.USE_COMMIT_SIGNING === "true",
+      useCommitSigning:
+        process.env.USE_COMMIT_SIGNING === "true" &&
+        !process.env.SSH_SIGNING_KEY,
     });
 
     process.exit(0);

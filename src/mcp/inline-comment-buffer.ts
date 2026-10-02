@@ -1,9 +1,31 @@
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+/** Each action invocation owns a fresh buffer, including repeated steps. */
+export function initializeInlineCommentBuffer(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const directory = mkdtempSync(
+    join(env.RUNNER_TEMP || tmpdir(), "codex-inline-comments-"),
+  );
+  const path = join(directory, "comments.jsonl");
+  writeFileSync(path, "", { mode: 0o600 });
+  return path;
+}
+
+export function getInlineCommentBufferPath(
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  return env.CODEX_INLINE_COMMENTS_BUFFER || undefined;
+}
 
 export type BufferedCommentMatch = {
   path: string;
   line?: number;
   startLine?: number;
+  side?: "LEFT" | "RIGHT";
+  commit_id?: string;
   body: string;
 };
 
@@ -17,7 +39,7 @@ export type BufferedCommentMatch = {
  * reply; previously the original buffered entry was left behind and replayed,
  * producing duplicate inline comments.
  *
- * Entries are matched on path, line, startLine and body. Lines that cannot be
+ * Entries are matched on path, line, startLine, side, commit and body. Lines that cannot be
  * parsed are kept untouched.
  */
 export function removeBufferedComment(
@@ -43,6 +65,8 @@ export function removeBufferedComment(
         entry.path === match.path &&
         entry.line === match.line &&
         entry.startLine === match.startLine &&
+        (entry.side || "RIGHT") === (match.side || "RIGHT") &&
+        entry.commit_id === match.commit_id &&
         entry.body === match.body;
       return !isSameComment;
     });

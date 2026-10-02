@@ -14,6 +14,7 @@ import {
   AgentPermissions,
   canonicalToolName,
   globPattern,
+  toolMatchesRule,
 } from "../src/agent-permissions";
 
 const directories: string[] = [];
@@ -33,6 +34,86 @@ afterEach(async () => {
 });
 
 describe("AgentPermissions", () => {
+  test("agent scopes remain hard limits for autoapproved tools, broad grants, modes and hook approval", async () => {
+    const cwd = await fixture();
+    const cases = [
+      ["Bash", "cat:*", "cat src/file.txt", "touch forbidden.txt"],
+      ...["Read", "Glob", "Grep", "LS", "Edit"].map((name) => [
+        name,
+        "src/**",
+        "src/file.txt",
+        "outside.txt",
+      ]),
+    ];
+    for (const mode of ["dontAsk", "bypassPermissions"]) {
+      for (const [name, scope, allowed, denied] of cases) {
+        const permissions = new AgentPermissions({
+          cwd,
+          permissionMode: mode,
+          allowedTools: [name!],
+          toolScopes: [[`${name}(${scope})`]],
+        });
+        expect(() =>
+          permissions.authorize(name!, allowed, "allow"),
+        ).not.toThrow();
+        expect(() => permissions.authorize(name!, denied, "allow")).toThrow(
+          "outside configured agent scope",
+        );
+        permissions.applyUpdates([
+          { type: "setMode", mode: "bypassPermissions" },
+        ]);
+        expect(() => permissions.authorize(name!, denied)).toThrow(
+          "outside configured agent scope",
+        );
+      }
+    }
+  });
+
+  test("child scopes intersect inherited scopes while ordinary allowlists remain autoapproval rules", async () => {
+    const cwd = await fixture();
+    const inherited = new AgentPermissions({
+      cwd,
+      permissionMode: "bypassPermissions",
+      allowedTools: ["Read"],
+      toolScopes: [["Read(src/**)"], ["Read"]],
+    });
+    expect(() => inherited.authorize("Read", "src/file.txt")).not.toThrow();
+    expect(() => inherited.authorize("Read", "outside.txt")).toThrow(
+      "outside configured agent scope",
+    );
+    inherited.update({
+      toolScopes: [["Read(src/**)"], ["Read(src/nested/**)"]],
+    });
+    expect(() =>
+      inherited.authorize("Read", "src/nested/file.txt"),
+    ).not.toThrow();
+    expect(() => inherited.authorize("Read", "src/file.txt")).toThrow(
+      "outside configured agent scope",
+    );
+    const ordinary = new AgentPermissions({
+      cwd,
+      permissionMode: "bypassPermissions",
+      allowedTools: ["Bash(cat:*)"],
+    });
+    expect(() =>
+      ordinary.authorize("Bash", "touch ordinary.txt"),
+    ).not.toThrow();
+  });
+
+  test("tool exposure preserves scoped rules, aliases and exact MCP server boundaries", () => {
+    expect(toolMatchesRule("Bash", "Bash(git:*)")).toBe(true);
+    expect(toolMatchesRule("Bash", "exec_command(git:*)")).toBe(true);
+    expect(toolMatchesRule("mcp__github__read", "mcp__github")).toBe(true);
+    expect(toolMatchesRule("mcp__github__read", "mcp__github__*")).toBe(true);
+    expect(
+      toolMatchesRule("mcp__github__read_extra", "mcp__github__read"),
+    ).toBe(false);
+    expect(toolMatchesRule("mcp__github_other__read", "mcp__github")).toBe(
+      false,
+    );
+    expect(toolMatchesRule("Write", "Read(src/**)")).toBe(false);
+  });
+
   test("persistent updates atomically merge settings without dropping unrelated fields", async () => {
     const cwd = await fixture(),
       additional = await fixture();

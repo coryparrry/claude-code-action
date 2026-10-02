@@ -23,9 +23,10 @@ import {
 import { workflowToolEnvironment } from "./codex-tool-environment";
 import { nativeModelSettings } from "./agent-native-controls";
 import { scrubMcpEnvironment } from "./mcp-environment";
+import { summarizeMcpToolOutput } from "./agent-mcp";
 import { createOpenAIAuthentication } from "./openai-auth";
 import { loadAgentConfiguration } from "./agent-configuration";
-import { AgentPermissions } from "./agent-permissions";
+import { AgentPermissions, toolMatchesRule } from "./agent-permissions";
 import type { BackgroundAgentTask } from "./agent-tools";
 import { resolveAgentCommand } from "./agent-additional-tools";
 import { createCodexAgentRuntime } from "./codex-agent-runtime";
@@ -255,6 +256,8 @@ export async function runCodex(
   let persistSession = true;
   let hasSessionHistory = false;
   const emit = (event: OpenAIAgentEvent) => {
+    if (event.type === "tool.completed" && event.toolName.startsWith("mcp__"))
+      event = { ...event, output: summarizeMcpToolOutput(event.output) };
     // Buffer within each response so secrets split across streamed fragments stay masked.
     if (event.type === "assistant.delta") {
       const id = event.itemId ?? "assistant";
@@ -503,7 +506,15 @@ export async function runCodex(
         ? "read-only"
         : (selectedAgent?.permissionMode ?? compatibility.permissionMode),
       additionalDirectories: compatibility.additionalDirectories,
-      allowedTools: compatibility.allowedTools,
+      allowedTools: selectedAgent?.tools
+        ? [
+            ...new Set([
+              ...(compatibility.allowedTools ?? []),
+              ...selectedAgent.tools,
+            ]),
+          ]
+        : compatibility.allowedTools,
+      toolScopes: selectedAgent?.tools ? [selectedAgent.tools] : undefined,
       disallowedTools: [
         ...new Set([
           ...(compatibility.disallowedTools ?? []),
@@ -641,7 +652,9 @@ export async function runCodex(
     if (compatibility.tools)
       tools = tools.filter((tool) => compatibility.tools!.includes(tool.name));
     if (selectedAgent?.tools)
-      tools = tools.filter((tool) => selectedAgent.tools!.includes(tool.name));
+      tools = tools.filter((tool) =>
+        selectedAgent.tools!.some((rule) => toolMatchesRule(tool.name, rule)),
+      );
     const prompt = await readPrompt(promptPath);
     const command = compatibility.disableSlashCommands
       ? undefined

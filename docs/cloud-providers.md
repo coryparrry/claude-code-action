@@ -1,152 +1,138 @@
-# Historical upstream reference
+# Cloud providers
 
-> This fork runs Codex with `OPENAI_API_KEY`. GitHub triggers, tracking comments, branch handling, signing, and MCP integrations retain the upstream workflow shape. `claude_args` is a compatibility alias; use the preferred `codex_args` name for the same supported argument subset. Legacy `--allowedTools` / `--disallowedTools` support MCP names and simple Bash rules, not the full Claude permission language. Use a supported OpenAI model; there is no native `--max-turns`, Anthropic OAuth, WIF, Bedrock, or Vertex backend. Fork pull requests are rejected. See [configuration](./configuration.md) and [the action inputs](../action.yml).
+The action uses the OpenAI Responses API through the OpenAI Agents SDK. Choose
+one provider and credential method. The examples below are action steps to add
+to the trusted workflow in the [setup guide](./setup.md).
 
-The original guide below documents the Anthropic upstream action. Its provider flags, credentials, model IDs, and turn-limit mappings do not apply to this fork.
+Examples retain the existing baseline SHA. Current audit changes are local
+until published; replace the action ref with the reviewed, published SHA that
+contains the behavior you intend to use. The provider contracts below describe
+the current source, not a live qualification of an account or deployment.
 
-<details>
-<summary>Historical upstream reference — not supported by the Codex runtime</summary>
-
-# Cloud Providers
-
-You can authenticate with Claude using any of these four methods:
-
-1. Direct Anthropic API (default)
-2. Amazon Bedrock with OIDC authentication
-3. Google Vertex AI with OIDC authentication
-4. Microsoft Foundry with OIDC authentication
-
-For detailed setup instructions for AWS Bedrock and Google Vertex AI, see the [official documentation](https://code.claude.com/docs/en/github-actions#using-with-amazon-bedrock-and-google-cloud).
-
-**Note**:
-
-- Bedrock, Vertex, and Microsoft Foundry use OIDC authentication exclusively
-- AWS Bedrock automatically uses cross-region inference profiles for certain models
-- For cross-region inference profile models, you need to request and be granted access to the Claude models in all regions that the inference profile uses
-
-## Model Configuration
-
-Use provider-specific model names based on your chosen provider:
+## OpenAI API key
 
 ```yaml
-# For direct Anthropic API (default)
-- uses: anthropics/claude-code-action@v1
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
   with:
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-    # ... other inputs
-
-# For Amazon Bedrock with OIDC
-- uses: anthropics/claude-code-action@v1
-  with:
-    use_bedrock: "true"
-    claude_args: |
-      --model anthropic.claude-4-0-sonnet-20250805-v1:0
-    # ... other inputs
-
-# For Google Vertex AI with OIDC
-- uses: anthropics/claude-code-action@v1
-  with:
-    use_vertex: "true"
-    claude_args: |
-      --model claude-4-0-sonnet@20250805
-    # ... other inputs
-
-# For Microsoft Foundry with OIDC
-- uses: anthropics/claude-code-action@v1
-  with:
-    use_foundry: "true"
-    claude_args: |
-      --model claude-sonnet-4-5
-    # ... other inputs
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+    codex_model: gpt-6-luna
 ```
 
-## OIDC Authentication for Cloud Providers
+The selected OpenAI model must be available to the API project. Do not supply
+WIF IDs or another provider's credentials alongside an API key.
 
-AWS Bedrock, GCP Vertex AI, and Microsoft Foundry all support OIDC authentication.
+## OpenAI workload identity federation
 
-```yaml
-# For AWS Bedrock with OIDC
-- name: Configure AWS Credentials (OIDC)
-  uses: aws-actions/configure-aws-credentials@v4
-  with:
-    role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-    aws-region: us-west-2
-
-- name: Generate GitHub App token
-  id: app-token
-  uses: actions/create-github-app-token@v2
-  with:
-    app-id: ${{ secrets.APP_ID }}
-    private-key: ${{ secrets.APP_PRIVATE_KEY }}
-
-- uses: anthropics/claude-code-action@v1
-  with:
-    use_bedrock: "true"
-    claude_args: |
-      --model anthropic.claude-4-0-sonnet-20250805-v1:0
-    # ... other inputs
-
-  permissions:
-    id-token: write # Required for OIDC
-```
+Configure a GitHub Actions identity provider and service-account mapping in the
+OpenAI API Platform. Restrict the trust policy to the intended repository and
+workflow. Give the job `id-token: write` in addition to its GitHub repository
+permissions, then configure:
 
 ```yaml
-# For GCP Vertex AI with OIDC
-- name: Authenticate to Google Cloud
-  uses: google-github-actions/auth@v2
-  with:
-    workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-    service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-
-- name: Generate GitHub App token
-  id: app-token
-  uses: actions/create-github-app-token@v2
-  with:
-    app-id: ${{ secrets.APP_ID }}
-    private-key: ${{ secrets.APP_PRIVATE_KEY }}
-
-- uses: anthropics/claude-code-action@v1
-  with:
-    use_vertex: "true"
-    claude_args: |
-      --model claude-4-0-sonnet@20250805
-    # ... other inputs
-
-  permissions:
-    id-token: write # Required for OIDC
-```
-
-```yaml
-# For Microsoft Foundry with OIDC
-- name: Authenticate to Azure
-  uses: azure/login@v2
-  with:
-    client-id: ${{ secrets.AZURE_CLIENT_ID }}
-    tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-    subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-- name: Generate GitHub App token
-  id: app-token
-  uses: actions/create-github-app-token@v2
-  with:
-    app-id: ${{ secrets.APP_ID }}
-    private-key: ${{ secrets.APP_PRIVATE_KEY }}
-
-- uses: anthropics/claude-code-action@v1
-  with:
-    use_foundry: "true"
-    claude_args: |
-      --model claude-sonnet-4-5
-    # ... other inputs
-  env:
-    ANTHROPIC_FOUNDRY_BASE_URL: https://my-resource.services.ai.azure.com
-
 permissions:
-  id-token: write # Required for OIDC
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+# Within the job's steps:
+# - uses: actions/checkout@v6
+# - ...
 ```
 
-## Microsoft Foundry Setup
+```yaml
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
+  with:
+    openai_identity_provider_id: ${{ vars.OPENAI_IDENTITY_PROVIDER_ID }}
+    openai_service_account_id: ${{ vars.OPENAI_SERVICE_ACCOUNT_ID }}
+    # Set only if your identity provider requires a different audience:
+    # openai_oidc_audience: https://api.openai.com/v1
+    codex_model: gpt-6-luna
+```
 
-For detailed setup instructions for Microsoft Foundry, see the [official documentation](https://docs.anthropic.com/en/docs/claude-code/microsoft-foundry).
+Do not also supply `openai_api_key`. The default OIDC audience is
+`https://api.openai.com/v1`. The action exchanges the GitHub OIDC token for
+short-lived OpenAI credentials and refreshes them for later requests as needed.
+This authenticates an API Platform service account, not a ChatGPT subscription
+or managed Codex workspace. See [OpenAI's WIF guide](https://developers.openai.com/api/docs/guides/workload-identity-federation)
+and [API reference](https://developers.openai.com/api/reference/workload-identity-federation).
 
-</details>
+## Amazon Bedrock
+
+```yaml
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
+  with:
+    openai_provider: bedrock
+    bedrock_api_key: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
+    codex_model: ${{ vars.BEDROCK_MODEL_ID }}
+  env:
+    AWS_REGION: ${{ vars.AWS_REGION }}
+```
+
+Set `BEDROCK_MODEL_ID` to the OpenAI model ID available through Bedrock Responses
+in your region. The adapter uses the OpenAI SDK's Bedrock provider with bearer
+authentication. `AWS_DEFAULT_REGION` is accepted when `AWS_REGION` is unset, and
+`AWS_BEARER_TOKEN_BEDROCK` can be supplied through the step environment instead
+of the input. Do not also supply `openai_api_key`.
+
+The default Responses endpoint is
+`https://bedrock-mantle.<region>.api.aws/v1`. If needed, set
+`AWS_BEDROCK_BASE_URL` to the supported Bedrock Runtime or Mantle endpoint;
+`OPENAI_BASE_URL` is not accepted for this provider. See
+[AWS's Mantle endpoint guide](https://docs.aws.amazon.com/bedrock/latest/userguide/bedrock-mantle.html).
+
+Alternatively, provide AWS signing credentials through the step environment.
+For GitHub OIDC, grant the job `id-token: write`, configure your AWS role's trust
+policy, and use a credentials step before the action:
+
+```yaml
+- uses: aws-actions/configure-aws-credentials@v4
+  with:
+    role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+    aws-region: ${{ vars.AWS_REGION }}
+
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
+  with:
+    openai_provider: bedrock
+    codex_model: ${{ vars.BEDROCK_MODEL_ID }}
+```
+
+The adapter signs requests with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+and optional `AWS_SESSION_TOKEN` from the environment. The credentials step
+acquires the role credentials; the action does not perform that exchange or
+refresh them. Ensure they remain valid for the run. Local AWS profiles and the
+AWS default credential provider chain are not loaded. Bearer credentials and
+AWS signing credentials are mutually exclusive.
+See [OpenAI's Bedrock guide](https://developers.openai.com/api/docs/guides/amazon-bedrock).
+
+## Azure OpenAI
+
+```yaml
+- uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
+  with:
+    openai_provider: azure
+    azure_openai_endpoint: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+    azure_openai_api_key: ${{ secrets.AZURE_OPENAI_API_KEY }}
+    codex_model: ${{ vars.AZURE_OPENAI_DEPLOYMENT }}
+  env:
+    OPENAI_API_VERSION: ${{ vars.AZURE_OPENAI_API_VERSION }}
+```
+
+Configure an Azure OpenAI resource endpoint and an API version that supports
+Responses. Use `azure_openai_endpoint` / `AZURE_OPENAI_ENDPOINT` rather than
+`OPENAI_BASE_URL`. Set `codex_model` to the **deployment name**, even when it differs
+from the underlying OpenAI model ID. Setting `AZURE_OPENAI_DEPLOYMENT` alone
+does not replace the model sent in a Responses request.
+
+For Entra authentication, replace `azure_openai_api_key` with
+`azure_openai_ad_token` containing an access token acquired by your workflow.
+Supply exactly one credential type. The action does not acquire or refresh
+Entra tokens; the supplied token must remain valid for the run. An Azure login
+step alone does not pass a token into this action. This is an Azure OpenAI
+adapter, not the upstream Anthropic Foundry backend.
+
+## Compatibility limits
+
+Google Vertex AI, Anthropic API keys, Claude OAuth/subscription credentials,
+and ChatGPT subscription login are not supported. Provider aliases do not
+translate vendor model catalogs or implement every upstream authentication
+flow. See the [feature comparison](./feature-parity.md) for action-level gaps.

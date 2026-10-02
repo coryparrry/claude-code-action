@@ -12,6 +12,8 @@ export type AgentPermissionOptions = {
   allowedTools?: string[];
   disallowedTools?: string[];
   askTools?: string[];
+  /** Each agent declaration adds an inherited ceiling for the tool scopes it names. */
+  toolScopes?: string[][];
   permissionMode?: string;
   sandboxMode?: string;
   permissionSettingsPaths?: PermissionSettingsPaths;
@@ -76,6 +78,18 @@ function ruleParts(rule: string): { name: string; scope?: string } {
   return { name: canonicalToolName(match[1]!), scope: match[2] };
 }
 
+/** Tool exposure uses the rule's name; invocation still checks its target scope. */
+export function toolMatchesRule(name: string, rule: string): boolean {
+  const requested = ruleParts(rule).name;
+  const canonical = canonicalToolName(name);
+  return (
+    globPattern(requested).test(canonical) ||
+    (requested.startsWith("mcp__") &&
+      !requested.includes("__", 5) &&
+      canonical.startsWith(`${requested}__`))
+  );
+}
+
 function within(root: string, path: string): boolean {
   const part = relative(root, path);
   return (
@@ -123,6 +137,7 @@ export class AgentPermissions {
   private allowed?: ReturnType<typeof ruleParts>[];
   private denied: ReturnType<typeof ruleParts>[] = [];
   private asked: ReturnType<typeof ruleParts>[] = [];
+  private toolScopes: ReturnType<typeof ruleParts>[][] = [];
   private readonly authorization = new AsyncLocalStorage<{
     name: string;
     target?: string;
@@ -149,10 +164,14 @@ export class AgentPermissions {
     const allowed = combined.allowedTools?.map(ruleParts);
     const denied = (combined.disallowedTools ?? []).map(ruleParts);
     const asked = (combined.askTools ?? []).map(ruleParts);
+    const toolScopes = (combined.toolScopes ?? []).map((rules) =>
+      rules.map(ruleParts),
+    );
     Object.assign(this.options, combined);
     this.allowed = allowed;
     this.denied = denied;
     this.asked = asked;
+    this.toolScopes = toolScopes;
     this.roots = undefined;
   }
 
@@ -269,6 +288,18 @@ export class AgentPermissions {
 
   assertDenied(name: string, target?: string): void {
     name = canonicalToolName(name);
+    for (const rules of this.toolScopes) {
+      const matchingTools = rules.filter((rule) =>
+        this.matches({ ...rule, scope: undefined }, name),
+      );
+      if (
+        matchingTools.length > 0 &&
+        !matchingTools.some((rule) => this.matches(rule, name, target))
+      )
+        throw new Error(
+          `Tool permission outside configured agent scope: ${name}`,
+        );
+    }
     if (
       this.readOnly &&
       [

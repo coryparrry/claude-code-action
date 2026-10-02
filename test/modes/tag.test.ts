@@ -57,6 +57,37 @@ describe("Tag Mode", () => {
       }
     });
 
+    test("direct tool inputs select MCP servers and override only matching web defaults", async () => {
+      const original = process.env.ALLOWED_TOOLS;
+      process.env.ALLOWED_TOOLS =
+        "mcp__github,mcp__github_inline_comment__create_inline_comment,WebFetch(domain:docs.example.com)";
+      try {
+        const result = await prepareTagMode({
+          context: { ...mockIssueCommentContext, isPR: true },
+          octokit: {} as any,
+          githubToken: "test-token",
+        });
+        expect(mcp.prepareMcpConfig).toHaveBeenCalledWith(
+          expect.objectContaining({
+            allowedTools: expect.arrayContaining([
+              "mcp__github",
+              "mcp__github_inline_comment__create_inline_comment",
+            ]),
+          }),
+        );
+        expect(result.claudeArgs).toContain('--disallowedTools "WebSearch"');
+        expect(result.claudeArgs).not.toContain(
+          '--disallowedTools "WebSearch,WebFetch"',
+        );
+        expect(process.env.ALLOWED_TOOLS).toBe(
+          "mcp__github,mcp__github_inline_comment__create_inline_comment,WebFetch(domain:docs.example.com)",
+        );
+      } finally {
+        if (original === undefined) delete process.env.ALLOWED_TOOLS;
+        else process.env.ALLOWED_TOOLS = original;
+      }
+    });
+
     test("uses full git auth on the non-signing path", async () => {
       const context = { ...mockIssueCommentContext };
 

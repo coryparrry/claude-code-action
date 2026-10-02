@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 
+import { usesApiCommitSigning } from "./commit-signing";
+
 /**
  * Setup the appropriate branch based on the event type:
  * - For PRs: Checkout the PR branch
@@ -304,7 +306,7 @@ export async function setupBranch(
     validateBranchName(newBranch);
 
     // For commit signing, defer branch creation to the file ops server
-    if (context.inputs.useCommitSigning) {
+    if (usesApiCommitSigning(context.inputs)) {
       console.log(
         `Branch name generated: ${newBranch} (will be created by file ops server on first commit)`,
       );
@@ -347,6 +349,6 @@ export async function setupBranch(
     };
   } catch (error) {
     console.error("Error in branch setup:", error);
-    process.exit(1);
+    throw error;
   }
 }

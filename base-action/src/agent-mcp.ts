@@ -5,6 +5,7 @@ import {
   tool,
   type MCPServer,
   type Tool,
+  type ToolCallOutputContent,
 } from "@openai/agents";
 import Ajv from "ajv";
 import type { AgentToolEvent, AgentToolHookResult } from "./agent-tools";
@@ -61,6 +62,107 @@ function configuredTimeout(
   )
     throw new Error(`${key} must be a positive millisecond integer`);
   return Number(value);
+}
+
+type McpOutput = {
+  text: string;
+  model: string | ToolCallOutputContent[];
+};
+
+/** SDK events stringify native media; public transcripts need only its metadata. */
+export function summarizeMcpToolOutput(output: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return output;
+  }
+  if (!Array.isArray(parsed)) return output;
+  return JSON.stringify(
+    parsed.map((item: unknown) => {
+      if (!record(item) || !["image", "file"].includes(String(item.type)))
+        return item;
+      const media = item.type === "image" ? item.image : item.file;
+      return {
+        type: item.type,
+        ...(record(media)
+          ? { mimeType: media.mediaType, filename: media.filename }
+          : {}),
+        note: "Media content omitted from transcript",
+      };
+    }),
+  );
+}
+
+/** Keep the MCP envelope in text while giving supported media to the model natively. */
+function modelOutput(
+  result: unknown,
+  limit: number,
+  additionalContext?: string,
+): McpOutput {
+  const media: ToolCallOutputContent[] = [];
+  const imageTypes = new Set([
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/gif",
+  ]);
+  const content = (value: unknown): unknown => {
+    if (!record(value)) return value;
+    const embedded = value.type === "resource" && record(value.resource);
+    const source = embedded
+      ? (value.resource as Record<string, unknown>)
+      : value;
+    const data = embedded ? source.blob : source.data;
+    if (
+      typeof data !== "string" ||
+      (!embedded && value.type !== "image" && value.type !== "audio")
+    )
+      return value;
+    const mimeType = typeof source.mimeType === "string" ? source.mimeType : "";
+    let note: string;
+    if (
+      data &&
+      imageTypes.has(mimeType) &&
+      (embedded || value.type === "image")
+    ) {
+      media.push({ type: "image", image: { data, mediaType: mimeType } });
+      note = "[Image supplied separately to the model]";
+    } else if (data && embedded && mimeType === "application/pdf") {
+      let filename = "resource.pdf";
+      if (typeof source.uri === "string") {
+        try {
+          filename = new URL(source.uri).pathname.split("/").pop() || filename;
+        } catch {
+          // Resource identifiers need not be URLs; retain them in the text envelope.
+        }
+      }
+      media.push({
+        type: "file",
+        file: { data, mediaType: mimeType, filename },
+      });
+      note = "[PDF supplied separately to the model]";
+    } else {
+      // The Responses tool-output protocol has no audio part. Do not pretend
+      // unsupported bytes were understood or spend the text budget on base64.
+      note = `[Unsupported MCP media omitted: ${mimeType || value.type}]`;
+    }
+    const summary = { ...source, [embedded ? "blob" : "data"]: note };
+    return embedded ? { ...value, resource: summary } : summary;
+  };
+  const summary =
+    record(result) && Array.isArray(result.content)
+      ? { ...result, content: result.content.map(content) }
+      : result;
+  const output = JSON.stringify(summary);
+  const text = boundMcpOutput(
+    additionalContext ? `${output}\n${additionalContext}` : output,
+    limit,
+  );
+  return {
+    text,
+    model: media.length ? [{ type: "text", text }, ...media] : text,
+  };
 }
 
 /** Connect actual MCP transports and expose legacy-named SDK function tools. */
@@ -120,7 +222,7 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
     (
       args: Record<string, unknown>,
       context?: AgentMcpInvocationContext,
-    ) => Promise<string>
+    ) => Promise<McpOutput>
   >();
   const invoke = async (
     name: string,
@@ -129,7 +231,7 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
   ): Promise<string> => {
     const call = calls.get(name);
     if (!call) throw new Error(`MCP tool is unavailable: ${name}`);
-    return call(args, context);
+    return (await call(args, context)).text;
   };
   const invokeServer = (
     server: string,
@@ -427,7 +529,7 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
         const execute = async (
           original: Record<string, unknown>,
           context?: AgentMcpInvocationContext,
-        ): Promise<string> => {
+        ): Promise<McpOutput> => {
           let input = original;
           const eventName = legacyName;
           try {
@@ -490,23 +592,22 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
               toolTimeout,
               context,
             );
-            let output = JSON.stringify(result);
+            let output: unknown = result;
             if (!context?.skipHooks) {
               const postHook = await bounded(
                 async () =>
-                  options.afterTool?.({ name: eventName, input, output }),
+                  options.afterTool?.({
+                    name: eventName,
+                    input,
+                    output: JSON.stringify(output),
+                  }),
                 toolTimeout,
                 context,
               );
               if (postHook?.updatedMCPToolOutput !== undefined)
-                output = JSON.stringify(postHook.updatedMCPToolOutput);
+                output = postHook.updatedMCPToolOutput;
             }
-            return boundMcpOutput(
-              hook?.additionalContext
-                ? `${output}\n${hook.additionalContext}`
-                : output,
-              outputLimit,
-            );
+            return modelOutput(output, outputLimit, hook?.additionalContext);
           } catch (error) {
             if (!controller.signal.aborted && !context?.skipHooks)
               await bounded(
@@ -533,7 +634,8 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
             },
             strict: false,
             errorFunction: null,
-            execute: async (input) => execute(input as Record<string, unknown>),
+            execute: async (input) =>
+              (await execute(input as Record<string, unknown>)).model,
           }),
         );
       }

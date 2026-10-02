@@ -5,7 +5,10 @@ import { appendFileSync } from "fs";
 import { z } from "zod";
 import { createOctokit } from "../github/api/client";
 import { redactSecrets, sanitizeContent } from "../github/utils/sanitizer";
-import { removeBufferedComment } from "./inline-comment-buffer";
+import {
+  getInlineCommentBufferPath,
+  removeBufferedComment,
+} from "./inline-comment-buffer";
 
 // Get repository and PR information from environment variables
 const REPO_OWNER = process.env.REPO_OWNER;
@@ -16,7 +19,7 @@ const PR_NUMBER = process.env.PR_NUMBER;
 // prevents subagents from posting test/probe comments when they inherit this
 // tool and probe it after hitting unrelated errors. The action's post-step
 // classifies real review feedback versus probes before posting.
-const BUFFER_PATH = "/tmp/inline-comments-buffer.jsonl";
+const BUFFER_PATH = getInlineCommentBufferPath();
 const CLASSIFY_ENABLED =
   (process.env.CLASSIFY_INLINE_COMMENTS ??
     process.env.BUFFER_INLINE_COMMENTS) !== "false";
@@ -110,6 +113,8 @@ server.tool(
       }
 
       if (confirmed === false || (CLASSIFY_ENABLED && confirmed !== true)) {
+        if (!BUFFER_PATH)
+          throw new Error("Inline comment buffer is not configured");
         appendFileSync(
           BUFFER_PATH,
           JSON.stringify({
@@ -185,9 +190,9 @@ server.tool(
       // The comment is now live. Drop any buffered copy of it so the
       // post-session replay step cannot post it a second time (the model often
       // re-issues a buffered call with confirmed=true after the buffer reply).
-      if (CLASSIFY_ENABLED) {
+      if (CLASSIFY_ENABLED && BUFFER_PATH) {
         removeBufferedComment(
-          { path, line, startLine, body: sanitizedBody },
+          { path, line, startLine, side, commit_id, body: sanitizedBody },
           BUFFER_PATH,
         );
       }

@@ -335,7 +335,9 @@ export async function runOpenAIAgent(
           ? {
               type: "json_schema",
               name: "action_result",
-              strict: true,
+              // Caller schemas may contain optional fields or open objects. Strict
+              // Responses schemas reject both; the caller validates the final JSON.
+              strict: false,
               schema: options.schema,
             }
           : "text",

@@ -40,6 +40,7 @@ for (const path of ["../action.yml", "../base-action/action.yml"]) {
           env: {
             ...process.env,
             PATH: `${directory}:${process.env.PATH}`,
+            BUN_EXECUTABLE: executable,
             GITHUB_ACTION_PATH: directory,
           },
         },

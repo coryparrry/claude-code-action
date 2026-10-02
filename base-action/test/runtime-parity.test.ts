@@ -51,12 +51,13 @@ function message(text = "Finished"): ModelResponse {
   ]);
 }
 
+let callIndex = 0;
 function call(name: string, args: Record<string, unknown>): ModelResponse {
   return response([
     {
       type: "function_call",
       name,
-      callId: "runtime-call-1",
+      callId: `runtime-call-${++callIndex}`,
       arguments: JSON.stringify(args),
       status: "completed",
     },
@@ -139,6 +140,156 @@ function options(
 }
 
 describe("runtime parity controls", () => {
+  test("JSON schema output preserves optional properties and still validates required fields", async () => {
+    const schema = {
+      type: "object",
+      properties: {
+        is_flaky: { type: "boolean" },
+        summary: { type: "string" },
+      },
+      required: ["is_flaky"],
+    };
+    const model = new ScriptedModel([message('{"is_flaky":false}')]);
+    const result = await runCodex(
+      prompt,
+      options(model, {
+        compatibilityArgs: `--json-schema '${JSON.stringify(schema)}'`,
+      }),
+    );
+    expect(model.requests[0]?.outputType).toMatchObject({
+      type: "json_schema",
+      strict: false,
+      schema,
+    });
+    expect(result.structuredOutput).toEqual({ is_flaky: false });
+    await expect(
+      runCodex(
+        prompt,
+        options(
+          new ScriptedModel([message('{"summary":"missing required field"}')]),
+          {
+            compatibilityArgs: `--json-schema '${JSON.stringify(schema)}'`,
+          },
+        ),
+      ),
+    ).rejects.toThrow("Structured output did not match JSON schema");
+  });
+
+  test("hooks observe permission mode changes when entering and exiting planning", async () => {
+    const model = new ScriptedModel([
+      call("EnterPlanMode", {}),
+      call("Read", { file_path: "prompt.txt" }),
+      call("ExitPlanMode", { plan: "Continue with the approved work" }),
+      message("Finished"),
+    ]);
+    const hook = {
+      type: "command",
+      command: process.execPath,
+      args: [
+        "-e",
+        'let input="";process.stdin.on("data",data=>input+=data);process.stdin.on("end",()=>{const event=JSON.parse(input);process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:event.hook_event_name,additionalContext:`Mode after ${event.tool_name}: ${event.permission_mode}`}}));});',
+      ],
+    };
+    await runCodex(
+      prompt,
+      options(model, {
+        allowedTools: ["ExitPlanMode"],
+        settings: JSON.stringify({
+          hooks: { PostToolUse: [{ hooks: [hook] }] },
+        }),
+      }),
+    );
+    expect(JSON.stringify(model.requests[1]?.input)).toContain(
+      "Mode after EnterPlanMode: plan",
+    );
+    expect(JSON.stringify(model.requests[2]?.input)).toContain(
+      "Mode after Read: plan",
+    );
+    expect(JSON.stringify(model.requests[3]?.input)).toContain(
+      "Mode after ExitPlanMode: bypassPermissions",
+    );
+  });
+
+  for (const nested of [false, true]) {
+    for (const permissionMode of ["dontAsk", "bypassPermissions"]) {
+      for (const name of ["Bash", "Read"]) {
+        test(`${nested ? "Task" : "selected"} agents enforce ${name} scopes despite broad parent grants, ${permissionMode} and hook approval`, async () => {
+          const agentDirectory = join(directory, ".codex", "agents");
+          await mkdir(agentDirectory, { recursive: true });
+          await writeFile(
+            join(agentDirectory, "scoped-shell.md"),
+            `---\ntools: ["${name}(${name === "Bash" ? "cat:*" : "src/**"})"]\n---\nRead the permitted fixture.`,
+          );
+          await mkdir(join(directory, "src"));
+          await writeFile(join(directory, "fixture.txt"), "scoped shell works");
+          await writeFile(
+            join(directory, "src", "fixture.txt"),
+            "scoped read works",
+          );
+          if (name === "Read")
+            await writeFile(
+              join(directory, "forbidden.txt"),
+              "outside-scope-secret",
+            );
+          const model = new ScriptedModel([
+            ...(nested
+              ? [
+                  call("Task", {
+                    subagent_type: "scoped-shell",
+                    prompt: "Read fixture",
+                  }),
+                ]
+              : []),
+            call(
+              name,
+              name === "Bash"
+                ? { command: "cat fixture.txt" }
+                : { file_path: "src/fixture.txt" },
+            ),
+            call(
+              name,
+              name === "Bash"
+                ? { command: "touch forbidden.txt" }
+                : { file_path: "forbidden.txt" },
+            ),
+            message("Agent finished"),
+            ...(nested ? [message("Parent finished")] : []),
+          ]);
+          await runCodex(
+            prompt,
+            options(model, {
+              permissionMode,
+              allowedTools: ["Bash", "Read", "Task"],
+              settings: JSON.stringify({ hooks: permissionAllowHook() }),
+              settingSources: ["project"],
+              ...(nested ? {} : { agentName: "scoped-shell" }),
+            }),
+          );
+          const firstChildRequest = nested ? 1 : 0;
+          expect(
+            model.requests[firstChildRequest]?.tools.map((tool) => tool.name),
+          ).toEqual([name]);
+          expect(
+            JSON.stringify(model.requests[firstChildRequest + 1]?.input),
+          ).toContain(
+            name === "Bash" ? "scoped shell works" : "scoped read works",
+          );
+          expect(
+            JSON.stringify(model.requests[firstChildRequest + 2]?.input),
+          ).toContain("outside configured agent scope");
+          if (name === "Bash")
+            expect(
+              await Bun.file(join(directory, "forbidden.txt")).exists(),
+            ).toBe(false);
+          else
+            expect(
+              JSON.stringify(model.requests[firstChildRequest + 2]?.input),
+            ).not.toContain("outside-scope-secret");
+        });
+      }
+    }
+  }
+
   test("native disabled controls remove matching tools while preserving MCP tools", async () => {
     const mcpPath = join(import.meta.dir, "mcp-test", "simple-mcp-server.ts");
     const model = new ScriptedModel([

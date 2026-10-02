@@ -16,7 +16,7 @@ import type OpenAI from "openai";
 import { randomUUID } from "node:crypto";
 import { relative, resolve, sep } from "node:path";
 import { createHookRunner, type HookResult, type HookMap } from "./agent-hooks";
-import { AgentPermissions } from "./agent-permissions";
+import { AgentPermissions, toolMatchesRule } from "./agent-permissions";
 import {
   createAgentTools,
   type AgentToolOptions,
@@ -282,7 +282,9 @@ async function buildContext(
     workspace: permissions.options.cwd,
     environment: options.toolEnvironment,
     sessionId: options.sessionId,
-    permissionMode: permissions.options.permissionMode,
+    get permissionMode() {
+      return permissions.options.permissionMode;
+    },
     transcriptPath: getExecutionFilePath(),
     deadline: options.deadline,
     signal: options.signal,
@@ -494,6 +496,10 @@ async function buildContext(
           ...(request.allowedTools ?? []),
         ]),
       ],
+      toolScopes: [
+        ...(permissions.options.toolScopes ?? []),
+        ...(request.allowedTools ? [request.allowedTools] : []),
+      ],
     });
     const memoryPath = request.memoryScope
       ? subagentMemoryPath(childCwd, request.name, request.memoryScope)
@@ -542,10 +548,8 @@ async function buildContext(
     );
     const tools = request.allowedTools
       ? child.tools.filter((tool) =>
-          request.allowedTools!.some(
-            (name) =>
-              name === tool.name ||
-              (name.startsWith("mcp__") && tool.name.startsWith(name)),
+          request.allowedTools!.some((rule) =>
+            toolMatchesRule(tool.name, rule),
           ),
         )
       : child.tools;

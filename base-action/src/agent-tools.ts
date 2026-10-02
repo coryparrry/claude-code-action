@@ -374,13 +374,13 @@ export function createAgentTools(options: AgentToolOptions): Tool[] {
         (options.deadline ?? Date.now() + 600_000) - Date.now(),
       ),
     );
+    if (
+      input.run_in_background &&
+      [...jobs.values()].filter((job) => job.running).length >= 32
+    )
+      throw new Error("Background shell limit reached");
     const job = startShell(input.command, timeout, name);
     if (input.run_in_background) {
-      if (jobs.size >= 32) {
-        job.stop();
-        await job.done;
-        throw new Error("Background shell limit reached");
-      }
       const id = randomUUID();
       jobs.set(id, job);
       options.backgroundTasks?.set(id, {

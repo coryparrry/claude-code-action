@@ -123,26 +123,24 @@ export function createAgentCompaction(options: AgentCompactionOptions) {
   const store =
     options.underlyingSession ??
     new MemorySession({ sessionId: options.sessionId });
-  const fetch = globalThis.fetch;
-  const clientOptions = {
-    maxRetries: 0,
-    fetch: async (
-      input: Parameters<typeof fetch>[0],
-      init?: Parameters<typeof fetch>[1],
-    ) => {
-      currentSignal.throwIfAborted();
-      requestModel = activeModel;
-      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      body.model = requestModel;
-      const signal = init?.signal
-        ? AbortSignal.any([init.signal, currentSignal])
-        : currentSignal;
-      return fetch(input, { ...init, body: JSON.stringify(body), signal });
-    },
-  };
+  const clientOptions = { maxRetries: 0 };
   const client = options.openAIClient
     ? options.openAIClient.withOptions(clientOptions)
     : new OpenAI({ apiKey: options.apiKey, baseURL, ...clientOptions });
+  const compact = client.responses.compact.bind(client.responses);
+  client.responses.compact = (body, requestOptions) => {
+    currentSignal.throwIfAborted();
+    requestModel = activeModel;
+    const signal = requestOptions?.signal
+      ? AbortSignal.any([requestOptions.signal, currentSignal])
+      : currentSignal;
+    // Select the active model before serialization and provider signing, while
+    // retaining the selected client's authentication and transport.
+    return compact(
+      { ...body, model: requestModel },
+      { ...requestOptions, signal },
+    );
+  };
   const before = async (trigger: "auto" | "context_limit") => {
     currentSignal.throwIfAborted();
     await options.onBeforeCompact?.({ model: activeModel, trigger });

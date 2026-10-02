@@ -297,7 +297,7 @@ describe("prepareMcpConfig", () => {
 
     for (const [name, script] of Object.entries(servers)) {
       expect(parsed.mcpServers[name]).toBeDefined();
-      expect(parsed.mcpServers[name].command).toBe("bun");
+      expect(parsed.mcpServers[name].command).toBe(process.execPath);
       expect(parsed.mcpServers[name].args).toEqual([
         "--no-env-file",
         "--config=/test/action/path/bunfig.toml",

@@ -1,8 +1,8 @@
 # Usage
 
-> The runtime uses `@openai/agents` pinned to `0.18.0` with the OpenAI Responses API and `gpt-5.3-codex` by default. The Agents SDK owns the model/tool loop; this action does not install or run the Codex CLI, Claude Code, or the Claude Agent SDK. Legacy configuration names remain adapter inputs; Anthropic provider authentication is historical only. Fork pull requests are rejected before execution.
+> The runtime uses `@openai/agents` pinned to `0.18.0` with the OpenAI Responses API and `gpt-6-luna` by default. The Agents SDK owns the model/tool loop; this action does not install or run the Codex CLI, Claude Code, or the Claude Agent SDK. Legacy configuration names remain adapter inputs; Anthropic provider authentication is historical only. Fork pull requests are rejected before execution.
 
-Add a workflow file to your repository (e.g., `.github/workflows/claude.yml`):
+Start with the [complete workflow](../README.md#quickstart) and [provider setup](./cloud-providers.md). The example below illustrates additional options for `.github/workflows/codex.yml`:
 
 ```yaml
 name: Codex Assistant
@@ -16,10 +16,18 @@ on:
   pull_request_review:
     types: [submitted]
 
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
 jobs:
   codex-response:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: coryparrry/claude-code-action@0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -30,9 +38,9 @@ jobs:
           # prompt: "Review this PR for security issues"
 
           # Optional: pass advanced arguments to Agents SDK runner
-          # claude_args: |
+          # codex_args: |
           #   --max-turns 10
-          #   --model gpt-5.3-codex
+          #   --model gpt-6-luna
 
           # Optional: add custom plugin marketplaces
           # plugin_marketplaces: "https://github.com/user/marketplace1.git\nhttps://github.com/user/marketplace2.git"
@@ -119,7 +127,7 @@ Use `openai_api_key` instead of Anthropic authentication. The action retains `cl
 | `direct_prompt` / `override_prompt`          | `prompt`                                                                                |
 | `claude_env`                                 | Workflow step `env` or supported `settings.env`                                         |
 
-Mode selection remains automatic. Anthropic OAuth, federation, Bedrock, Vertex and Foundry credentials are historical provider references; execution requires an OpenAI API key.
+Mode selection remains automatic. Authentication supports OpenAI API keys, OpenAI workload identity federation, Bedrock credentials, and Azure OpenAI credentials. See the [provider guide](./cloud-providers.md) for the exact contracts and remaining differences from Anthropic providers.
 
 <details>
 <summary>Upstream v0.x migration patterns — historical reference</summary>

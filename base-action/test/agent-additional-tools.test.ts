@@ -378,6 +378,27 @@ describe("additional real SDK tools", () => {
       "denied",
     );
   });
+  test("dontAsk rejects unapproved additional tools without invoking PermissionRequest", async () => {
+    let requests = 0;
+    let searches = 0;
+    const { invoke } = await setup({
+      allowedTools: [],
+      permissionMode: "dontAsk",
+      permissionRequest: async () => {
+        requests++;
+        return { permissionDecision: "allow" };
+      },
+      search: async () => {
+        searches++;
+        return "unexpected search";
+      },
+    });
+    expect(await invoke("WebSearch", { query: "question" })).toContain(
+      "not allowed without approval",
+    );
+    expect(requests).toBe(0);
+    expect(searches).toBe(0);
+  });
   test("rechecks permissions after hooks and reports errors once", async () => {
     const events: boolean[] = [];
     let called = false;

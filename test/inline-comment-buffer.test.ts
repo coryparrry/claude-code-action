@@ -136,4 +136,24 @@ describe("removeBufferedComment", () => {
     expect(raw).toContain("not json");
     expect(raw).not.toContain("Comment A");
   });
+
+  it("keeps comments targeting another diff side or commit", () => {
+    writeBuffer([
+      entryA,
+      { ...entryA, side: "LEFT" },
+      { ...entryA, commit_id: "another-commit" },
+    ]);
+    removeBufferedComment(
+      {
+        path: entryA.path,
+        line: entryA.line,
+        body: entryA.body,
+        side: "RIGHT",
+      },
+      bufferPath,
+    );
+    expect(readBuffer()).toHaveLength(2);
+    expect(readFileSync(bufferPath, "utf8")).toContain('"side":"LEFT"');
+    expect(readFileSync(bufferPath, "utf8")).toContain("another-commit");
+  });
 });

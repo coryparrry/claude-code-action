@@ -1,6 +1,7 @@
 import * as core from "@actions/core";
 import { AzureOpenAI, OpenAI, type ClientOptions } from "openai";
 import { bedrock } from "openai/providers/bedrock";
+import { bedrock as bedrockAws } from "openai/providers/bedrock/aws";
 
 export type OpenAIProvider = "openai" | "bedrock" | "azure";
 
@@ -42,6 +43,15 @@ function providerFor(
   throw new Error("OPENAI_PROVIDER must be openai, bedrock, or azure");
 }
 
+function bedrockEndpointFor(
+  environment: OpenAIAuthenticationEnvironment,
+): "mantle" | "runtime" | undefined {
+  const endpoint = value(environment, "AWS_BEDROCK_ENDPOINT");
+  if (!endpoint) return undefined;
+  if (endpoint === "mantle" || endpoint === "runtime") return endpoint;
+  throw new Error("AWS_BEDROCK_ENDPOINT must be mantle or runtime");
+}
+
 const FEDERATION_FIELDS = [
   "OPENAI_IDENTITY_PROVIDER_ID",
   "OPENAI_SERVICE_ACCOUNT_ID",
@@ -72,6 +82,12 @@ export function validateOpenAIAuthentication(
   const azureKey = value(environment, "AZURE_OPENAI_API_KEY");
   const azureToken = value(environment, "AZURE_OPENAI_AD_TOKEN");
 
+  if (provider !== "openai" && value(environment, "OPENAI_BASE_URL")) {
+    throw new Error(
+      "OPENAI_BASE_URL is only supported with OPENAI_PROVIDER=openai; use the selected provider's endpoint setting",
+    );
+  }
+
   if (provider === "openai") {
     if (bedrockToken || hasAny(environment, AZURE_FIELDS)) {
       throw new Error(
@@ -101,14 +117,26 @@ export function validateOpenAIAuthentication(
   }
 
   if (provider === "bedrock") {
+    bedrockEndpointFor(environment);
     if (apiKey || hasFederation || hasAny(environment, AZURE_FIELDS)) {
       throw new Error(
         "Credentials for multiple OpenAI providers are configured",
       );
     }
-    if (!bedrockToken || !awsRegion) {
+    const accessKeyId = value(environment, "AWS_ACCESS_KEY_ID");
+    const secretAccessKey = value(environment, "AWS_SECRET_ACCESS_KEY");
+    const sessionToken = value(environment, "AWS_SESSION_TOKEN");
+    if (bedrockToken && (accessKeyId || secretAccessKey || sessionToken)) {
       throw new Error(
-        "Bedrock requires AWS_BEARER_TOKEN_BEDROCK and AWS_REGION",
+        "Bedrock bearer tokens and AWS signing credentials are mutually exclusive",
+      );
+    }
+    if (!awsRegion) {
+      throw new Error("Bedrock requires AWS_REGION or AWS_DEFAULT_REGION");
+    }
+    if (!bedrockToken && (!accessKeyId || !secretAccessKey)) {
+      throw new Error(
+        "Bedrock requires AWS_BEARER_TOKEN_BEDROCK or both AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY",
       );
     }
     return provider;
@@ -139,6 +167,7 @@ export function validateOpenAIAuthentication(
 type ExchangeResponse = {
   access_token?: unknown;
   expires_in?: unknown;
+  expires_at?: unknown;
 };
 
 function safeExchangeError(status?: number): Error {
@@ -182,6 +211,7 @@ async function createFederatedAuthentication(
     }
     register(subjectToken);
 
+    const exchangeStartedAt = now();
     let response: Response;
     try {
       response = await fetchImpl(OPENAI_TOKEN_EXCHANGE_URL, {
@@ -204,7 +234,11 @@ async function createFederatedAuthentication(
 
     let payload: ExchangeResponse;
     try {
-      payload = (await response.json()) as ExchangeResponse;
+      const body: unknown = await response.json();
+      if (!body || typeof body !== "object" || Array.isArray(body)) {
+        throw new Error("Invalid token response");
+      }
+      payload = body as ExchangeResponse;
     } catch {
       throw new Error(
         "OpenAI workload identity returned an invalid token response",
@@ -215,7 +249,11 @@ async function createFederatedAuthentication(
       !payload.access_token.trim() ||
       typeof payload.expires_in !== "number" ||
       !Number.isFinite(payload.expires_in) ||
-      payload.expires_in <= 0
+      payload.expires_in <= 0 ||
+      (payload.expires_at !== undefined &&
+        (typeof payload.expires_at !== "number" ||
+          !Number.isFinite(payload.expires_at) ||
+          payload.expires_at <= 0))
     ) {
       throw new Error(
         "OpenAI workload identity returned an invalid token response",
@@ -223,10 +261,21 @@ async function createFederatedAuthentication(
     }
 
     register(payload.access_token);
-    const expiresAt = now() + payload.expires_in * 1000;
+    // Delivery time consumes token lifetime. Prefer the earlier deadline if the
+    // service supplies absolute expiry, while allowing for local clock skew.
+    const expiresAt = Math.min(
+      exchangeStartedAt + payload.expires_in * 1000,
+      typeof payload.expires_at === "number"
+        ? payload.expires_at * 1000
+        : Infinity,
+    );
+    const remainingLifetime = (expiresAt - now()) / 1000;
+    if (!Number.isFinite(expiresAt) || remainingLifetime <= 0) {
+      throw new Error("OpenAI workload identity returned an expired token");
+    }
     const refreshBuffer = Math.min(
       DEFAULT_REFRESH_BUFFER_SECONDS,
-      payload.expires_in / 2,
+      remainingLifetime / 2,
     );
     cached = {
       token: payload.access_token,
@@ -249,7 +298,8 @@ async function createFederatedAuthentication(
   const credential = await getCredential();
   const client = new OpenAI({
     apiKey: getCredential,
-    baseURL: value(environment, "OPENAI_BASE_URL") || undefined,
+    baseURL: value(environment, "OPENAI_BASE_URL") || DEFAULT_OIDC_AUDIENCE,
+    ...(dependencies.fetch ? { fetch: fetchImpl } : {}),
   });
   return { client, credential, provider: "openai", baseURL: client.baseURL };
 }
@@ -272,22 +322,49 @@ export async function createOpenAIAuthentication(
     (dependencies.register ?? core.setSecret)(credential);
     const client = new OpenAI({
       apiKey: credential,
-      baseURL: value(environment, "OPENAI_BASE_URL") || undefined,
+      baseURL: value(environment, "OPENAI_BASE_URL") || DEFAULT_OIDC_AUDIENCE,
       ...(dependencies.fetch ? { fetch: fetchImpl } : {}),
     });
     return { client, credential, provider, baseURL: client.baseURL };
   }
 
   if (provider === "bedrock") {
-    const credential = value(environment, "AWS_BEARER_TOKEN_BEDROCK");
-    (dependencies.register ?? core.setSecret)(credential);
+    const bearerToken = value(environment, "AWS_BEARER_TOKEN_BEDROCK");
+    const accessKeyId = value(environment, "AWS_ACCESS_KEY_ID");
+    const secretAccessKey = value(environment, "AWS_SECRET_ACCESS_KEY");
+    const sessionToken = value(environment, "AWS_SESSION_TOKEN");
+    const credential = bearerToken || secretAccessKey;
+    const register = dependencies.register ?? core.setSecret;
+    for (const secret of [
+      bearerToken,
+      accessKeyId,
+      secretAccessKey,
+      sessionToken,
+    ]) {
+      if (secret) register(secret);
+    }
+    const region =
+      value(environment, "AWS_REGION") ||
+      value(environment, "AWS_DEFAULT_REGION");
+    const endpointType = bedrockEndpointFor(environment);
+    const endpoint = {
+      endpoint: endpointType,
+      region,
+      baseURL:
+        value(environment, "AWS_BEDROCK_BASE_URL") ||
+        (endpointType === "runtime"
+          ? null
+          : `https://bedrock-mantle.${region}.api.aws/v1`),
+    };
     const client = new OpenAI({
-      provider: bedrock({
-        apiKey: credential,
-        region:
-          value(environment, "AWS_REGION") ||
-          value(environment, "AWS_DEFAULT_REGION"),
-      }),
+      provider: bearerToken
+        ? bedrock({ ...endpoint, apiKey: bearerToken })
+        : bedrockAws({
+            ...endpoint,
+            accessKeyId,
+            secretAccessKey,
+            sessionToken: sessionToken || undefined,
+          }),
       ...(dependencies.fetch ? { fetch: fetchImpl } : {}),
     });
     return { client, credential, provider, baseURL: client.baseURL };
@@ -298,10 +375,11 @@ export async function createOpenAIAuthentication(
   const credential = apiKey || adToken;
   (dependencies.register ?? core.setSecret)(credential);
   const client = new AzureOpenAI({
-    endpoint: value(environment, "AZURE_OPENAI_ENDPOINT"),
+    baseURL: `${value(environment, "AZURE_OPENAI_ENDPOINT").replace(/\/+$/, "")}/openai`,
     apiVersion: value(environment, "OPENAI_API_VERSION"),
     deployment: value(environment, "AZURE_OPENAI_DEPLOYMENT") || undefined,
-    ...(apiKey ? { apiKey } : { azureADTokenProvider: async () => adToken }),
+    apiKey,
+    ...(adToken ? { azureADTokenProvider: async () => adToken } : {}),
     ...(dependencies.fetch ? { fetch: fetchImpl } : {}),
   });
   return { client, credential, provider, baseURL: client.baseURL };
