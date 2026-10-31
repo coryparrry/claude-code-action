@@ -2,7 +2,7 @@ export const WORKFLOW_PATH = ".github/workflows/codex.yml";
 export const MANAGED_MARKER = "# Managed by the Codex GitHub Action installer.";
 export const DEFAULT_ACTION_REF =
   "coryparrry/claude-code-action@07d0a94badb76002d5e143806b32f96e0a9d2c6d";
-export const DEFAULT_MODEL = "gpt-6-luna";
+export const DEFAULT_MODEL = "gpt-6.1-terra";
 export const DEFAULT_TRIGGER_PHRASE = "/codex";
 export const REVIEW_DIFF_PATH = ".git/codex-review.diff";
 export const AUTOMATIC_REVIEW_PROMPT = `Review this pull request for code quality, bugs, security and performance issues.
@@ -61,6 +61,7 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  actions: read
 
 jobs:
   codex:
@@ -87,7 +88,7 @@ jobs:
           trigger_phrase: ${JSON.stringify(DEFAULT_TRIGGER_PHRASE)}
           openai_api_key: \${{ secrets.OPENAI_API_KEY }}
           codex_model: ${JSON.stringify(model)}
-          codex_effort: low
+          codex_effort: max
           max_turns: "30"
           track_progress: "true"
       - name: Save execution report
@@ -131,7 +132,7 @@ jobs:
           trigger_phrase: ${JSON.stringify(DEFAULT_TRIGGER_PHRASE)}
           openai_api_key: \${{ secrets.OPENAI_API_KEY }}
           codex_model: ${JSON.stringify(model)}
-          codex_effort: low
+          codex_effort: max
           max_turns: "30"
           review_mode: "true"
           codex_sandbox: read-only

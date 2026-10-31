@@ -2,7 +2,7 @@
 
 The guided installer handles repository selection, the API-key secret and the
 workflow PR. It runs locally using Node.js and GitHub CLI, without Bun or extra
-Node dependencies. The generated workflow uses Luna 6 (`gpt-6-luna`), the reviewed
+Node dependencies. The generated workflow uses Terra 6.1 (`gpt-6.1-terra`) at Max effort, the reviewed
 action commit and the repository's built-in workflow token.
 
 The reviewed runtime changes are included in that source pin. See the

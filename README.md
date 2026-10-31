@@ -59,8 +59,8 @@ jobs:
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
-          codex_model: "gpt-6-luna"
-          codex_effort: low
+          codex_model: "gpt-6.1-terra"
+          codex_effort: max
           max_turns: "30"
           track_progress: "true"
       - name: Save execution report
@@ -103,8 +103,8 @@ jobs:
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
-          codex_model: "gpt-6-luna"
-          codex_effort: low
+          codex_model: "gpt-6.1-terra"
+          codex_effort: max
           max_turns: "30"
           review_mode: "true"
           codex_sandbox: read-only

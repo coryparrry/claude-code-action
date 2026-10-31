@@ -1,4 +1,5 @@
 import { execFileSync } from "child_process";
+import type { ReviewRequest } from "./review-request";
 import type { IssuesEvent } from "@octokit/webhooks-types";
 import type { Octokits } from "../api/client";
 import { ISSUE_QUERY, PR_QUERY, USER_QUERY } from "../api/queries/github";
@@ -387,6 +388,7 @@ export type FetchDataResult = {
   reviewData: { nodes: GitHubReview[] } | null;
   imageUrlMap: Map<string, string>;
   triggerDisplayName?: string | null;
+  reviewRequest?: ReviewRequest;
 };
 
 export async function fetchGitHubData({

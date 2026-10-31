@@ -6,10 +6,7 @@ import { z } from "zod";
 import { GITHUB_API_URL } from "../github/api/config";
 import { mkdir, writeFile } from "fs/promises";
 import { Octokit } from "@octokit/rest";
-import {
-  listWorkflowJobs,
-  listWorkflowRuns,
-} from "./github-actions-pagination";
+import { getCIStatus, getWorkflowRunDetails } from "./github-actions-context";
 
 const REPO_OWNER = process.env.REPO_OWNER;
 const REPO_NAME = process.env.REPO_NAME;
@@ -40,7 +37,7 @@ console.error("[GitHub CI Server] MCP Server instance created");
 
 server.tool(
   "get_ci_status",
-  "Get CI status summary for this PR",
+  "Get current PR head SHA and latest workflow runs; superseded failures are excluded",
   {
     status: z
       .enum([
@@ -69,55 +66,15 @@ server.tool(
         baseUrl: GITHUB_API_URL,
       });
 
-      // Get the PR to find the head SHA
-      const { data: prData } = await client.pulls.get({
-        owner: REPO_OWNER!,
-        repo: REPO_NAME!,
-        pull_number: parseInt(PR_NUMBER!, 10),
-      });
-      const headSha = prData.head.sha;
-
-      const runs = await listWorkflowRuns(client, {
-        owner: REPO_OWNER!,
-        repo: REPO_NAME!,
-        head_sha: headSha,
-        ...(status && { status }),
-      });
-
-      // Process runs to create summary
-      const summary = {
-        total_runs: runs.length,
-        failed: 0,
-        passed: 0,
-        pending: 0,
-      };
-
-      const processedRuns = runs.map((run: any) => {
-        // Update summary counts
-        if (run.status === "completed") {
-          if (run.conclusion === "success") {
-            summary.passed++;
-          } else if (run.conclusion === "failure") {
-            summary.failed++;
-          }
-        } else {
-          summary.pending++;
-        }
-
-        return {
-          id: run.id,
-          name: run.name,
-          status: run.status,
-          conclusion: run.conclusion,
-          html_url: run.html_url,
-          created_at: run.created_at,
-        };
-      });
-
-      const result = {
-        summary,
-        runs: processedRuns,
-      };
+      const result = await getCIStatus(
+        client,
+        {
+          owner: REPO_OWNER!,
+          repo: REPO_NAME!,
+          pull_number: parseInt(PR_NUMBER!, 10),
+        },
+        status,
+      );
 
       return {
         content: [
@@ -146,7 +103,7 @@ server.tool(
 
 server.tool(
   "get_workflow_run_details",
-  "Get job and step details for a workflow run",
+  "Get workflow jobs and steps, including head SHA and whether this run matches the current PR revision",
   {
     run_id: z.number().describe("The workflow run ID"),
   },
@@ -157,34 +114,12 @@ server.tool(
         baseUrl: GITHUB_API_URL,
       });
 
-      // Get jobs for this workflow run
-      const jobs = await listWorkflowJobs(client, {
+      const result = await getWorkflowRunDetails(client, {
         owner: REPO_OWNER!,
         repo: REPO_NAME!,
+        pull_number: parseInt(PR_NUMBER!, 10),
         run_id,
       });
-
-      const processedJobs = jobs.map((job: any) => {
-        // Extract failed steps
-        const failedSteps = (job.steps || [])
-          .filter((step: any) => step.conclusion === "failure")
-          .map((step: any) => ({
-            name: step.name,
-            number: step.number,
-          }));
-
-        return {
-          id: job.id,
-          name: job.name,
-          conclusion: job.conclusion,
-          html_url: job.html_url,
-          failed_steps: failedSteps,
-        };
-      });
-
-      const result = {
-        jobs: processedJobs,
-      };
 
       return {
         content: [

@@ -19,6 +19,7 @@ import { isEntityContext } from "../../github/context";
 import type { GitHubContext } from "../../github/context";
 import type { Octokits } from "../../github/api/client";
 import { parseAllowedTools } from "../agent/parse-tools";
+import { fetchReviewRequest } from "../../github/data/review-request";
 
 /**
  * Prepares the tag mode execution context.
@@ -63,6 +64,7 @@ export async function prepareTagMode({
     includeCommentsByActor: context.inputs.includeCommentsByActor,
     excludeCommentsByActor: context.inputs.excludeCommentsByActor,
   });
+  githubData.reviewRequest = await fetchReviewRequest(context, octokit);
 
   // Setup branch
   const branchInfo = await setupBranch(octokit, githubData, context);

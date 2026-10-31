@@ -2,6 +2,9 @@
 
 > This fork runs OpenAI models through the OpenAI Agents SDK. It preserves the upstream GitHub workflow and adapts runtime controls. See the [feature comparison](./feature-parity.md) for verified coverage and remaining differences.
 
+For requested PR fixes, issue implementations, validation permissions and CI
+diagnosis, see the [requested changes guide](./requested-changes.md).
+
 ## What Codex Can Do
 
 - **Respond in a Single Comment**: Codex operates by updating a single initial comment with progress and results

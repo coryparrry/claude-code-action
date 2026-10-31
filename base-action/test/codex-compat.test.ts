@@ -438,6 +438,15 @@ describe("Codex compatibility controls", () => {
       ).resumeThreadId,
     ).toBe("retained-session");
   });
+  test("preserves Terra 6.1 Max rather than downgrading its reasoning effort", async () => {
+    const config = await resolveCompatibility(
+      "--model gpt-6.1-terra --effort max",
+      "",
+      empty,
+    );
+    expect(config.model).toBe("gpt-6.1-terra");
+    expect(config.effort).toBe("max");
+  });
   test("maps max/ultra effort to xhigh for the default Codex model", async () => {
     expect((await resolveCompatibility("--effort max", "", empty)).effort).toBe(
       "xhigh",
