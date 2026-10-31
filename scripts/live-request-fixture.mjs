@@ -6,6 +6,7 @@ const repo = process.env.GITHUB_REPOSITORY;
 const root = `repos/${repo}`;
 const number = Number(process.env.LIVE_PR);
 const temp = process.env.RUNNER_TEMP;
+/** Read fixture GitHub objects through the authenticated CLI. */
 const api = (path, args = []) =>
   JSON.parse(
     execFileSync("gh", ["api", `${root}/${path}`, ...args], {
