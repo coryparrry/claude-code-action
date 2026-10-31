@@ -31,6 +31,10 @@ branch, implement and validate the change, and push it.
 
 The final tracking comment should report what changed, the acceptance criteria
 met, exact verification results, remaining blockers and the branch/commit link.
+Git CLI tasks write commit messages to `.git/codex-commit-message.txt` and use
+`git commit --file` so titles and co-author trailers remain literal data under
+the scoped shell policy.
+
 It should include a **Create a PR** link targeting the prepared base branch, with
 a concrete title, behavior summary, verification results and issue reference.
 That link opens GitHub's PR creation form; it is not an already-created PR.

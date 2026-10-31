@@ -22,6 +22,9 @@ permissions:
 jobs:
   codex:
     if: >-
+      github.repository == 'coryparrry/claude-code-action' &&
+      (!github.event.pull_request ||
+        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.actor == 'coryparrry') &&
       (
         ((github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') &&
@@ -39,7 +42,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: agent
-        uses: coryparrry/claude-code-action@e0ef924fe4908e4f1ee043ee6d62c3f07b4cb07a
+        uses: coryparrry/claude-code-action@28e7ffcc4a2c129bde8585c85354de4ef91ea837
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -59,6 +62,7 @@ jobs:
 
   codex_review:
     if: >-
+      github.repository == 'coryparrry/claude-code-action' &&
       github.event_name == 'pull_request' &&
       (github.actor == 'coryparrry') &&
       !github.event.pull_request.draft &&
@@ -84,7 +88,7 @@ jobs:
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
       - id: agent
-        uses: coryparrry/claude-code-action@e0ef924fe4908e4f1ee043ee6d62c3f07b4cb07a
+        uses: coryparrry/claude-code-action@28e7ffcc4a2c129bde8585c85354de4ef91ea837
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
