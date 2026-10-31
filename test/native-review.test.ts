@@ -484,6 +484,8 @@ describe("individual native GitHub review delivery", () => {
         savedReview(old),
         savedReview(head, "foreign"),
         { ...savedReview(), commit_id: old },
+        { ...savedReview(), body: null },
+        { ...savedReview(), body: undefined },
       ],
       comments: [
         {

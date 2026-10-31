@@ -83,8 +83,10 @@ export function renderFinding(
 }
 
 /** Only publisher-owned footer metadata determines whether a head was reviewed. */
-export function reviewHead(body: string): string | undefined {
-  return body.match(
+export function reviewHead(
+  body: string | null | undefined,
+): string | undefined {
+  return body?.match(
     /<!-- codex-action:review:([a-f0-9]{40}) -->(?:\s*<!-- codex-action:(?:grouped|inline)-review -->)?\s*$/,
   )?.[1];
 }
