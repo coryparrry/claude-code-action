@@ -12,7 +12,7 @@ One native review summary
 Each finding is its own inline comment, marked red for a bug, yellow for an
 optional suggestion or purple for a pre-existing defect. The title and impact
 are visible; supporting evidence and verification expand inside that comment.
-The main summary contains the review conclusion, coverage and review details.
+The main summary uses a GitHub-rendered HTML card: the review conclusion is visible above a metadata row showing the reviewed commit, inspected area count and inline finding count. Coverage and review details remain expandable below. Individual issues are never duplicated inside the card.
 There is no combined findings comment and no separate review per severity.
 
 One API call submits the summary and all individual inline comments together.
@@ -81,3 +81,17 @@ access. The built-in App token minting currently requests contents, issues and
 pull requests write access by default, so the installation must allow those. Setting `bot_name` alone
 does not change GitHub's author. The hosted Codex integration is a separate bot
 and its comments are independent of this action.
+
+## Installing for other people
+
+The current installer creates workflow and API-key setup PRs and uses the built-in
+`github-actions[bot]` identity. It does not register or host a shared GitHub App.
+Users of the updated action automatically receive the same HTML summary and inline
+finding layout after enabling `review_mode`; a custom bot identity is separate.
+
+For one shared name and avatar across accounts, publish a public GitHub App that
+people install on selected repositories. GitHub still requires installation and
+permission approval. A shared App also needs an operator-controlled service to
+issue installation-scoped tokens or run the integration; its private key must stay
+with that service, never be distributed to consumer repositories. That hosted
+onboarding and token service is not implemented by this Action installer.

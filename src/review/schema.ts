@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { redactSecrets, sanitizeContent } from "../github/utils/sanitizer";
 import { GITHUB_SERVER_URL } from "../github/api/config";
-import { renderDetails } from "../github/operations/comments/render";
+import {
+  escapeHtml,
+  renderDetails,
+} from "../github/operations/comments/render";
 
 export const INLINE_REVIEW_MARKER = "<!-- codex-action:inline-review -->";
 export const MAX_REVIEW_COMMENT_BYTES = 60000;
@@ -16,7 +19,9 @@ export type ReviewLocation = {
 
 const text = z.string().trim().min(1).max(12000);
 export const reviewSchema = z.strictObject({
-  summary: text,
+  summary: text.describe(
+    "A concise plain-text review conclusion, without a list of findings",
+  ),
   reviewed: z.array(text).min(1).max(30),
   reasoning: text,
   findings: z
@@ -79,7 +84,7 @@ export function renderFinding(
   const code = link
     ? `[View code](${link})`
     : `\`${position}\` (${finding.side})`;
-  return `${marker} **${clean(finding.title).replace(/[<>&]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[char]!)}**\n\n${clean(finding.body)}\n\n${code}\n\n${renderDetails("Why this was flagged", `${clean(finding.explanation)}\n\n**Verification:** ${clean(finding.verification)}`)}\n\n<sub>Finding ID: \`f-${findingId(finding)}\`</sub>\n\n<!-- codex-action:finding:${findingId(finding)} -->`;
+  return `${marker} **${escapeHtml(clean(finding.title))}**\n\n${clean(finding.body)}\n\n${code}\n\n${renderDetails("Why this was flagged", `${clean(finding.explanation)}\n\n**Verification:** ${clean(finding.verification)}`)}\n\n<sub>Finding ID: \`f-${findingId(finding)}\`</sub>\n\n<!-- codex-action:finding:${findingId(finding)} -->`;
 }
 
 /** Only publisher-owned footer metadata determines whether a head was reviewed. */
@@ -103,7 +108,21 @@ export function renderReview(
   );
   const evidence = renderDetails("Review details", clean(review.reasoning));
   const revision = location
-    ? ` · [\`${head.slice(0, 7)}\`](${GITHUB_SERVER_URL}/${location.owner}/${location.repo}/commit/${head})`
-    : "";
-  return `**Codex review**${revision}\n\n${clean(review.summary)}\n\n${coverage}\n\n${evidence}\n\n<!-- codex-action:review:${head} -->\n${INLINE_REVIEW_MARKER}`;
+    ? `<a href="${escapeHtml(`${GITHUB_SERVER_URL}/${location.owner}/${location.repo}/commit/${head}`)}"><code>${escapeHtml(head.slice(0, 7))}</code></a>`
+    : `<code>${escapeHtml(head.slice(0, 7))}</code>`;
+  const conclusion = escapeHtml(clean(review.summary)).replace(
+    /\r?\n/g,
+    "<br>",
+  );
+  const areas = `${review.reviewed.length} ${review.reviewed.length === 1 ? "area" : "areas"}`;
+  const findings = `${review.findings.length} ${review.findings.length === 1 ? "finding" : "findings"}`;
+  const card = `<table>
+<tr><td colspan="3"><h3>Codex review</h3><p>${conclusion}</p></td></tr>
+<tr>
+<td><sub>Reviewed commit</sub><br>${revision}</td>
+<td><sub>Coverage</sub><br><strong>${areas}</strong></td>
+<td><sub>Inline comments</sub><br><strong>${findings}</strong></td>
+</tr>
+</table>`;
+  return `${card}\n\n${coverage}\n\n${evidence}\n\n<!-- codex-action:review:${head} -->\n${INLINE_REVIEW_MARKER}`;
 }

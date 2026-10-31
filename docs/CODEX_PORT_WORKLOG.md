@@ -125,6 +125,14 @@ Independent frozen production installs also passed with the patched dependency
 graph: root installed 235 packages and base installed 186; both completed the
 offline SDK smoke run.
 
+### 2026-10-31 visible HTML review summary
+
+The main native review now renders a publisher-owned HTML summary card with a visible conclusion and a metadata row for reviewed commit, inspected areas and inline finding count. Coverage and review details remain expandable below it. Findings remain separate coloured inline comments; the card does not list their titles or evidence. Model conclusion text is escaped before insertion into HTML.
+
+The installation guide distinguishes automatic layout adoption from a shared branded bot. The current installer uses the workflow token. Public App installation, hosted onboarding and private-key custody remain separate work, not a capability claimed by this PR.
+
+Verification: the scoped eight-file suite passed 88 cases; one rejected-delivery child fixture hit its 10-second timeout under extreme host load, then passed in isolation (1 test, 5 assertions). Root TypeScript, scoped Prettier and diff checks passed. Independent source review found no material issues. GitHub rendered the live preview as a table with the conclusion and all three metadata cells; individual inline comments remained separate. A screenshot capture was blocked by repeated browser-tool timeouts. Hosted verification is recorded in the PR after publication.
+
 ### 2026-10-31 individual inline findings
 
 The owner's latest correction supersedes the grouped-discussion layout: each issue gets its own coloured inline comment at its actual code location, all submitted under one native review summary. There is no combined findings comment or severity-specific review. Finding titles and impact remain visible, with supporting evidence expandable within each issue's comment.
