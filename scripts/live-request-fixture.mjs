@@ -52,7 +52,10 @@ if (mode === "prepare") {
     "The composite action must finish successfully",
   );
   const report = JSON.parse(readFileSync(process.env.LIVE_REPORT, "utf8"));
-  assert.equal(report.model, "gpt-6.1-terra");
+  const model = report.find(
+    (message) => message.type === "system" && message.subtype === "init",
+  )?.model;
+  assert.equal(model, "gpt-6.1-terra");
   copyFileSync(process.env.LIVE_REPORT, join(temp, `live-${mode}-report.json`));
   if (mode === "issue") {
     const branch = process.env.LIVE_BRANCH;
@@ -75,9 +78,7 @@ if (mode === "prepare") {
       "Issue must receive a branch-specific PR creation handoff",
     );
     writeFileSync(join(temp, "live-issue-branch.txt"), branch);
-    console.log(
-      JSON.stringify({ scenario: mode, branch, model: report.model }),
-    );
+    console.log(JSON.stringify({ scenario: mode, branch, model }));
   } else if (mode === "diagnosis") {
     const comments = api(`issues/${number}/comments`);
     assert(
@@ -93,7 +94,7 @@ if (mode === "prepare") {
       JSON.stringify({
         scenario: mode,
         head_sha: api(`pulls/${number}`).head.sha,
-        model: report.model,
+        model,
       }),
     );
   } else if (mode === "inline") {
@@ -116,7 +117,7 @@ if (mode === "prepare") {
       JSON.stringify({
         scenario: mode,
         pushed_sha: pull.head.sha,
-        model: report.model,
+        model,
       }),
     );
   }
