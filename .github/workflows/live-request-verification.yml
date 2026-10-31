@@ -40,26 +40,6 @@ jobs:
           bun-version: 1.4.2
       - name: Prepare actual GitHub event snapshots
         run: node scripts/live-request-fixture.mjs prepare
-      - name: Diagnose real failing fixture CI
-        id: diagnosis
-        uses: ./
-        env:
-          LIVE_EVENT_NAME: issue_comment
-          LIVE_EVENT_PATH: ${{ runner.temp }}/live-diagnosis.json
-        with:
-          path_to_bun_executable: ${{ runner.temp }}/live-bun
-          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
-          trigger_phrase: /verify-codex
-          codex_model: gpt-6.1-terra
-          codex_effort: max
-          codex_sandbox: read-only
-          claude_args: --permission-mode auto --no-session-persistence
-          max_turns: "25"
-      - name: Verify diagnosis and preserve its report
-        env:
-          LIVE_CONCLUSION: ${{ steps.diagnosis.outputs.conclusion }}
-          LIVE_REPORT: ${{ steps.diagnosis.outputs.execution_file }}
-        run: node "$RUNNER_TEMP/live-request-fixture.mjs" diagnosis
       - name: Implement actual fixture issue
         id: issue
         uses: ./
@@ -74,7 +54,7 @@ jobs:
           codex_effort: max
           base_branch: codex/requested-change-workflows
           branch_prefix: codex/live-issue-
-          allowed_tools: Write(test/fixtures/live-request/**),Edit(test/fixtures/live-request/**),Bash(bun --no-env-file test:*),Bash(bun --no-env-file run typecheck:*)
+          allowed_tools: Write(.git/codex-commit-message.txt),Write(test/fixtures/live-request/**),Edit(test/fixtures/live-request/**),Bash(bun --no-env-file test:*),Bash(bun --no-env-file run typecheck:*)
           claude_args: --permission-mode auto --no-session-persistence
           max_turns: "25"
       - name: Verify pushed issue result and PR handoff
@@ -99,7 +79,7 @@ jobs:
           trigger_phrase: /verify-codex
           codex_model: gpt-6.1-terra
           codex_effort: max
-          allowed_tools: Write(test/fixtures/live-request/**),Edit(test/fixtures/live-request/**),Bash(bun --no-env-file test test/fixtures/live-request/normalize.test.ts:*)
+          allowed_tools: Write(.git/codex-commit-message.txt),Write(test/fixtures/live-request/**),Edit(test/fixtures/live-request/**),Bash(bun --no-env-file test test/fixtures/live-request/normalize.test.ts:*)
           claude_args: --permission-mode auto --no-session-persistence
           max_turns: "25"
       - name: Verify pushed inline fix and passing regression
