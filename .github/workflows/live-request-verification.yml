@@ -74,7 +74,7 @@ jobs:
           codex_effort: max
           base_branch: codex/requested-change-workflows
           branch_prefix: codex/live-issue-
-          allowed_tools: Write(test/fixtures/live-request/**),Edit(test/fixtures/live-request/**)
+          allowed_tools: Write(test/fixtures/live-request/**),Edit(test/fixtures/live-request/**),Bash(bun --no-env-file test:*),Bash(bun --no-env-file run typecheck:*)
           claude_args: --permission-mode auto --no-session-persistence
           max_turns: "25"
       - name: Verify pushed issue result and PR handoff
@@ -112,6 +112,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: live-request-reports-${{ github.run_id }}
-          path: ${{ runner.temp }}/live-*-report.json
+          path: |
+            ${{ runner.temp }}/live-*-report.json
+            ${{ runner.temp }}/codex-execution-output.json
           if-no-files-found: warn
           retention-days: 7
