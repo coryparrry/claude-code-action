@@ -27,6 +27,7 @@ export function validateActor(value) {
   return value;
 }
 
+/** Render trusted-actor jobs, using Max effort only for the default Terra model. */
 export function renderWorkflow({
   actors,
   runner = "ubuntu-latest",
@@ -88,8 +89,7 @@ jobs:
           trigger_phrase: ${JSON.stringify(DEFAULT_TRIGGER_PHRASE)}
           openai_api_key: \${{ secrets.OPENAI_API_KEY }}
           codex_model: ${JSON.stringify(model)}
-          codex_effort: max
-          max_turns: "30"
+${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_turns: "30"
           track_progress: "true"
       - name: Save execution report
         if: \${{ always() && steps.agent.outputs.execution_file != '' }}
@@ -132,8 +132,7 @@ jobs:
           trigger_phrase: ${JSON.stringify(DEFAULT_TRIGGER_PHRASE)}
           openai_api_key: \${{ secrets.OPENAI_API_KEY }}
           codex_model: ${JSON.stringify(model)}
-          codex_effort: max
-          max_turns: "30"
+${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_turns: "30"
           review_mode: "true"
           codex_sandbox: read-only
           prompt: |

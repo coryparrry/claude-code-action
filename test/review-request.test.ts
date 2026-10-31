@@ -8,6 +8,7 @@ import {
 } from "./mockContext";
 import type { PullRequestReviewCommentEvent } from "@octokit/webhooks-types";
 
+/** Build a real-shaped inline reply and its independently fetched parent. */
 function fixture(overrides: Record<string, unknown> = {}) {
   const context = structuredClone(mockPullRequestReviewCommentContext);
   const payload = context.payload as PullRequestReviewCommentEvent;
@@ -17,10 +18,21 @@ function fixture(overrides: Record<string, unknown> = {}) {
     diff_hunk: "@@ -1 +1 @@\n-old\n+new",
     line: null,
     original_line: 42,
+    side: "RIGHT",
   });
   const parent = {
     id: 17,
     body: "This drops the empty-input case.",
+    path: "src/original.ts",
+    line: 9,
+    original_line: 9,
+    side: "LEFT",
+    start_line: 6,
+    original_start_line: 6,
+    start_side: "LEFT",
+    commit_id: "parent-commit",
+    original_commit_id: "original-parent",
+    diff_hunk: "@@ -6,4 +6,1 @@",
     created_at: "2024-01-15T16:00:00Z",
     updated_at: "2024-01-15T16:00:00Z",
     pull_request_url: `${GITHUB_API_URL}/repos/test-owner/test-repo/pulls/999`,
@@ -56,6 +68,16 @@ describe("inline implementation request context", () => {
       parentId: 17,
       parentBody: "This drops the empty-input case.",
       parentUnavailable: false,
+      side: "RIGHT",
+      parentLocation: {
+        path: "src/original.ts",
+        side: "LEFT",
+        startLine: 6,
+        line: 9,
+        originalStartLine: 6,
+        startSide: "LEFT",
+        originalCommitId: "original-parent",
+      },
     });
   });
 

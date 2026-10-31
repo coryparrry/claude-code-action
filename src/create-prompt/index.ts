@@ -37,6 +37,7 @@ const USER_REQUEST_FILENAME = "codex-user-request.txt";
 // auto-allows file edits inside $GITHUB_WORKSPACE and denies writes outside it.
 const BASE_ALLOWED_TOOLS = ["Glob", "Grep", "LS", "Read"];
 
+/** Assemble mention-mode tools with scoped Git operations and optional integrations. */
 export function buildAllowedToolsString(
   customAllowedTools?: string[],
   includeActionsTools: boolean = false,
@@ -57,6 +58,8 @@ export function buildAllowedToolsString(
   } else {
     // When not using commit signing, add specific Bash git commands
     baseTools.push(
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
       `Bash(${GIT_PUSH_WRAPPER}:*)`,

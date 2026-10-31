@@ -50,9 +50,9 @@ permissions:
   actions: read
 ```
 
-CI status reports the current PR head SHA and the latest run of each workflow
-and event for that revision. Superseded failures are excluded before applying
-an optional status filter. Timed-out, startup and action-required failures count
+CI status reports the current PR head SHA and the independent workflow runs
+for that revision. Only duplicate attempts of the same run are collapsed before
+applying an optional status filter. Timed-out, startup and action-required failures count
 as failures; cancelled, skipped, neutral and unknown outcomes remain separate.
 Workflow details include job/step outcomes, the run's SHA and whether it still
 matches the current PR revision.

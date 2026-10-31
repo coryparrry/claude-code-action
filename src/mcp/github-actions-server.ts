@@ -37,7 +37,7 @@ console.error("[GitHub CI Server] MCP Server instance created");
 
 server.tool(
   "get_ci_status",
-  "Get current PR head SHA and latest workflow runs; superseded failures are excluded",
+  "Get current PR head SHA and independent workflow runs; duplicate attempts of the same run are collapsed",
   {
     status: z
       .enum([

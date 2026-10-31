@@ -137,6 +137,26 @@ describe("requested change prompt integration", () => {
     );
   });
 
+  test("preserves HTML and comment syntax in code hunks as escaped data", () => {
+    const diffHunk = '-<!-- keep this behavior -->\n+<img alt="enabled">';
+    const formatted = formatReviewRequest({
+      ...data,
+      reviewRequest: {
+        commentId: 1,
+        path: "src/view.html",
+        line: 1,
+        originalLine: 1,
+        commitId: "old",
+        diffHunk,
+      },
+    });
+    const json = formatted
+      .split("<triggering_review_context>\n")[1]!
+      .split("\n</triggering_review_context>")[0]!;
+    expect(JSON.parse(json).diffHunk).toBe(diffHunk);
+    expect(formatted).not.toContain("<img");
+  });
+
   test("parent reference content cannot close the context section", () => {
     const formatted = formatReviewRequest({
       ...data,

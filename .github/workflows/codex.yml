@@ -47,7 +47,7 @@ jobs:
           codex_effort: max
           max_turns: "30"
           track_progress: "true"
-          allowed_tools: "Bash(bun --no-env-file test:*),Bash(bun --no-env-file run typecheck:*)"
+          allowed_tools: "Bash(bun --no-env-file install --frozen-lockfile:*),Bash(bun --no-env-file test:*),Bash(bun --no-env-file run typecheck:*)"
       - name: Save execution report
         if: ${{ always() && steps.agent.outputs.execution_file != '' }}
         uses: actions/upload-artifact@v4
