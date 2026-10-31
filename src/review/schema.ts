@@ -30,7 +30,7 @@ export const reviewSchema = z.strictObject({
       z.strictObject({
         area: z.string().trim().min(1).max(120),
         description: z.string().trim().min(1).max(2000),
-        files: z.array(z.string().trim().min(1).max(500)).max(6),
+        files: z.array(z.string().trim().min(1).max(500)).max(100),
       }),
     )
     .min(1)
@@ -154,10 +154,20 @@ export function renderReview(
     escapeHtml(clean(value)).replace(/\r?\n/g, "<br>");
   const changes = review.changes
     .map((change) => {
-      const files = change.files.length
-        ? `<br><sub>${change.files.map((file) => `<code>${html(file)}</code>`).join(" · ")}</sub>`
+      const visibleFiles = change.files.slice(0, 6);
+      const remainingFiles = change.files.slice(6);
+      const files = visibleFiles.length
+        ? `<br><sub>${visibleFiles.map((file) => `<code>${html(file)}</code>`).join(" · ")}</sub>`
         : "";
-      return `<li><strong>${html(change.area)}</strong>: ${html(change.description)}${files}</li>`;
+      const more = remainingFiles.length
+        ? renderDetails(
+            `${remainingFiles.length} more files`,
+            remainingFiles
+              .map((file) => `<code>${html(file)}</code>`)
+              .join("<br>"),
+          )
+        : "";
+      return `<li><strong>${html(change.area)}</strong>: ${html(change.description)}${files}${more}</li>`;
     })
     .join("\n");
   const walkthrough = `<h3>Walkthrough</h3>\n<p>${html(review.walkthrough)}</p>\n\n<p><strong>Review outcome:</strong> ${html(review.summary)}</p>`;

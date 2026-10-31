@@ -55,7 +55,7 @@ Existing installations need the updated source pin.
 ## Summary data and verification
 
 The structured result includes `walkthrough`, grouped `changes` (area, description
-and file paths), an inspection-based `risk` (low/moderate/high plus evidence), and
+and file paths; lists over six paths expand separately), an inspection-based `risk` (low/moderate/high plus evidence), and
 `flow` (null or two to eight short sequential step labels). These are returned with
 the existing conclusion, inspected scope, reasoning and individual findings.
 

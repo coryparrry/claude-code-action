@@ -131,7 +131,7 @@ Reworked the summary around a walkthrough of the PR's behavior changes, grouped 
 
 Risk is explicitly a code-inspection assessment. The report states that its read/search tools do not execute tests, rather than inventing passing check counts. Shared-bot work was cancelled; the existing GitHub Actions identity and runtime remain in use.
 
-Verification: 91 scoped tests passed, 0 failed, with 417 assertions across eight files. Root TypeScript and scoped formatting/diff checks passed. Independent read-only source review found no material issues. The existing live preview was updated in place; GitHub's Mermaid graph and collapsible risk section were visually inspected in Chrome.
+Verification: 91 scoped tests passed, 0 failed, with 417 assertions across eight files. Root TypeScript and scoped formatting/diff checks passed. Independent read-only source review found no material issues. The existing live preview was updated in place; GitHub's Mermaid graph and collapsible risk section were visually inspected in Chrome. The first hosted review hit an overly small six-file group limit. Broader groups now accept up to 100 references and fold paths beyond the first six; 36 affected tests passed (218 assertions), with root TypeScript and formatting checks passing again. The overflow disclosure was verified in GitHub.
 
 ### 2026-10-31 unboxed HTML summary
 

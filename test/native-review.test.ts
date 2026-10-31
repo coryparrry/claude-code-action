@@ -239,6 +239,32 @@ describe("Claude-style review presentation", () => {
     expect(body).toEndWith(INLINE_REVIEW_MARKER);
   });
 
+  test("broad change groups retain file references without blocking a valid review", async () => {
+    const files = Array.from(
+      { length: 12 },
+      (_, index) => `src/feature-${index}.ts`,
+    );
+    const broad = {
+      ...review,
+      changes: [
+        {
+          area: "Feature update",
+          description: "Update related source and test paths.",
+          files,
+        },
+      ],
+    };
+    expect(reviewSchema.safeParse(broad).success).toBe(true);
+    const body = renderReview(broad, head);
+    expect(body).toContain("<summary>6 more files</summary>");
+    expect(body).not.toContain("<details open>");
+    for (const file of files) expect(body).toContain(`<code>${file}</code>`);
+    const api = fixture();
+    await publishReview(api.client, target, broad);
+    expect(api.reviews).toHaveLength(1);
+    expect(api.comments).toHaveLength(1);
+  });
+
   test("creates an optional data-only Mermaid flow and omits it when irrelevant", () => {
     const body = renderReview(
       {
@@ -334,6 +360,12 @@ describe("Claude-style review presentation", () => {
     for (const invalid of [
       { ...review, walkthrough: "" },
       { ...review, changes: [] },
+      {
+        ...review,
+        changes: [
+          { ...review.changes[0]!, files: Array(101).fill("src/file.ts") },
+        ],
+      },
       { ...review, risk: { level: "approved", explanation: "" } },
       { ...review, flow: { steps: ["One step"] } },
       { ...review, flow: { steps: Array(9).fill("Step") } },
