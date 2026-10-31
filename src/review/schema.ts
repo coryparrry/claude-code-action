@@ -3,6 +3,11 @@ import { z } from "zod";
 import { redactSecrets, sanitizeContent } from "../github/utils/sanitizer";
 import { GITHUB_SERVER_URL } from "../github/api/config";
 import {
+  renderReviewHeading,
+  renderRiskDetails,
+  renderScopeDetails,
+} from "./visuals";
+import {
   escapeHtml,
   renderDetails,
 } from "../github/operations/comments/render";
@@ -141,7 +146,7 @@ function renderFlow(steps: string[]): string {
   const edges = labels
     .slice(1)
     .map((_, index) => `  N${index} --> N${index + 1}`);
-  return `<h3>Flow diagram</h3>\n\n\`\`\`mermaid\nflowchart LR\n${[...nodes, ...edges].join("\n")}\n\`\`\``;
+  return `${renderReviewHeading("flow")}\n\n\`\`\`mermaid\nflowchart LR\n${[...nodes, ...edges].join("\n")}\n\`\`\``;
 }
 
 /** A walkthrough-led summary keeps issue details in their individual inline comments. */
@@ -170,18 +175,17 @@ export function renderReview(
       return `<li><strong>${html(change.area)}</strong>: ${html(change.description)}${files}${more}</li>`;
     })
     .join("\n");
-  const walkthrough = `<h3>Walkthrough</h3>\n<p>${html(review.walkthrough)}</p>\n\n<p><strong>Review outcome:</strong> ${html(review.summary)}</p>`;
-  const changeSummary = `<h3>Changes</h3>\n<ul>\n${changes}\n</ul>`;
+  const walkthrough = `${renderReviewHeading("walkthrough")}\n<p>${html(review.walkthrough)}</p>\n\n<p><strong>Review outcome:</strong> ${html(review.summary)}</p>`;
+  const changeSummary = `${renderReviewHeading("changes")}\n<ul>\n${changes}\n</ul>`;
   const flow = review.flow ? renderFlow(review.flow.steps) : "";
-  const risk = renderDetails(
-    `Merge risk · ${review.risk.level[0]!.toUpperCase()}${review.risk.level.slice(1)}`,
+  const risk = renderRiskDetails(
+    review.risk.level,
     `${html(review.risk.explanation)}\n\n<sub>Assessment from code inspection; this is not a CI result or merge approval.</sub>`,
   );
   const scope = review.reviewed
     .map((item) => `<li>${html(item)}</li>`)
     .join("\n");
-  const details = renderDetails(
-    "Review scope & verification",
+  const details = renderScopeDetails(
     `<strong>What was reviewed</strong>\n<ul>\n${scope}\n</ul>\n\n<strong>Verification</strong>\n<p>This review uses read/search tools and does not execute tests.</p>\n<p>${html(review.reasoning)}</p>`,
   );
   const revision = location

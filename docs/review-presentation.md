@@ -13,6 +13,18 @@ Each finding is its own inline comment, marked red for a bug, yellow for an
 optional suggestion or purple for a pre-existing defect. The title and impact
 are visible; supporting evidence and verification expand inside that comment.
 The main summary leads with a **Walkthrough** explaining what changed, then the review outcome and **Changes** grouped by behavior or subsystem. A small flow diagram appears only when a real sequential flow helps explain the change. Merge-risk evidence and review scope/verification stay collapsed, followed by the reviewed-commit footer. Individual issues remain in their own inline comments.
+
+The unboxed summary uses original SVG section icons, a code-inspection badge and
+an inspection-risk badge, with light and dark variants selected through GitHub's
+supported `<picture>` rendering. Assets are served from an immutable commit in
+this public repository, so other installations receive the same graphics without
+setting up a hosting service or custom GitHub App. Headings remain selectable
+text, and badges have readable alternative labels if images are unavailable.
+The graphic labels and URLs are fixed by the renderer; model output cannot
+supply image URLs. These badges do not represent executed CI checks or approval.
+Regenerate the assets with `node scripts/generate-review-assets.mjs`; publishing
+new assets also requires updating `REVIEW_ASSET_REVISION` in the visual renderer.
+
 There is no combined findings comment and no separate review per severity.
 
 One API call submits the summary and all individual inline comments together.

@@ -206,22 +206,21 @@ describe("Claude-style review presentation", () => {
 
   test("renders a walkthrough and grouped changes with supporting details collapsed", () => {
     const body = renderReview(review, head, target);
-    expect(body).toStartWith("<h3>Walkthrough</h3>");
+    expect(body).toStartWith("<h3><picture>");
+    expect(body).toContain(" Walkthrough &nbsp; ");
     expect(body).toContain(
       `<p>${review.walkthrough.replaceAll("'", "&#39;")}</p>`,
     );
     expect(body).toContain(
       `<strong>Review outcome:</strong> ${review.summary}`,
     );
-    expect(body).toContain("<h3>Changes</h3>");
+    expect(body).toContain(" Changes</h3>");
     expect(body).toContain(
       "<strong>Account cache</strong>: Reuse cached account data",
     );
     expect(body).toContain("<code>src/account.ts</code>");
-    expect(body).toContain("<summary>Merge risk · Moderate</summary>");
-    expect(body).toContain(
-      "<summary>Review scope &amp; verification</summary>",
-    );
+    expect(body).toContain('alt="Moderate"');
+    expect(body).toContain(" Review scope &amp; verification</summary>");
     expect(body).toContain("does not execute tests");
     expect(body).toContain("not a CI result or merge approval");
     expect(body).toContain(
@@ -273,7 +272,7 @@ describe("Claude-style review presentation", () => {
       },
       head,
     );
-    expect(body).toContain("<h3>Flow diagram</h3>");
+    expect(body).toContain(" Flow diagram</h3>");
     expect(body).toContain('```mermaid\nflowchart LR\n  N0["Select account"]');
     expect(body).toContain("N0 --> N1\n  N1 --> N2");
     expect(renderReview(review, head)).not.toContain("Flow diagram");
@@ -331,7 +330,7 @@ describe("Claude-style review presentation", () => {
     );
     expect(body).toContain("No actionable bugs found.");
     expect(body).toContain(review.walkthrough.replaceAll("'", "&#39;"));
-    expect(body).toContain("Merge risk · Low");
+    expect(body).toContain('alt="Low"');
     expect(body).not.toContain("**Findings");
     expect(body).not.toContain(finding.title);
   });
