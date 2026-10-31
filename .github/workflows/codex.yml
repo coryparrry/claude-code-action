@@ -38,7 +38,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: agent
-        uses: coryparrry/claude-code-action@2280ffca83bedda2c1c3480ee4f53dd492cb88d2
+        uses: coryparrry/claude-code-action@db409d4fc95d72217fe4522db1e30f4766003a3a
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -82,23 +82,20 @@ jobs:
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
       - id: agent
-        uses: coryparrry/claude-code-action@2280ffca83bedda2c1c3480ee4f53dd492cb88d2
+        uses: coryparrry/claude-code-action@db409d4fc95d72217fe4522db1e30f4766003a3a
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           codex_model: "gpt-6-luna"
           codex_effort: low
           max_turns: "30"
-          track_progress: "true"
+          review_mode: "true"
           codex_sandbox: read-only
-          codex_args: >-
-            --allowedTools "mcp__github_inline_comment__create_inline_comment"
           prompt: |
             Review this pull request for code quality, bugs, security and performance issues.
             Read the prepared patch in .git/codex-review.diff first; it includes removed lines as well as additions.
             Use the repository and PR context. Provide actionable inline feedback and a summary.
-            For final inline findings, call mcp__github_inline_comment__create_inline_comment with confirmed: true, using verified paths, line numbers and sides from the patch.
-            If GitHub rejects a comment, correct its location and retry, or explain the finding in the summary. Claim an inline comment was posted only after the tool returns its GitHub URL.
+            Return verified findings and a concise review conclusion using the native review schema. The action posts severity-marked inline findings with expandable evidence and a separate review summary.
             Do not edit files, commit changes or implement fixes during this review.
             The author can request an implementation in a comment with /codex.
       - name: Save execution report

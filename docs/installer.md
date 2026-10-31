@@ -30,10 +30,7 @@ command arguments, workflow files or installer output.
 The installer opens draft setup PRs. Review and merge them onto each repository's
 default branch. The generated workflow then automatically reviews same-repository,
 non-draft PRs opened, updated, reopened or marked ready by a selected trusted user.
-Reviews post feedback with progress tracking and use read-only code access.
-Final inline findings use Claude Action's immediate-post convention, so rejected
-locations can be corrected during the review. Buffered delivery finishes before
-the tracking comment shows completion; failed delivery fails the action.
+Reviews use native GitHub COMMENT reviews, with severity-marked inline findings, expandable evidence and a review summary. They run with read/search tools and do not produce a task-completion tracking comment. The action publishes only validated output against the reviewed head; invalid output, a changed PR or rejected delivery fails the action. See [review presentation](./review-presentation.md) for details and named-bot authentication.
 A preparation step saves the PR's base-to-head patch inside `.git/` so reviews
 can inspect additions and deleted lines without granting the agent shell access.
 A newer review run cancels an older review for the same PR.
