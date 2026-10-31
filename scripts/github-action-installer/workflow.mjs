@@ -1,7 +1,7 @@
 export const WORKFLOW_PATH = ".github/workflows/codex.yml";
 export const MANAGED_MARKER = "# Managed by the Codex GitHub Action installer.";
 export const DEFAULT_ACTION_REF =
-  "coryparrry/claude-code-action@65b09b2a13dff009d2fdfea98bb72878b3b60e15";
+  "coryparrry/claude-code-action@a33556552f78f552fe4470275050ce7e57dc98e8";
 export const DEFAULT_MODEL = "gpt-6-luna";
 export const DEFAULT_TRIGGER_PHRASE = "/codex";
 export const REVIEW_DIFF_PATH = ".git/codex-review.diff";
