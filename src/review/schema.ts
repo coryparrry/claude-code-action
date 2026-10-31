@@ -4,7 +4,7 @@ import { redactSecrets, sanitizeContent } from "../github/utils/sanitizer";
 import { GITHUB_SERVER_URL } from "../github/api/config";
 import { renderDetails } from "../github/operations/comments/render";
 
-export const GROUPED_REVIEW_MARKER = "<!-- codex-action:grouped-review -->";
+export const INLINE_REVIEW_MARKER = "<!-- codex-action:inline-review -->";
 export const MAX_REVIEW_COMMENT_BYTES = 60000;
 export type ReviewLocation = {
   owner: string;
@@ -28,7 +28,7 @@ export const reviewSchema = z.strictObject({
         side: z
           .enum(["LEFT", "RIGHT"])
           .describe(
-            "RIGHT for current code, including unchanged files; LEFT only for removed lines in the prepared patch",
+            "Use a commentable line in the prepared patch: RIGHT for added/context lines, LEFT for removed/context lines",
           ),
         severity: z.enum(["bug", "suggestion", "pre_existing"]),
         body: text,
@@ -55,7 +55,7 @@ export function findingId(finding: Finding): string {
 const clean = (value: string) =>
   redactSecrets(sanitizeContent(value)).replace(/<!--[\s\S]*?-->/g, "");
 
-/** One expandable finding inside the grouped inline discussion. */
+/** One coloured inline comment per finding, with expandable supporting evidence. */
 export function renderFinding(
   finding: Finding,
   location?: ReviewLocation,
@@ -79,39 +79,22 @@ export function renderFinding(
   const code = link
     ? `[View code](${link})`
     : `\`${position}\` (${finding.side})`;
-  return renderDetails(
-    `${marker} ${clean(finding.title)} · ${position}`,
-    `${code}\n\n${clean(finding.body)}\n\n**Why this was flagged**\n\n${clean(finding.explanation)}\n\n**Verification:** ${clean(finding.verification)}\n\n<sub>Finding ID: \`f-${findingId(finding)}\`</sub>\n\n<!-- codex-action:finding:${findingId(finding)} -->`,
-  );
+  return `${marker} **${clean(finding.title).replace(/[<>&]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[char]!)}**\n\n${clean(finding.body)}\n\n${code}\n\n${renderDetails("Why this was flagged", `${clean(finding.explanation)}\n\n**Verification:** ${clean(finding.verification)}`)}\n\n<sub>Finding ID: \`f-${findingId(finding)}\`</sub>\n\n<!-- codex-action:finding:${findingId(finding)} -->`;
 }
 
 /** Only publisher-owned footer metadata determines whether a head was reviewed. */
 export function reviewHead(body: string): string | undefined {
   return body.match(
-    /<!-- codex-action:review:([a-f0-9]{40}) -->(?:\s*<!-- codex-action:grouped-review -->)?\s*$/,
+    /<!-- codex-action:review:([a-f0-9]{40}) -->(?:\s*<!-- codex-action:(?:grouped|inline)-review -->)?\s*$/,
   )?.[1];
 }
 
-/** One inline discussion holds every severity, with links to each finding's location. */
-export function renderFindings(
-  review: Review,
-  head: string,
-  location?: ReviewLocation,
-): string {
-  return `**Findings (${review.findings.length})**\n\nAll findings are grouped in this discussion. Each section links to its code location.\n\n${review.findings.map((finding) => renderFinding(finding, location)).join("\n\n")}\n\n<!-- codex-action:grouped-findings:${head} -->`;
-}
-
-/** Preserve the native main review summary; its grouped inline discussion sits below. */
+/** One native summary; each finding is submitted separately at its own code location. */
 export function renderReview(
   review: Review,
   head: string,
   location?: ReviewLocation,
-  includeFindings = false,
 ): string {
-  const findings =
-    includeFindings && review.findings.length
-      ? `\n\n${renderFindings(review, head, location)}`
-      : "";
   const coverage = renderDetails(
     "What was reviewed",
     review.reviewed.map((item) => `- [x] ${clean(item)}`).join("\n"),
@@ -120,13 +103,5 @@ export function renderReview(
   const revision = location
     ? ` · [\`${head.slice(0, 7)}\`](${GITHUB_SERVER_URL}/${location.owner}/${location.repo}/commit/${head})`
     : "";
-  const discussion =
-    review.findings.length && !includeFindings
-      ? `\n\n${review.findings.length} finding${review.findings.length === 1 ? "" : "s"} grouped in one inline discussion below.`
-      : "";
-  const fallback =
-    includeFindings && review.findings.length
-      ? "\n\nThis diff has no inline-commentable text line; the findings are included in this review."
-      : "";
-  return `**Codex review**${revision}\n\n${clean(review.summary)}${discussion}${fallback}${findings}\n\n${coverage}\n\n${evidence}\n\n<!-- codex-action:review:${head} -->\n${GROUPED_REVIEW_MARKER}`;
+  return `**Codex review**${revision}\n\n${clean(review.summary)}\n\n${coverage}\n\n${evidence}\n\n<!-- codex-action:review:${head} -->\n${INLINE_REVIEW_MARKER}`;
 }

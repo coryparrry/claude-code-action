@@ -126,7 +126,7 @@ inputs:
     required: false
     default: ""
   review_mode:
-    description: "Submit one native review summary and one grouped inline findings discussion (pull_request events only; incompatible with track_progress)"
+    description: "Submit one native review summary and a separate coloured inline comment per finding (pull_request events only; incompatible with track_progress)"
     default: "false"
   track_progress:
     description: "Force tag mode with tracking comments for pull_request and issue events. Only applicable to pull_request (opened, synchronize, ready_for_review, reopened, labeled) and issue (opened, edited, labeled, assigned) events."

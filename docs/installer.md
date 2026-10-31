@@ -30,7 +30,7 @@ command arguments, workflow files or installer output.
 The installer opens draft setup PRs. Review and merge them onto each repository's
 default branch. The generated workflow then automatically reviews same-repository,
 non-draft PRs opened, updated, reopened or marked ready by a selected trusted user.
-Each reviewed head gets one native GitHub review summary and one inline discussion containing all findings. Severity sections, expandable evidence and code-location links stay together in that discussion; same-head reruns reuse the submitted review. They run with read/search tools and do not produce a task-completion tracking comment. The action publishes only validated output against the reviewed head; invalid output, a changed PR or rejected delivery fails the action. See [review presentation](./review-presentation.md) for details and named-bot authentication.
+Each reviewed head gets one native GitHub review summary with a separate coloured inline comment for each finding at its actual diff location. Each issue has its own discussion and expandable evidence; there is no combined findings comment. Same-head reruns reuse the submitted review. They run with read/search tools and do not produce a task-completion tracking comment. The action publishes only validated output against the reviewed head; invalid output, a changed PR or rejected delivery fails the action. See [review presentation](./review-presentation.md) for details and named-bot authentication.
 A preparation step saves the PR's base-to-head patch inside `.git/` so reviews
 can inspect additions and deleted lines without granting the agent shell access.
 A newer review run cancels an older review for the same PR.

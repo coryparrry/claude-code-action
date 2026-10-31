@@ -214,6 +214,9 @@ describe("Codex action-owned instructions", () => {
       );
       expect(prompt).toContain("do not promise immediate live refresh");
       expect(prompt).toContain("remove loading indicators");
+      expect(prompt).toContain("mcp__github_comment__update_codex_comment");
+      expect(prompt).not.toContain("Code review findings belong");
+      expect(prompt).not.toContain("under one native review");
     },
   );
 

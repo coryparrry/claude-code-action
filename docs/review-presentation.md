@@ -1,42 +1,38 @@
-# Native reviews with one grouped findings discussion
+# Native reviews with individual inline findings
 
-Set `review_mode: "true"` to retain GitHub's normal review hierarchy:
+Set `review_mode: "true"` to use GitHub's normal review hierarchy:
 
 ```text
-Native review summary
-└─ One inline discussion
-   ├─ Bug findings
-   ├─ Optional suggestions
-   └─ Pre-existing findings
+One native review summary
+├─ Coloured inline comment for issue A at its code location
+├─ Coloured inline comment for issue B at its code location
+└─ Coloured inline comment for issue C at its code location
 ```
 
-All findings expand inside that single discussion, rather than creating a separate
-comment and inline thread for every severity or code location. The main review
-contains the concise conclusion, coverage and supporting review details.
+Each finding is its own inline comment, marked red for a bug, yellow for an
+optional suggestion or purple for a pre-existing defect. The title and impact
+are visible; supporting evidence and verification expand inside that comment.
+The main summary contains the review conclusion, coverage and review details.
+There is no combined findings comment and no separate review per severity.
 
-- The grouped discussion attaches to a real line in the current PR diff, preferring
-  the highest-priority finding with an eligible location. If its location is outside
-  the diff, another actual changed line anchors the group.
-- Every finding includes a code-location link, evidence, verification and a stable
-  ID. Current-code links are pinned to the reviewed commit; removed lines link to
-  the frozen comparison, including renamed paths.
-- One API call submits the native summary and its single grouped inline comment.
-  The publisher never posts a standalone issue comment or severity-specific reviews.
-- No-findings reviews have no inline discussion. For a binary-only or otherwise
-  non-commentable diff, findings stay inside the native main review because GitHub
-  has no valid inline text line to attach them to.
-- Same-head reruns reuse the existing native review. New reviewed heads get a new
-  commit-specific review, preserving GitHub's reviewed-changes metadata.
-- Follow-ups receive the complete latest marked review and its bot-authored finding
-  discussion as untrusted reference data. They recheck and return findings that still
-  apply. Duplicate IDs within one result are removed; existing findings are not hidden
-  simply because they appeared before.
+One API call submits the summary and all individual inline comments together.
+Every finding's path, line and diff side are validated against the PR's actual
+patch, including renamed files and deleted lines. The publisher never moves an
+issue to unrelated code. A finding without a commentable location fails before
+submission with an explicit diagnostic; it does not become an aggregate list or
+silently disappear. Binary-only diffs cannot support line comments. A review
+with no findings submits just the summary.
 
-The existing OpenAI runtime returns validated data with read/search tools. The
-trusted publisher checks the current PR head before selecting an anchor and again
-before submission. Ambiguous mutations are not blindly retried; a rerun locates a
-saved completed review by its marker. Each comment has a 60,000 UTF-8 byte limit;
-oversized output fails instead of splitting into more threads.
+Same-head reruns return the completed review URL. New reviewed heads get a new
+commit-specific review. Follow-ups receive the full latest bot-owned summary
+and its individual finding comments as untrusted reference data, rechecking
+findings that still apply. Duplicate IDs within one result are removed.
+
+The OpenAI runtime returns validated data using read/search tools. The trusted
+publisher checks the current PR head and open state before publication. Ambiguous
+mutations are not blindly retried; a rerun locates a saved completed review.
+The 60,000 UTF-8 byte limit applies to each comment individually, so multiple
+findings may collectively exceed it without requiring a combined comment.
 
 Review mode retains model, effort, turn and budget controls and excludes inherited
 MCP, hooks, plugins and session resumption. It only submits COMMENT reviews, with

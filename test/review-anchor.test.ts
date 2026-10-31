@@ -23,13 +23,17 @@ const file = {
     "@@ -10,3 +10,4 @@\n context\n-old\n+new\n+added\n end\n@@ -30 +31 @@\n-before\n+after",
 };
 
-test("anchors the highest severity finding across hunks and files", () => {
-  expect(
-    findReviewAnchor(
-      [{ filename: "other.ts", patch: "@@ -1 +1 @@\n-old\n+new" }, file],
-      [finding("other.ts", 1, "RIGHT", "suggestion"), finding("code.ts", 31)],
-    ),
-  ).toEqual({ path: "code.ts", line: 31, side: "RIGHT" });
+test("anchors each finding at its own file and hunk", () => {
+  const files = [
+    { filename: "other.ts", patch: "@@ -1 +1 @@\n-old\n+new" },
+    file,
+  ];
+  for (const item of [finding("other.ts", 1), finding("code.ts", 31)])
+    expect(findReviewAnchor(files, item)).toEqual({
+      path: item.path,
+      line: item.line,
+      side: item.side,
+    });
 });
 
 test("accepts removed lines and either side of context with correct counters", () => {
@@ -39,7 +43,7 @@ test("accepts removed lines and either side of context with correct counters", (
     [13, "RIGHT"],
     [12, "LEFT"],
   ] as const) {
-    expect(findReviewAnchor([file], [finding("code.ts", line, side)])).toEqual({
+    expect(findReviewAnchor([file], finding("code.ts", line, side))).toEqual({
       path: "code.ts",
       line,
       side,
@@ -51,26 +55,25 @@ test("uses canonical renamed paths for removed old-file findings", () => {
   expect(
     findReviewAnchor(
       [{ ...file, filename: "new name.ts", previous_filename: "old name.ts" }],
-      [finding("old name.ts", 11, "LEFT")],
+      finding("old name.ts", 11, "LEFT"),
     ),
   ).toEqual({ path: "new name.ts", line: 11, side: "LEFT" });
 });
 
-test("falls back to an actual added line when model locations are outside the diff", () => {
-  expect(findReviewAnchor([file], [finding("unchanged.ts", 1000)])).toEqual({
-    path: "code.ts",
-    line: 11,
-    side: "RIGHT",
-  });
+test("never substitutes another line or file for an invalid model location", () => {
+  expect(
+    findReviewAnchor([file], finding("unchanged.ts", 1000)),
+  ).toBeUndefined();
+  expect(findReviewAnchor([file], finding("code.ts", 1000))).toBeUndefined();
 });
 
-test("handles file creation, deletion, missing text patches and zero-length hunks", () => {
+test("handles creation, deletion, missing patches and zero-length hunks", () => {
   expect(
     findReviewAnchor(
       [{ filename: "新 file.ts", patch: "@@ -0,0 +1,2 @@\n+one\n+two" }],
-      [],
+      finding("新 file.ts", 2),
     ),
-  ).toEqual({ path: "新 file.ts", line: 1, side: "RIGHT" });
+  ).toEqual({ path: "新 file.ts", line: 2, side: "RIGHT" });
   expect(
     findReviewAnchor(
       [
@@ -79,33 +82,31 @@ test("handles file creation, deletion, missing text patches and zero-length hunk
           patch: "@@ -1,2 +0,0 @@\n-one\n-two\n\\ No newline at end of file",
         },
       ],
-      [],
+      finding("gone.ts", 1, "LEFT"),
     ),
   ).toEqual({ path: "gone.ts", line: 1, side: "LEFT" });
-  expect(findReviewAnchor([{ filename: "image.png" }], [])).toBeUndefined();
+  expect(
+    findReviewAnchor([{ filename: "image.png" }], finding("image.png", 1)),
+  ).toBeUndefined();
   expect(
     findReviewAnchor(
       [{ filename: "empty.ts", patch: "@@ -0,0 +0,0 @@\n+invalid" }],
-      [],
+      finding("empty.ts", 1),
     ),
   ).toBeUndefined();
 });
 
-test("ignores lines beyond hunk bounds and keeps primary rank at duplicate locations", () => {
+test("ignores lines beyond hunk bounds and wrong diff sides", () => {
   expect(
     findReviewAnchor(
       [{ filename: "code.ts", patch: "@@ -1 +1 @@\n-old\n+new\n+outside" }],
-      [finding("code.ts", 2)],
+      finding("code.ts", 2),
     ),
-  ).toEqual({ path: "code.ts", line: 1, side: "RIGHT" });
+  ).toBeUndefined();
   expect(
-    findReviewAnchor(
-      [file],
-      [
-        finding("code.ts", 11),
-        finding("code.ts", 11, "RIGHT", "pre_existing"),
-        finding("code.ts", 31),
-      ],
-    ),
-  ).toEqual({ path: "code.ts", line: 11, side: "RIGHT" });
+    findReviewAnchor([file], finding("code.ts", 30, "RIGHT")),
+  ).toBeUndefined();
+  expect(
+    findReviewAnchor([file], finding("code.ts", 31, "LEFT")),
+  ).toBeUndefined();
 });

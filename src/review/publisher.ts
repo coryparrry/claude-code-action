@@ -3,7 +3,7 @@ import { retryWithBackoff } from "../utils/retry";
 import {
   findingId,
   renderReview,
-  renderFindings,
+  renderFinding,
   reviewSchema,
   reviewHead,
   MAX_REVIEW_COMMENT_BYTES,
@@ -93,7 +93,7 @@ export async function loadReviewHistory(
   };
 }
 
-/** One native summary and at most one grouped inline discussion, submitted together. */
+/** Submit one native summary and one individually anchored comment per finding. */
 export async function publishReview(
   client: Octokit,
   target: ReviewTarget,
@@ -127,33 +127,34 @@ export async function publishReview(
   const bounded = (body: string) => {
     if (Buffer.byteLength(body, "utf8") > MAX_REVIEW_COMMENT_BYTES)
       throw new Error(
-        "The grouped review exceeds the comment size limit. Shorten its evidence and retry; no extra finding threads were created.",
+        "A review comment exceeds the comment size limit. Shorten its evidence and retry; no review was published.",
       );
     return body;
   };
-  let summary = bounded(renderReview(review, target.head, target));
-  let grouped = review.findings.length
-    ? bounded(renderFindings(review, target.head, target))
-    : undefined;
+  const summary = bounded(renderReview(review, target.head, target));
   let files: ChangedReviewFile[] = [];
-  if (grouped) {
+  if (review.findings.length) {
     await requireCurrentHead();
     files = await retryRead(() =>
       client.paginate(client.rest.pulls.listFiles, { ...route, per_page: 100 }),
     );
   }
-  const anchor = grouped ? findReviewAnchor(files, review.findings) : undefined;
-  if (grouped) {
-    const renamedPaths = Object.fromEntries(
-      files
-        .filter((file) => file.previous_filename)
-        .map((file) => [file.previous_filename!, file.filename]),
-    );
-    const location = { ...target, renamedPaths };
-    grouped = bounded(renderFindings(review, target.head, location));
+  const renamedPaths = Object.fromEntries(
+    files
+      .filter((file) => file.previous_filename)
+      .map((file) => [file.previous_filename!, file.filename]),
+  );
+  const comments = review.findings.map((finding) => {
+    const anchor = findReviewAnchor(files, finding);
     if (!anchor)
-      summary = bounded(renderReview(review, target.head, location, true));
-  }
+      throw new Error(
+        `Finding at ${finding.path}:${finding.line} (${finding.side}) has no commentable diff location. Regenerate the review with locations in the prepared patch; no review was published.`,
+      );
+    return {
+      ...anchor,
+      body: bounded(renderFinding(finding, { ...target, renamedPaths })),
+    };
+  });
   await requireCurrentHead();
   // Never blindly retry this mutation. A rerun locates a saved completed review.
   const result = await client.rest.pulls.createReview({
@@ -161,7 +162,7 @@ export async function publishReview(
     commit_id: target.head,
     event: "COMMENT",
     body: summary,
-    comments: anchor && grouped ? [{ ...anchor, body: grouped }] : [],
+    comments,
   });
   return result.data.html_url;
 }

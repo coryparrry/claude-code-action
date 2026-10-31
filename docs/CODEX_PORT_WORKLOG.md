@@ -125,6 +125,14 @@ Independent frozen production installs also passed with the patched dependency
 graph: root installed 235 packages and base installed 186; both completed the
 offline SDK smoke run.
 
+### 2026-10-31 individual inline findings
+
+The owner's latest correction supersedes the grouped-discussion layout: each issue gets its own coloured inline comment at its actual code location, all submitted under one native review summary. There is no combined findings comment or severity-specific review. Finding titles and impact remain visible, with supporting evidence expandable within each issue's comment.
+
+The publisher validates each path, line and diff side before submission, including renamed and deleted code. Invalid locations fail explicitly before any review is written, rather than moving issues to unrelated lines or publishing a combined list. Size limits apply per comment; follow-up history retains all current individual comments.
+
+Verification: 120 scoped tests passed, 0 failed, with 607 assertions across 10 files. Root TypeScript, scoped Prettier and diff checks passed. The independent review found a shared tag-prompt delivery conflict; it was corrected, regression-tested for both prompt variants and rechecked with no remaining material findings. Hosted verification is recorded in the PR after publication.
+
 ### 2026-10-31 grouped native review discussion
 
 The owner clarified that the native GitHub review hierarchy must stay: one main review summary and one inline discussion containing every finding. The unpublished standalone-comment prototype was replaced before publication. Findings use expandable severity sections and individual code-location links inside the group. The anchor is selected from actual PR patch lines, preferring an eligible primary finding. Non-commentable diffs retain their findings in the main review.

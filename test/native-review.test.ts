@@ -9,8 +9,7 @@ import {
   renderReview,
   reviewSchema,
   reviewHead,
-  renderFindings,
-  GROUPED_REVIEW_MARKER,
+  INLINE_REVIEW_MARKER,
   type Finding,
   type Review,
 } from "../src/review/schema";
@@ -175,10 +174,8 @@ function fixture(
 describe("Claude-style review presentation", () => {
   test("renders compact inline findings with evidence, verification and stable IDs", () => {
     const body = renderFinding(finding);
-    expect(body).toContain(
-      "<summary>🔴 Preserve the selected account · src/account.ts:3</summary>",
-    );
-    expect(body).toContain("**Why this was flagged**");
+    expect(body).toContain("🔴 **Preserve the selected account**");
+    expect(body).toContain("<summary>Why this was flagged</summary>");
     expect(body).toContain(`**Verification:** ${finding.verification}`);
     expect(body).toContain(
       `<sub>Finding ID: \`f-${findingId(finding)}\`</sub>`,
@@ -194,7 +191,8 @@ describe("Claude-style review presentation", () => {
 
   test("renders a review conclusion and scope instead of task completion", () => {
     const body = renderReview(review, head);
-    expect(body).toContain("1 finding grouped in one inline discussion below.");
+    expect(body).not.toContain("**Findings");
+    expect(body).not.toContain("grouped");
     expect(body).not.toContain(finding.body);
     expect(body).toContain(
       "<summary>What was reviewed</summary>\n\n- [x] Account selection and cache lookup",
@@ -202,7 +200,7 @@ describe("Claude-style review presentation", () => {
     expect(body).toContain("<summary>Review details</summary>");
     expect(body).not.toContain("finished");
     expect(body).not.toContain("- [ ]");
-    expect(body).toEndWith(GROUPED_REVIEW_MARKER);
+    expect(body).toEndWith(INLINE_REVIEW_MARKER);
   });
 
   test("validates required evidence, diff sides and positive integer lines", () => {
@@ -301,7 +299,7 @@ describe("Claude-style review presentation", () => {
   });
 });
 
-describe("grouped native GitHub review delivery", () => {
+describe("individual native GitHub review delivery", () => {
   const savedReview = (sha = head, author = target.author) => ({
     id: 123,
     html_url: "https://github.com/owner/repo/pull/12#pullrequestreview-123",
@@ -313,20 +311,42 @@ describe("grouped native GitHub review delivery", () => {
   const writes = (api: ReturnType<typeof fixture>) =>
     api.requests.filter((r) => r.method !== "GET");
 
-  test("submits a normal summary and one inline discussion holding all severities", async () => {
-    const api = fixture();
+  test("submits one summary and a separate coloured inline comment for every issue", async () => {
+    const api = fixture({
+      files: [
+        {
+          filename: "src/account.ts",
+          patch: "@@ -1,3 +1,3 @@\n one\n two\n-old\n+new",
+        },
+        { filename: "src/cache.ts", patch: "@@ -10 +10 @@\n-old\n+new" },
+        {
+          filename: "new.ts",
+          previous_filename: "old.ts",
+          patch: "@@ -20 +20 @@\n-before\n+after",
+        },
+      ],
+    });
+    const findings: Finding[] = [
+      finding,
+      {
+        ...finding,
+        title: "Optional improvement",
+        path: "src/cache.ts",
+        line: 10,
+        severity: "suggestion",
+      },
+      {
+        ...finding,
+        title: "Older defect",
+        path: "old.ts",
+        line: 20,
+        side: "LEFT",
+        severity: "pre_existing",
+      },
+    ];
     const url = await publishReview(api.client, target, {
       ...review,
-      findings: [
-        finding,
-        {
-          ...finding,
-          title: "Optional improvement",
-          severity: "suggestion",
-          side: "LEFT",
-        },
-        { ...finding, title: "Older defect", severity: "pre_existing" },
-      ],
+      findings,
     });
     expect(url).toContain("pullrequestreview-123");
     expect(writes(api)).toHaveLength(1);
@@ -334,43 +354,41 @@ describe("grouped native GitHub review delivery", () => {
     expect(request.path).toBe("/repos/owner/repo/pulls/12/reviews");
     expect(request.body.commit_id).toBe(head);
     expect(request.body.event).toBe("COMMENT");
-    expect(request.body.body).toContain(
-      "3 findings grouped in one inline discussion below.",
-    );
     expect(request.body.body).not.toContain(finding.body);
-    expect(request.body.comments).toHaveLength(1);
-    expect(request.body.comments[0]).toMatchObject({
-      path: finding.path,
-      line: 3,
-      side: "RIGHT",
-    });
-    const body = request.body.comments[0].body;
-    for (const text of [
-      "🔴",
-      "🟡",
-      "🟣",
-      "**Findings (3)**",
-      finding.body,
-      finding.explanation,
-      finding.verification,
-    ])
-      expect(body).toContain(text);
+    expect(request.body.body).not.toContain("**Findings");
+    expect(request.body.comments).toHaveLength(3);
+    for (const [i, item] of findings.entries()) {
+      const comment = request.body.comments[i];
+      expect(comment).toMatchObject({
+        path: i === 2 ? "new.ts" : item.path,
+        line: item.line,
+        side: item.side,
+      });
+      expect(comment.body).toStartWith(["🔴", "🟡", "🟣"][i]!);
+      expect(comment.body).toContain(item.title);
+      expect(comment.body).toContain(item.body);
+      expect(comment.body).toContain(item.explanation);
+      expect(comment.body).toContain(item.verification);
+      expect(comment.body).not.toContain("**Findings");
+      for (const other of findings)
+        if (other !== item) expect(comment.body).not.toContain(other.title);
+    }
   });
 
-  test("uses a real diff anchor when findings concern unchanged code", async () => {
-    const api = fixture();
-    await publishReview(api.client, target, {
-      ...review,
-      findings: [{ ...finding, path: "unchanged file.ts", line: 900 }],
-    });
-    expect(api.comments[0]).toMatchObject({
-      path: finding.path,
-      line: 3,
-      side: "RIGHT",
-    });
-    expect(api.comments[0].body).toContain(
-      `/blob/${head}/unchanged%20file.ts#L900`,
-    );
+  test("invalid locations cannot move a finding to unrelated code or publish a combined list", async () => {
+    for (const invalid of [
+      { ...finding, path: "unchanged.ts" },
+      { ...finding, title: "Invalid location", line: 900 },
+    ]) {
+      const api = fixture();
+      await expect(
+        publishReview(api.client, target, {
+          ...review,
+          findings: [finding, invalid],
+        }),
+      ).rejects.toThrow("no commentable diff location");
+      expect(writes(api)).toHaveLength(0);
+    }
   });
 
   test("no findings produces a native summary without an inline discussion", async () => {
@@ -385,13 +403,12 @@ describe("grouped native GitHub review delivery", () => {
     expect(api.requests.some((r) => r.path.endsWith("/files"))).toBe(false);
   });
 
-  test("a binary-only diff includes findings in the native summary", async () => {
-    const api = fixture({ files: [{ filename: "image.png" }] });
-    await publishReview(api.client, target, review);
-    expect(api.comments).toHaveLength(0);
-    expect(api.reviews[0].body).toContain("no inline-commentable text line");
-    expect(api.reviews[0].body).toContain(finding.body);
-    expect(writes(api)).toHaveLength(1);
+  test("missing text patches fail explicitly without creating an aggregate findings comment", async () => {
+    const api = fixture({ files: [{ filename: finding.path }] });
+    await expect(publishReview(api.client, target, review)).rejects.toThrow(
+      "no commentable diff location",
+    );
+    expect(writes(api)).toHaveLength(0);
   });
 
   test("same-head reruns skip, while a new head retains still-applicable findings", async () => {
@@ -400,7 +417,8 @@ describe("grouped native GitHub review delivery", () => {
       ...review,
       findings: [finding, finding],
     });
-    expect(api.comments[0].body).toContain("**Findings (1)**");
+    expect(api.comments).toHaveLength(1);
+    expect(api.comments[0].body).toContain(finding.title);
     expect(await publishReview(api.client, target, review)).toBe(url!);
     expect(writes(api)).toHaveLength(1);
     const next = "c".repeat(40);
@@ -410,6 +428,25 @@ describe("grouped native GitHub review delivery", () => {
     expect(api.reviews[1].commit_id).toBe(next);
     expect(api.comments).toHaveLength(2);
     expect(api.comments[1].body).toContain(finding.title);
+  });
+
+  test("large total evidence is allowed when each individual comment fits", async () => {
+    const api = fixture();
+    await publishReview(api.client, target, {
+      ...review,
+      findings: [0, 1, 2].map((i) => ({
+        ...finding,
+        title: `Finding ${i}`,
+        body: "x".repeat(12000),
+        explanation: "x".repeat(12000),
+        verification: "x".repeat(12000),
+      })),
+    });
+    expect(api.comments).toHaveLength(3);
+    expect(
+      api.comments.reduce((size, comment) => size + comment.body.length, 0),
+    ).toBeGreaterThan(60000);
+    expect(writes(api)).toHaveLength(1);
   });
 
   test("retains complete current evidence beyond 48k for the next review", async () => {
@@ -423,21 +460,20 @@ describe("grouped native GitHub review delivery", () => {
         verification: "v".repeat(6000),
       })),
     };
-    const body = renderFindings(large, head, target);
+    const bodies = large.findings.map((item) => renderFinding(item, target));
+    const body = bodies.join("\n\n");
     expect(body.length).toBeGreaterThan(48000);
     const api = fixture({
       prior: [savedReview()],
-      comments: [
-        {
-          user: { login: target.author },
-          pull_request_review_id: 123,
-          path: finding.path,
-          body,
-        },
-      ],
+      comments: bodies.map((body) => ({
+        user: { login: target.author },
+        pull_request_review_id: 123,
+        path: finding.path,
+        body,
+      })),
     });
     const history = await loadReviewHistory(api.client, target);
-    expect(history.context).toContain(body);
+    for (const evidence of bodies) expect(history.context).toContain(evidence);
     expect(history.findings.size).toBe(3);
   });
 
@@ -542,7 +578,7 @@ describe("grouped native GitHub review delivery", () => {
     expect(writes(ambiguous)).toHaveLength(1);
   });
 
-  test("oversized summaries and grouped findings fail without splitting or writing", async () => {
+  test("oversized individual comments fail before writing", async () => {
     for (const output of [
       { ...review, reviewed: Array(30).fill("x".repeat(3000)) },
       {
@@ -550,9 +586,9 @@ describe("grouped native GitHub review delivery", () => {
         findings: [0, 1, 2].map((i) => ({
           ...finding,
           title: `Finding ${i}`,
-          body: "x".repeat(12000),
-          explanation: "x".repeat(12000),
-          verification: "x".repeat(12000),
+          body: "😀".repeat(6000),
+          explanation: "😀".repeat(6000),
+          verification: "😀".repeat(6000),
         })),
       },
     ]) {

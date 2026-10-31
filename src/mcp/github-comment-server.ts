@@ -31,7 +31,7 @@ server.tool(
     body: z
       .string()
       .describe(
-        "The updated comment content. Keep results and findings in this same comment; use task lists and expandable details for evidence instead of separate severity or finding threads.",
+        "The updated comment content. Keep task progress and results in this tracking comment using task lists and expandable details for supporting evidence.",
       ),
   },
   async ({ body }) => {

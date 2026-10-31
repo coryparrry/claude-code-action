@@ -11,52 +11,21 @@ export type ReviewAnchor = {
   side: "LEFT" | "RIGHT";
 };
 
-/** Select one real diff line for the grouped discussion, preferring its primary finding. */
+/** Accept only the finding's actual line in the PR patch; never move it to unrelated code. */
 export function findReviewAnchor(
   files: ChangedReviewFile[],
-  findings: Finding[],
+  finding: Pick<Finding, "path" | "line" | "side">,
 ): ReviewAnchor | undefined {
-  const severity = { bug: 0, suggestion: 1, pre_existing: 2 };
-  const ranked = [...findings].sort(
-    (a, b) => severity[a.severity] - severity[b.severity],
-  );
-  const key = (path: string, side: string, line: number) =>
-    `${path}\0${side}\0${line}`;
-  const wanted = new Map<string, number>();
-  ranked.forEach((finding, index) => {
-    const position = key(finding.path, finding.side, finding.line);
-    if (!wanted.has(position)) wanted.set(position, index);
-  });
-  let best: ReviewAnchor | undefined;
-  let bestRank = Infinity;
-  let firstAdded: ReviewAnchor | undefined;
-  let firstRemoved: ReviewAnchor | undefined;
-  let firstContext: ReviewAnchor | undefined;
   for (const file of files) {
+    if (
+      file.filename !== finding.path &&
+      !(finding.side === "LEFT" && file.previous_filename === finding.path)
+    )
+      continue;
     let oldLine = 0,
       newLine = 0,
       oldLeft = 0,
       newLeft = 0;
-    const consider = (
-      side: "LEFT" | "RIGHT",
-      line: number,
-      changed: boolean,
-    ) => {
-      if (line < 1) return;
-      const anchor = { path: file.filename, line, side };
-      if (changed && side === "RIGHT") firstAdded ??= anchor;
-      else if (changed) firstRemoved ??= anchor;
-      else firstContext ??= anchor;
-      const rank =
-        wanted.get(key(file.filename, side, line)) ??
-        (side === "LEFT" && file.previous_filename
-          ? wanted.get(key(file.previous_filename, side, line))
-          : undefined);
-      if (rank !== undefined && rank < bestRank) {
-        best = anchor;
-        bestRank = rank;
-      }
-    };
     for (const line of (file.patch ?? "").split("\n")) {
       const hunk = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
       if (hunk) {
@@ -66,20 +35,23 @@ export function findReviewAnchor(
         newLeft = Number(hunk[4] ?? 1);
         continue;
       }
+      let left: number | undefined, right: number | undefined;
       if (line.startsWith("+") && newLeft > 0) {
-        consider("RIGHT", newLine++, true);
+        right = newLine++;
         newLeft--;
       } else if (line.startsWith("-") && oldLeft > 0) {
-        consider("LEFT", oldLine++, true);
+        left = oldLine++;
         oldLeft--;
       } else if (line.startsWith(" ") && oldLeft > 0 && newLeft > 0) {
-        consider("RIGHT", newLine++, false);
-        consider("LEFT", oldLine++, false);
+        left = oldLine++;
+        right = newLine++;
         oldLeft--;
         newLeft--;
       }
-      if (bestRank === 0) return best;
+      const actual = finding.side === "LEFT" ? left : right;
+      if (actual !== undefined && actual > 0 && actual === finding.line)
+        return { path: file.filename, line: actual, side: finding.side };
     }
   }
-  return best ?? firstAdded ?? firstRemoved ?? firstContext;
+  return undefined;
 }

@@ -4,7 +4,7 @@ A fork of [Anthropic's Claude Code Action](https://github.com/anthropics/claude-
 
 This is an independent adaptation, not an official OpenAI or Anthropic release. The upstream MIT copyright and license notices are retained in [LICENSE](LICENSE).
 
-Automatic reviews keep GitHub’s native review layout: one main summary and one inline discussion containing all severity-marked findings, expandable evidence and code-location links. See [review presentation](docs/review-presentation.md) for the format and named-bot setup.
+Automatic reviews keep GitHub’s native review layout: one main summary and a separate coloured inline comment for each issue, with expandable evidence and code-location links. See [review presentation](docs/review-presentation.md) for the format and named-bot setup.
 
 ## Quickstart
 
@@ -112,7 +112,7 @@ jobs:
             Review this pull request for code quality, bugs, security and performance issues.
             Read the prepared patch in .git/codex-review.diff first; it includes removed lines as well as additions.
             Use the repository and PR context. Return actionable findings and a concise summary together.
-            Return verified findings using the native review schema. The action submits one native review summary with one inline discussion containing all findings. Keep all severity sections and code-location links together in that discussion.
+            Return verified findings using the native review schema. The action submits one native review summary with a separate coloured inline comment for each finding at its own code location. Do not create severity-specific reviews or a combined findings comment.
             Do not edit files, commit changes or implement fixes during this review.
             The author can request an implementation in a comment with /codex.
       - name: Save execution report
