@@ -8,6 +8,9 @@ import {
   renderFinding,
   renderReview,
   reviewSchema,
+  reviewHead,
+  renderFindings,
+  GROUPED_REVIEW_MARKER,
   type Finding,
   type Review,
 } from "../src/review/schema";
@@ -26,6 +29,7 @@ const target: ReviewTarget = {
   repo: "repo",
   pull_number: 12,
   head,
+  base: "b".repeat(40),
   author: "github-actions[bot]",
 };
 const finding: Finding = {
@@ -62,66 +66,89 @@ function fixture(
   options: {
     status?: number;
     currentHead?: string;
+    state?: string;
     prior?: any[];
     comments?: any[];
+    files?: any[];
     page?: boolean;
+    ambiguousCreate?: boolean;
+    headAfterFiles?: string;
   } = {},
 ) {
   const requests: { method: string; path: string; body?: any }[] = [];
-  const reviews = options.prior ?? [];
-  const comments = options.comments ?? [];
+  const reviews = [...(options.prior ?? [])];
+  const comments = [...(options.comments ?? [])];
+  let currentHead = options.currentHead ?? head;
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request): Promise<Response> {
-      const url = new URL(request.url);
-      const path = url.pathname;
+      const url = new URL(request.url),
+        path = url.pathname;
       const record: (typeof requests)[number] = {
         method: request.method,
         path,
       };
       requests.push(record);
       if (request.method === "GET" && path.endsWith("/reviews")) {
-        if (options.page && !url.searchParams.has("page"))
-          return Response.json([], {
-            headers: {
-              link: `<${server.url}repos/owner/repo/pulls/12/reviews?page=2>; rel="next"`,
+        if (options.page && !url.searchParams.has("page")) {
+          url.searchParams.set("page", "2");
+          return Response.json(
+            [{ id: 999, user: { login: "other" }, body: "Other review" }],
+            {
+              headers: { link: `<${url}>; rel="next"` },
             },
-          });
+          );
+        }
         return Response.json(reviews);
       }
-      if (request.method === "GET" && path.endsWith("/comments"))
+      if (request.method === "GET" && path.endsWith("/pulls/12/comments"))
         return Response.json(comments);
+      if (request.method === "GET" && path.endsWith("/files")) {
+        currentHead = options.headAfterFiles ?? currentHead;
+        return Response.json(
+          options.files ?? [
+            {
+              filename: finding.path,
+              patch: "@@ -1,3 +1,3 @@\n one\n two\n-old\n+new",
+            },
+          ],
+        );
+      }
       if (request.method === "GET" && path.endsWith("/pulls/12"))
         return Response.json({
-          state: "open",
-          head: { sha: options.currentHead ?? head },
+          state: options.state ?? "open",
+          head: { sha: currentHead },
         });
       if (request.method === "POST" && path.endsWith("/reviews")) {
         record.body = await request.json();
         if (options.status)
           return Response.json(
-            {
-              message: "Validation Failed",
-              errors: [{ field: "line", message: "not in diff" }],
-            },
+            { message: "Validation Failed" },
             { status: options.status },
           );
-        reviews.push({
-          ...record.body,
-          state: "COMMENTED",
+        const saved = {
+          id: reviews.length + 123,
+          html_url: `https://github.com/owner/repo/pull/12#pullrequestreview-${reviews.length + 123}`,
           user: { login: target.author },
-          commit_id: head,
-        });
-        for (const comment of record.body.comments)
-          comments.push({ ...comment, user: { login: target.author } });
-        return Response.json(
-          {
-            html_url:
-              "https://github.com/owner/repo/pull/12#pullrequestreview-123",
-          },
-          { status: 200 },
+          state: "COMMENTED",
+          commit_id: record.body.commit_id,
+          body: record.body.body,
+        };
+        reviews.push(saved);
+        comments.push(
+          ...record.body.comments.map((comment: any) => ({
+            ...comment,
+            user: saved.user,
+            pull_request_review_id: saved.id,
+          })),
         );
+        if (options.ambiguousCreate)
+          return Response.json(
+            { message: "Ambiguous saved response" },
+            { status: 503 },
+          );
+        return Response.json(saved);
       }
       return Response.json(
         { message: `Unexpected ${request.method} ${path}` },
@@ -133,6 +160,11 @@ function fixture(
   return {
     server,
     requests,
+    reviews,
+    comments,
+    setHead: (value: string) => {
+      currentHead = value;
+    },
     client: new Octokit({
       auth: "offline-fixture-token",
       baseUrl: server.url.toString(),
@@ -143,30 +175,34 @@ function fixture(
 describe("Claude-style review presentation", () => {
   test("renders compact inline findings with evidence, verification and stable IDs", () => {
     const body = renderFinding(finding);
-    expect(body).toStartWith("🔴 **Preserve the selected account**");
-    expect(body).toContain("<summary>Why this was flagged</summary>");
+    expect(body).toContain(
+      "<summary>🔴 Preserve the selected account · src/account.ts:3</summary>",
+    );
+    expect(body).toContain("**Why this was flagged**");
     expect(body).toContain(`**Verification:** ${finding.verification}`);
     expect(body).toContain(
       `<sub>Finding ID: \`f-${findingId(finding)}\`</sub>`,
     );
     expect(findingId({ ...finding, line: 14 })).toBe(findingId(finding));
-    expect(renderFinding({ ...finding, severity: "suggestion" })).toStartWith(
+    expect(renderFinding({ ...finding, severity: "suggestion" })).toContain(
       "🟡",
     );
-    expect(renderFinding({ ...finding, severity: "pre_existing" })).toStartWith(
+    expect(renderFinding({ ...finding, severity: "pre_existing" })).toContain(
       "🟣",
     );
   });
 
   test("renders a review conclusion and scope instead of task completion", () => {
     const body = renderReview(review, head);
-    expect(body).toContain("Findings marked 🟡 are optional suggestions");
+    expect(body).toContain("1 finding grouped in one inline discussion below.");
+    expect(body).not.toContain(finding.body);
     expect(body).toContain(
-      "What was reviewed:\n- [x] Account selection and cache lookup",
+      "<summary>What was reviewed</summary>\n\n- [x] Account selection and cache lookup",
     );
-    expect(body).toContain("<summary>Extended reasoning...</summary>");
+    expect(body).toContain("<summary>Review details</summary>");
     expect(body).not.toContain("finished");
     expect(body).not.toContain("- [ ]");
+    expect(body).toEndWith(GROUPED_REVIEW_MARKER);
   });
 
   test("validates required evidence, diff sides and positive integer lines", () => {
@@ -265,158 +301,267 @@ describe("Claude-style review presentation", () => {
   });
 });
 
-describe("native GitHub review delivery", () => {
-  test("submits findings and summary together as COMMENT on the exact SHA", async () => {
+describe("grouped native GitHub review delivery", () => {
+  const savedReview = (sha = head, author = target.author) => ({
+    id: 123,
+    html_url: "https://github.com/owner/repo/pull/12#pullrequestreview-123",
+    user: { login: author },
+    state: "COMMENTED",
+    commit_id: sha,
+    body: renderReview(review, sha, target),
+  });
+  const writes = (api: ReturnType<typeof fixture>) =>
+    api.requests.filter((r) => r.method !== "GET");
+
+  test("submits a normal summary and one inline discussion holding all severities", async () => {
     const api = fixture();
     const url = await publishReview(api.client, target, {
       ...review,
       findings: [
         finding,
-        { ...finding, title: "Old-side defect", side: "LEFT" },
+        {
+          ...finding,
+          title: "Optional improvement",
+          severity: "suggestion",
+          side: "LEFT",
+        },
+        { ...finding, title: "Older defect", severity: "pre_existing" },
       ],
     });
     expect(url).toContain("pullrequestreview-123");
-    const posts = api.requests.filter((request) => request.method === "POST");
-    expect(posts).toHaveLength(1);
-    expect(posts[0]!.body.event).toBe("COMMENT");
-    expect(posts[0]!.body.commit_id).toBe(head);
-    expect(posts[0]!.body.comments).toHaveLength(2);
-    expect(posts[0]!.body.comments[1].side).toBe("LEFT");
-    expect(posts[0]!.body.body).toContain("Extended reasoning...");
-    expect(
-      api.requests.some((request) => request.path.includes("/issues/")),
-    ).toBe(false);
-    await publishReview(api.client, target, review);
-    expect(
-      api.requests.filter((request) => request.method === "POST"),
-    ).toHaveLength(1);
+    expect(writes(api)).toHaveLength(1);
+    const request = writes(api)[0]!;
+    expect(request.path).toBe("/repos/owner/repo/pulls/12/reviews");
+    expect(request.body.commit_id).toBe(head);
+    expect(request.body.event).toBe("COMMENT");
+    expect(request.body.body).toContain(
+      "3 findings grouped in one inline discussion below.",
+    );
+    expect(request.body.body).not.toContain(finding.body);
+    expect(request.body.comments).toHaveLength(1);
+    expect(request.body.comments[0]).toMatchObject({
+      path: finding.path,
+      line: 3,
+      side: "RIGHT",
+    });
+    const body = request.body.comments[0].body;
+    for (const text of [
+      "🔴",
+      "🟡",
+      "🟣",
+      "**Findings (3)**",
+      finding.body,
+      finding.explanation,
+      finding.verification,
+    ])
+      expect(body).toContain(text);
   });
 
-  test("uses a native no-findings review with no inline comments", async () => {
+  test("uses a real diff anchor when findings concern unchanged code", async () => {
+    const api = fixture();
+    await publishReview(api.client, target, {
+      ...review,
+      findings: [{ ...finding, path: "unchanged file.ts", line: 900 }],
+    });
+    expect(api.comments[0]).toMatchObject({
+      path: finding.path,
+      line: 3,
+      side: "RIGHT",
+    });
+    expect(api.comments[0].body).toContain(
+      `/blob/${head}/unchanged%20file.ts#L900`,
+    );
+  });
+
+  test("no findings produces a native summary without an inline discussion", async () => {
     const api = fixture();
     await publishReview(api.client, target, {
       ...review,
       summary: "No actionable bugs found.",
       findings: [],
     });
-    const posted = api.requests.find(
-      (request) => request.method === "POST",
-    )!.body;
-    expect(posted.comments).toEqual([]);
-    expect(posted.body).toContain("No actionable bugs found.");
-    expect(posted.body).not.toContain("Findings marked");
+    expect(writes(api)[0]!.body.comments).toEqual([]);
+    expect(api.reviews[0].body).toContain("No actionable bugs found.");
+    expect(api.requests.some((r) => r.path.endsWith("/files"))).toBe(false);
   });
 
-  test("deduplicates moved findings and keeps follow-up context from the configured bot", async () => {
+  test("a binary-only diff includes findings in the native summary", async () => {
+    const api = fixture({ files: [{ filename: "image.png" }] });
+    await publishReview(api.client, target, review);
+    expect(api.comments).toHaveLength(0);
+    expect(api.reviews[0].body).toContain("no inline-commentable text line");
+    expect(api.reviews[0].body).toContain(finding.body);
+    expect(writes(api)).toHaveLength(1);
+  });
+
+  test("same-head reruns skip, while a new head retains still-applicable findings", async () => {
+    const api = fixture();
+    const url = await publishReview(api.client, target, {
+      ...review,
+      findings: [finding, finding],
+    });
+    expect(api.comments[0].body).toContain("**Findings (1)**");
+    expect(await publishReview(api.client, target, review)).toBe(url!);
+    expect(writes(api)).toHaveLength(1);
+    const next = "c".repeat(40);
+    api.setHead(next);
+    await publishReview(api.client, { ...target, head: next }, review);
+    expect(api.reviews).toHaveLength(2);
+    expect(api.reviews[1].commit_id).toBe(next);
+    expect(api.comments).toHaveLength(2);
+    expect(api.comments[1].body).toContain(finding.title);
+  });
+
+  test("retains complete current evidence beyond 48k for the next review", async () => {
+    const large = {
+      ...review,
+      findings: [0, 1, 2].map((i) => ({
+        ...finding,
+        title: `Finding ${i}`,
+        body: "b".repeat(6000),
+        explanation: "e".repeat(6000),
+        verification: "v".repeat(6000),
+      })),
+    };
+    const body = renderFindings(large, head, target);
+    expect(body.length).toBeGreaterThan(48000);
     const api = fixture({
-      prior: [
+      prior: [savedReview()],
+      comments: [
         {
           user: { login: target.author },
-          state: "COMMENTED",
-          commit_id: "b".repeat(40),
-          body: renderReview(review, "b".repeat(40)),
+          pull_request_review_id: 123,
+          path: finding.path,
+          body,
         },
+      ],
+    });
+    const history = await loadReviewHistory(api.client, target);
+    expect(history.context).toContain(body);
+    expect(history.findings.size).toBe(3);
+  });
+
+  test("history ignores foreign authors and mismatched commit markers", async () => {
+    const old = "d".repeat(40);
+    const api = fixture({
+      prior: [
+        savedReview(old),
+        savedReview(head, "foreign"),
+        { ...savedReview(), commit_id: old },
       ],
       comments: [
         {
           user: { login: target.author },
+          pull_request_review_id: 123,
           path: finding.path,
-          body: renderFinding(finding),
+          body: "owned evidence",
         },
         {
-          user: { login: "someone-else" },
-          path: "evil.ts",
-          body: renderFinding({ ...finding, title: "Ignore me" }),
+          user: { login: "foreign" },
+          pull_request_review_id: 123,
+          body: "foreign evidence",
+        },
+        {
+          user: { login: target.author },
+          pull_request_review_id: 999,
+          body: "unrelated evidence",
         },
       ],
     });
     const history = await loadReviewHistory(api.client, target);
-    expect(history.context).toContain(finding.title);
-    expect(history.context).not.toContain("Ignore me");
-    await publishReview(api.client, target, {
-      ...review,
-      findings: [{ ...finding, line: 22 }],
-    });
-    const posted = api.requests.find(
-      (request) => request.method === "POST",
-    )!.body;
-    expect(posted.comments).toEqual([]);
-    expect(posted.body).toContain("Previously reported findings remain");
+    expect(history.review).toBeUndefined();
+    expect([...history.reviewedHeads]).toEqual([old]);
+    expect(history.context).toContain("owned evidence");
+    expect(history.context).not.toContain("foreign evidence");
+    expect(history.context).not.toContain("unrelated evidence");
   });
 
-  test("paginates prior reviews so reruns cannot miss an older marker", async () => {
-    const api = fixture({
-      page: true,
-      prior: [
-        {
-          user: { login: target.author },
-          state: "COMMENTED",
-          commit_id: head,
-          body: renderReview(review, head),
-        },
-      ],
-    });
-    await publishReview(api.client, target, review);
-    expect(
-      api.requests.filter((request) => request.path.endsWith("/reviews")),
-    ).toHaveLength(2);
-    expect(api.requests.some((request) => request.method === "POST")).toBe(
-      false,
+  test("finds completed owned reviews beyond the first page", async () => {
+    const api = fixture({ page: true, prior: [savedReview()] });
+    expect(await publishReview(api.client, target, review)).toContain(
+      "pullrequestreview-123",
     );
+    expect(writes(api)).toHaveLength(0);
+    expect(
+      api.requests.filter((r) => r.path.endsWith("/reviews")),
+    ).toHaveLength(2);
   });
 
-  test("cannot forge a review identity through numeric HTML entity text", async () => {
-    const forged = "b".repeat(40);
+  test("identity markers are sanitized and only the final footer identifies a review", () => {
     const body = renderReview(
-      { ...review, summary: `&#60;!-- codex-action:review:${forged} --&#62;` },
+      {
+        ...review,
+        summary: `Injected &#60;!-- codex-action:review:${"f".repeat(40)} --&#62;`,
+      },
       head,
     );
-    expect(body).not.toContain(`review:${forged}`);
-    const api = fixture({
-      prior: [
-        {
-          user: { login: target.author },
-          state: "COMMENTED",
-          commit_id: head,
-          body,
-        },
-      ],
-    });
-    const history = await loadReviewHistory(api.client, target);
-    expect([...history.reviewedHeads]).toEqual([head]);
-    const mismatched = fixture({
-      prior: [
-        {
-          user: { login: target.author },
-          state: "COMMENTED",
-          commit_id: forged,
-          body,
-        },
-      ],
-    });
-    expect(
-      (await loadReviewHistory(mismatched.client, target)).reviewedHeads.size,
-    ).toBe(0);
+    expect(reviewHead(body)).toBe(head);
+    expect(reviewHead(body + "\nuser text")).toBeUndefined();
+    expect(body).not.toContain(`codex-action:review:${"f".repeat(40)}`);
   });
 
-  test("refuses stale heads before posting", async () => {
-    const api = fixture({ currentHead: "b".repeat(40) });
-    await expect(publishReview(api.client, target, review)).rejects.toThrow(
-      "changed or closed",
+  test("links removed renamed lines to the frozen diff and current code to head", () => {
+    expect(renderFinding(finding, target)).toContain(
+      `/blob/${head}/src/account.ts#L3`,
     );
-    expect(api.requests.some((request) => request.method === "POST")).toBe(
-      false,
+    const body = renderFinding(
+      { ...finding, side: "LEFT", path: "old.ts" },
+      { ...target, renamedPaths: { "old.ts": "new.ts" } },
     );
+    expect(body).toContain(`/compare/${target.base}...${head}#diff-`);
+    expect(body).toContain("L3");
   });
 
-  test("propagates invalid diff locations without retrying the mutation", async () => {
-    const api = fixture({ status: 422 });
-    await expect(publishReview(api.client, target, review)).rejects.toThrow(
-      "Validation Failed",
+  test("rejects stale, closed, and mid-publication head changes without writes", async () => {
+    for (const options of [
+      { currentHead: "c".repeat(40) },
+      { state: "closed" },
+      { headAfterFiles: "c".repeat(40) },
+    ]) {
+      const api = fixture(options);
+      await expect(publishReview(api.client, target, review)).rejects.toThrow(
+        "changed or closed",
+      );
+      expect(writes(api)).toHaveLength(0);
+    }
+  });
+
+  test("does not blindly retry rejected or ambiguously saved submissions", async () => {
+    const rejected = fixture({ status: 422 });
+    await expect(
+      publishReview(rejected.client, target, review),
+    ).rejects.toThrow("Validation Failed");
+    expect(writes(rejected)).toHaveLength(1);
+    const ambiguous = fixture({ ambiguousCreate: true });
+    await expect(
+      publishReview(ambiguous.client, target, review),
+    ).rejects.toThrow("Ambiguous saved response");
+    expect(await publishReview(ambiguous.client, target, review)).toContain(
+      "pullrequestreview-123",
     );
-    expect(
-      api.requests.filter((request) => request.method === "POST"),
-    ).toHaveLength(1);
+    expect(writes(ambiguous)).toHaveLength(1);
+  });
+
+  test("oversized summaries and grouped findings fail without splitting or writing", async () => {
+    for (const output of [
+      { ...review, reviewed: Array(30).fill("x".repeat(3000)) },
+      {
+        ...review,
+        findings: [0, 1, 2].map((i) => ({
+          ...finding,
+          title: `Finding ${i}`,
+          body: "x".repeat(12000),
+          explanation: "x".repeat(12000),
+          verification: "x".repeat(12000),
+        })),
+      },
+    ]) {
+      const api = fixture();
+      await expect(publishReview(api.client, target, output)).rejects.toThrow(
+        "comment size limit",
+      );
+      expect(writes(api)).toHaveLength(0);
+    }
   });
 });
 
@@ -510,7 +655,11 @@ test.each(["success", "rejected", "stale", "invalid-output"])(
         pull_request: {
           number: 12,
           head: { sha: head, repo: { full_name: "owner/repo" } },
-          base: { ref: "main", repo: { full_name: "owner/repo" } },
+          base: {
+            ref: "main",
+            sha: target.base,
+            repo: { full_name: "owner/repo" },
+          },
         },
       }),
     );
@@ -589,7 +738,10 @@ test.each(["success", "rejected", "stale", "invalid-output"])(
         api.requests.filter((request) => request.method === "POST"),
       ).toHaveLength(["success", "rejected"].includes(scenario) ? 1 : 0);
       expect(
-        api.requests.some((request) => request.path.includes("/issues/")),
+        api.requests.some(
+          (request) =>
+            request.path.includes("/issues/") && request.method !== "GET",
+        ),
       ).toBe(false);
     } finally {
       clearTimeout(timer);

@@ -1,5 +1,6 @@
 import { getRuntimeInstructions } from "../../../create-prompt/runtime-instructions";
 import { GITHUB_SERVER_URL } from "../../api/config";
+import { renderDetails } from "./render";
 
 export const SPINNER_HTML =
   '<img src="https://github.com/user-attachments/assets/5ac382c7-e004-429b-8e35-7feb3e8f9c6f" width="14px" height="14px" style="vertical-align: middle; margin-left: 4px;" />';
@@ -8,12 +9,7 @@ export const INITIAL_PROGRESS_BODY = `- [ ] Read the request and repository cont
 - [ ] Work on the requested task
 - [ ] Report results
 
-<details open>
-<summary>Preparing the task</summary>
-
-Loading the request and repository context.
-
-</details>`;
+${renderDetails("Preparing the task", "Loading the request and repository context.", true)}`;
 
 export function createJobRunLink(
   owner: string,

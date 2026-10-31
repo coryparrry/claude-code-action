@@ -7,8 +7,8 @@ export const DEFAULT_TRIGGER_PHRASE = "/codex";
 export const REVIEW_DIFF_PATH = ".git/codex-review.diff";
 export const AUTOMATIC_REVIEW_PROMPT = `Review this pull request for code quality, bugs, security and performance issues.
 Read the prepared patch in ${REVIEW_DIFF_PATH} first; it includes removed lines as well as additions.
-Use the repository and PR context. Provide actionable inline feedback and a summary.
-Return verified findings and a concise review conclusion using the native review schema. The action posts severity-marked inline findings with expandable evidence and a separate review summary.
+Use the repository and PR context. Return actionable findings and a concise summary together.
+Return verified findings using the native review schema. The action submits one native review summary with one inline discussion containing all findings. Keep all severity sections and code-location links together in that discussion.
 Do not edit files, commit changes or implement fixes during this review.
 The author can request an implementation in a comment with ${DEFAULT_TRIGGER_PHRASE}.`;
 

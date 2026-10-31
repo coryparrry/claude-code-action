@@ -126,7 +126,7 @@ inputs:
     required: false
     default: ""
   review_mode:
-    description: "Publish a native COMMENT review with inline findings and expandable evidence (pull_request events only; incompatible with track_progress)"
+    description: "Submit one native review summary and one grouped inline findings discussion (pull_request events only; incompatible with track_progress)"
     default: "false"
   track_progress:
     description: "Force tag mode with tracking comments for pull_request and issue events. Only applicable to pull_request (opened, synchronize, ready_for_review, reopened, labeled) and issue (opened, edited, labeled, assigned) events."
@@ -258,7 +258,7 @@ inputs:
 
 outputs:
   review_url:
-    description: "URL of the native COMMENT review published by review_mode"
+    description: "URL of the native review submitted by review_mode"
     value: ${{ steps.run.outputs.review_url }}
   skipped_due_to_fork:
     description: "True when execution was skipped because the request targets a fork PR"

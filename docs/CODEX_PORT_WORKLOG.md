@@ -125,6 +125,14 @@ Independent frozen production installs also passed with the patched dependency
 graph: root installed 235 packages and base installed 186; both completed the
 offline SDK smoke run.
 
+### 2026-10-31 grouped native review discussion
+
+The owner clarified that the native GitHub review hierarchy must stay: one main review summary and one inline discussion containing every finding. The unpublished standalone-comment prototype was replaced before publication. Findings use expandable severity sections and individual code-location links inside the group. The anchor is selected from actual PR patch lines, preferring an eligible primary finding. Non-commentable diffs retain their findings in the main review.
+
+The existing read-only OpenAI runtime and GitHub authentication remain in use. One native COMMENT review carries the summary and grouped inline comment. Reruns reuse a completed review for the same head; each newly reviewed head retains its own native commit metadata. Current review context is preserved without truncation. Native task and failure comments retain the shared disclosure renderer.
+
+Verification: 119 scoped tests passed, 0 failed, with 572 assertions across 10 files. Coverage includes native HTTP delivery, the actual Agents SDK with an offline model fixture, child-process root-action success/failure paths, diff anchors, full review context, comment rendering and installer behavior. Root TypeScript, scoped Prettier and diff checks passed. Independent read-only review found no material issues. Hosted verification is recorded in the PR after publication.
+
 ### 2026-10-31 native comment progress layout
 
 The live comment test showed GitHub's checkboxes, disclosure sections and animated spinner render correctly. The HTML progress element was stripped, and open-page refresh was inconsistent. Adopted the native layout without promising immediate browser refresh: interactive tasks start with a checklist/current-step disclosure, both tag prompt variants request task-specific steps and observed evidence, and native review summaries render completed coverage checkboxes.

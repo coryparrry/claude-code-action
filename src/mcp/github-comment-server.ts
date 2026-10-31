@@ -28,7 +28,11 @@ server.tool(
   "update_codex_comment",
   "Update the Codex comment with progress and results (automatically handles both issue and PR comments)",
   {
-    body: z.string().describe("The updated comment content"),
+    body: z
+      .string()
+      .describe(
+        "The updated comment content. Keep results and findings in this same comment; use task lists and expandable details for evidence instead of separate severity or finding threads.",
+      ),
   },
   async ({ body }) => {
     try {

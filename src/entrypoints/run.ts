@@ -187,12 +187,15 @@ async function run() {
             repo: context.repository.repo,
             pull_number: context.payload.pull_request.number,
             head: context.payload.pull_request.head.sha,
+            base: context.payload.pull_request.base.sha,
             author: context.inputs.botName,
           }
         : undefined;
     if (reviewTarget) {
       const history = await loadReviewHistory(octokit.rest, reviewTarget);
       if (history.reviewedHeads.has(reviewTarget.head)) {
+        if (history.review)
+          core.setOutput("review_url", history.review.html_url);
         core.setOutput("conclusion", "success");
         console.log(
           "This bot has already reviewed the current head; skipping duplicate review.",

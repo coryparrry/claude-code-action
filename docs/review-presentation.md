@@ -1,31 +1,47 @@
-# Native pull request reviews
+# Native reviews with one grouped findings discussion
 
-This reproduces the presentation of Anthropic's [managed Code Review service](https://code.claude.com/docs/en/code-review), which is separate from the open-source Claude Code Action. It reuses this action's existing OpenAI runtime, authentication, read tools and lifecycle. It does not establish parity with the managed service's review engine, check runs or automatic thread resolution.
+Set `review_mode: "true"` to retain GitHub's normal review hierarchy:
 
-Set `review_mode: "true"` to publish a GitHub **COMMENT** review instead of a
-task-completion comment. The presentation follows the [Claude bot reference](https://github.com/anthropics/claude-code-action/pull/1915):
+```text
+Native review summary
+└─ One inline discussion
+   ├─ Bug findings
+   ├─ Optional suggestions
+   └─ Pre-existing findings
+```
 
-- 🔴 findings describe introduced bugs; 🟡 findings are optional suggestions;
-  🟣 findings identify pre-existing bugs.
-- Findings appear on the affected diff lines. Each has expandable **Why this
-  was flagged** evidence, verification, and a stable finding ID.
-- The review summary lists what was reviewed, with an **Extended reasoning...**
-  disclosure for scope, evidence and verification limitations. This is a concise
-  explanation, not private model reasoning.
-- Follow-up runs receive the bot's earlier reviews and findings as reference.
-  Exact finding IDs are deduplicated even when their line changes. Reworded
-  findings still depend on the model recognizing the earlier report. Existing
-  threads are preserved; the action does not auto-resolve them or claim a fix.
-- One marked review per bot and head SHA prevents duplicates on workflow reruns.
-  Publishing rejects a changed/closed PR and reports GitHub delivery failures.
+All findings expand inside that single discussion, rather than creating a separate
+comment and inline thread for every severity or code location. The main review
+contains the concise conclusion, coverage and supporting review details.
 
-The model returns validated data and receives only read/search tools. The action
-publishes the summary and findings together, pinned to the reviewed head.
-Review mode retains model, effort, turn-limit and budget controls. It excludes
-custom MCP servers, hooks, plugins, session resumption and execution settings. It
-cannot approve, request changes, or merge through this publisher. A successful
-model report alone does not prove review delivery; use the action conclusion
-and `review_url` output.
+- The grouped discussion attaches to a real line in the current PR diff, preferring
+  the highest-priority finding with an eligible location. If its location is outside
+  the diff, another actual changed line anchors the group.
+- Every finding includes a code-location link, evidence, verification and a stable
+  ID. Current-code links are pinned to the reviewed commit; removed lines link to
+  the frozen comparison, including renamed paths.
+- One API call submits the native summary and its single grouped inline comment.
+  The publisher never posts a standalone issue comment or severity-specific reviews.
+- No-findings reviews have no inline discussion. For a binary-only or otherwise
+  non-commentable diff, findings stay inside the native main review because GitHub
+  has no valid inline text line to attach them to.
+- Same-head reruns reuse the existing native review. New reviewed heads get a new
+  commit-specific review, preserving GitHub's reviewed-changes metadata.
+- Follow-ups receive the complete latest marked review and its bot-authored finding
+  discussion as untrusted reference data. They recheck and return findings that still
+  apply. Duplicate IDs within one result are removed; existing findings are not hidden
+  simply because they appeared before.
+
+The existing OpenAI runtime returns validated data with read/search tools. The
+trusted publisher checks the current PR head before selecting an anchor and again
+before submission. Ambiguous mutations are not blindly retried; a rerun locates a
+saved completed review by its marker. Each comment has a 60,000 UTF-8 byte limit;
+oversized output fails instead of splitting into more threads.
+
+Review mode retains model, effort, turn and budget controls and excludes inherited
+MCP, hooks, plugins and session resumption. It only submits COMMENT reviews, with
+no approval, request-changes or merge capability. Use the action conclusion and
+`review_url` output to verify delivery.
 
 ```yaml
 - uses: coryparrry/claude-code-action@65b09b2a13dff009d2fdfea98bb72878b3b60e15
@@ -36,30 +52,26 @@ and `review_url` output.
     prompt: Review the prepared patch in .git/codex-review.diff.
 ```
 
-Use `pull_request` events for same-repository PRs and prepare the base-to-head
-patch as in the generated workflow. `review_mode` is incompatible with
-`track_progress`; interactive `/codex` tasks retain their existing progress
-comments. Existing installed workflows need an updated action revision and
-`review_mode: "true"` to use this presentation.
+Use same-repository `pull_request` events and prepare the base-to-head patch as in
+the generated workflow. `review_mode` is incompatible with `track_progress`.
+Existing installations need the updated source pin.
 
-## Native progress display
+## Other comments and progress
 
-Interactive tasks start with GitHub task checkboxes, an animated spinner and an
-expanded current-step section. The agent replaces the generic checklist with
-task-specific steps and records observed results inside expandable sections.
-The initial loading template is removed during finalization, including failures.
-Native review summaries show completed coverage checkboxes alongside their
-existing evidence disclosures.
+Task progress, finding sections, review details and error diagnostics share the
+same GitHub-supported disclosure renderer. Task comments use checkboxes and an
+expanded current step; error details and completed evidence stay collapsed.
+Finalization removes the initial loading state, including edited checklists and
+failures, while preserving model-authored task state and evidence.
 
-The [live rendering test](https://github.com/coryparrry/claude-code-action/pull/6#issuecomment-6546724109)
-confirmed these components render on GitHub. GitHub removed the HTML `progress`
-element. An edit appeared without a reload in a signed-in session, but later
-edits needed a refresh. The comment API saves updates; it has no option to force
-an open PR page to re-render. This layout remains readable when live refresh is
-delayed, without relying on browser-side code or precise progress percentages.
+The [rendering test](https://github.com/coryparrry/claude-code-action/pull/6#issuecomment-6546724109)
+verified native checkboxes, a spinner and disclosures. GitHub strips HTML progress
+elements, and open-page refresh remains inconsistent. The API saves edits but cannot
+force viewers' PR pages to re-render immediately.
 
-`review_mode` publishes its native review after inference. Interactive progress
-comments use the existing tag-mode comment tools.
+Reviews publish after inference; interactive progress uses existing tag-mode tools.
+This reproduces presentation, not the managed Claude service's review engine,
+check runs or automatic thread resolution.
 
 ## Bot identity
 

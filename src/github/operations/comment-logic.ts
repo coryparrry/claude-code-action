@@ -1,6 +1,7 @@
 import { getRuntimeInstructions } from "../../create-prompt/runtime-instructions";
 import { GITHUB_SERVER_URL } from "../api/config";
 import { redactSecrets } from "../utils/sanitizer";
+import { renderDetails } from "./comments/render";
 import {
   encodeBranchNameForUrl,
   INITIAL_PROGRESS_BODY,
@@ -199,7 +200,7 @@ export function updateCommentBody(input: CommentUpdateInput): string {
   // (e.g. a token in a git remote URL) that are not registered as workflow
   // secrets, so redact known formats before posting.
   if (actionFailed && errorDetails) {
-    newBody += `\n\n\`\`\`\n${redactSecrets(errorDetails)}\n\`\`\``;
+    newBody += `\n\n${renderDetails("Error details", `\`\`\`\n${redactSecrets(errorDetails)}\n\`\`\``)}`;
   }
 
   newBody += `\n\n---\n`;
