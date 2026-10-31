@@ -114,3 +114,14 @@ include completed `results`, so an earlier repository's setup is still visible.
 
 The installer uses `github-actions[bot]` through the workflow token. A separate
 GitHub App identity remains an advanced setup described in the setup guide.
+
+## Fork protection
+
+Generated AI jobs are bound to the selected repository name. A copied workflow
+in a fork skips both commands and automatic reviews, even for a trusted actor.
+An intentionally selected fork can still be installed as its own repository.
+
+Reviews and review comments from external PR heads are skipped before checkout.
+For `/codex` issue comments on PRs, the action resolves the head repository through
+GitHub and skips fork PRs before invoking the model. Unresolved origins fail closed.
+Rerun the installer and merge its update PR to apply these guards to an older setup.
