@@ -15,6 +15,10 @@ const api = (path, args = []) =>
   );
 const mode = process.argv[2];
 if (mode === "prepare") {
+  copyFileSync(
+    new URL(import.meta.url),
+    join(temp, "live-request-fixture.mjs"),
+  );
   const bun = execFileSync("which", ["bun"], { encoding: "utf8" }).trim();
   writeFileSync(
     join(temp, "live-bun"),
@@ -82,7 +86,10 @@ if (mode === "prepare") {
     const comments = api("issues/8/comments");
     assert(
       comments.some(
-        (c) => c.body.includes("Create a PR") && c.body.includes(branch),
+        (c) =>
+          c.body.includes("Create a PR") &&
+          (c.body.includes(branch) ||
+            c.body.includes(encodeURIComponent(branch))),
       ),
       "Issue must receive a branch-specific PR creation handoff",
     );

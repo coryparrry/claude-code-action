@@ -59,7 +59,7 @@ jobs:
         env:
           LIVE_CONCLUSION: ${{ steps.diagnosis.outputs.conclusion }}
           LIVE_REPORT: ${{ steps.diagnosis.outputs.execution_file }}
-        run: node scripts/live-request-fixture.mjs diagnosis
+        run: node "$RUNNER_TEMP/live-request-fixture.mjs" diagnosis
       - name: Implement actual fixture issue
         id: issue
         uses: ./
@@ -82,7 +82,7 @@ jobs:
           LIVE_CONCLUSION: ${{ steps.issue.outputs.conclusion }}
           LIVE_REPORT: ${{ steps.issue.outputs.execution_file }}
           LIVE_BRANCH: ${{ steps.issue.outputs.branch_name }}
-        run: node scripts/live-request-fixture.mjs issue
+        run: node "$RUNNER_TEMP/live-request-fixture.mjs" issue
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -106,7 +106,7 @@ jobs:
         env:
           LIVE_CONCLUSION: ${{ steps.inline.outputs.conclusion }}
           LIVE_REPORT: ${{ steps.inline.outputs.execution_file }}
-        run: node scripts/live-request-fixture.mjs inline
+        run: node "$RUNNER_TEMP/live-request-fixture.mjs" inline
       - name: Save live reports
         if: always()
         uses: actions/upload-artifact@v4
