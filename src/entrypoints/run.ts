@@ -30,6 +30,12 @@ import {
   isWorkflowRunEvent,
 } from "../github/context";
 import type { GitHubContext } from "../github/context";
+import {
+  loadReviewHistory,
+  publishReview,
+  type ReviewTarget,
+} from "../review/publisher";
+import { nativeReviewOptions, reviewPrompt } from "../review/runtime";
 import { detectMode } from "../modes/detector";
 import { prepareTagMode } from "../modes/tag";
 import { prepareAgentMode } from "../modes/agent";
@@ -82,6 +88,7 @@ async function writeStepSummary(executionFile: string): Promise<void> {
 }
 
 async function run() {
+  const nativeReview = process.env.REVIEW_MODE === "true";
   let deliveryError: string | undefined;
   let githubToken: string | undefined;
   let commentId: number | undefined;
@@ -109,7 +116,15 @@ async function run() {
     // Phase 1: Prepare
     const actionInputsPresent = collectActionInputsPresence();
     context = parseGitHubContext();
-    const modeName = detectMode(context);
+    if (nativeReview) {
+      if (!isPullRequestEvent(context) || context.inputs.trackProgress)
+        throw new Error(
+          "review_mode requires a pull_request event and track_progress: false",
+        );
+      context.inputs.prompt ||=
+        "Review this pull request for concrete correctness, security and regression defects.";
+    }
+    const modeName = nativeReview ? "agent" : detectMode(context);
     console.log(
       `Auto-detected mode: ${modeName} for event: ${context.eventName}`,
     );
@@ -164,6 +179,31 @@ async function run() {
     }
 
     validateCodexInputs();
+
+    const reviewTarget: ReviewTarget | undefined =
+      nativeReview && isPullRequestEvent(context)
+        ? {
+            owner: context.repository.owner,
+            repo: context.repository.repo,
+            pull_number: context.payload.pull_request.number,
+            head: context.payload.pull_request.head.sha,
+            author: context.inputs.botName,
+          }
+        : undefined;
+    if (reviewTarget) {
+      const history = await loadReviewHistory(octokit.rest, reviewTarget);
+      if (history.reviewedHeads.has(reviewTarget.head)) {
+        core.setOutput("conclusion", "success");
+        console.log(
+          "This bot has already reviewed the current head; skipping duplicate review.",
+        );
+        return;
+      }
+      context.inputs.prompt = reviewPrompt(
+        context.inputs.prompt,
+        history.context,
+      );
+    }
 
     // Run prepare
     console.log(
@@ -230,6 +270,12 @@ async function run() {
             GITHUB_EVENT_PATH: process.env.GITHUB_EVENT_PATH || "",
             GITHUB_WORKSPACE: process.env.GITHUB_WORKSPACE || process.cwd(),
           },
+      ...(nativeReview
+        ? await nativeReviewOptions(
+            prepareResult.claudeArgs,
+            actionRuntimeOptions(process.env),
+          )
+        : {}),
     });
 
     claudeSuccess = result.conclusion === "success";
@@ -248,6 +294,17 @@ async function run() {
         JSON.stringify(result.structuredOutput),
       );
     }
+    if (reviewTarget && result.conclusion === "success") {
+      const url = await publishReview(
+        octokit.rest,
+        reviewTarget,
+        result.structuredOutput,
+      );
+      if (url) {
+        core.setOutput("review_url", url);
+        core.info(`Review published: ${url}`);
+      }
+    }
     core.setOutput("conclusion", result.conclusion);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -264,6 +321,7 @@ async function run() {
 
     // Complete the inherited comment delivery before announcing success.
     if (
+      !nativeReview &&
       prepareCompleted &&
       context &&
       isEntityContext(context) &&

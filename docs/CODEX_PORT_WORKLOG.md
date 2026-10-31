@@ -124,3 +124,11 @@ projects and scoped formatting/diff checks passed.
 Independent frozen production installs also passed with the patched dependency
 graph: root installed 235 packages and base installed 186; both completed the
 offline SDK smoke run.
+
+### 2026-10-31 native review presentation
+
+The owner's reference PR (#1915 upstream) uses Anthropic's managed Code Review presentation, which is separate from the public action. Added opt-in `review_mode` with native COMMENT reviews, severity-marked line findings, expandable evidence, review scope and stable finding IDs. Existing OpenAI inference, GitHub token handling and action lifecycle remain in use. Automatic review workflow generation selects this mode; interactive tasks retain tracking comments.
+
+Validated structured output is published in one review against the event head. Follow-up history is restricted to the configured bot; duplicate findings and same-head reruns are suppressed. Changed/closed PRs, invalid output and GitHub delivery rejection fail the action. Inference receives only read/search tools and excludes inherited MCP, hooks, plugins and session resumption. No approvals or merge actions are exposed.
+
+Scoped regression and integration checks: 69 passed, including an offline turn through the real Agents SDK and root-process/HTTP delivery cases. Root TypeScript and diff checks passed. Independent review findings were fixed and covered by regressions. The rendered Markdown was visually inspected with both disclosures expanded in an illustrative local preview. No paid model call or real GitHub review submission was used for this validation. Full managed-service parity remains unclaimed.

@@ -380,12 +380,10 @@ describe("guided GitHub Action workflow", () => {
       `git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > ${REVIEW_DIFF_PATH}`,
     );
     expect(actionStep(review).with.codex_sandbox).toBe("read-only");
-    expect(actionStep(review).with.prompt).toContain("confirmed: true");
-    expect(actionStep(review).with.prompt).toContain("GitHub URL");
-    expect(actionStep(review).with.track_progress).toBe("true");
-    expect(actionStep(review).with.codex_args).toContain(
-      '--allowedTools "mcp__github_inline_comment__create_inline_comment"',
-    );
+    expect(actionStep(review).with.prompt).toContain("native review schema");
+    expect(actionStep(review).with.review_mode).toBe("true");
+    expect(actionStep(review).with.track_progress).toBeUndefined();
+    expect(actionStep(review).with.codex_args).toBeUndefined();
     expect(actionStep(review).with.prompt.toLowerCase()).toContain("review");
     expect(actionStep(review).with.prompt).toContain(
       `Read the prepared patch in ${REVIEW_DIFF_PATH} first`,

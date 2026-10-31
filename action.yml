@@ -125,6 +125,9 @@ inputs:
     description: "GitHub username for git operations and sticky comments with a custom token"
     required: false
     default: ""
+  review_mode:
+    description: "Publish a native COMMENT review with inline findings and expandable evidence (pull_request events only; incompatible with track_progress)"
+    default: "false"
   track_progress:
     description: "Force tag mode with tracking comments for pull_request and issue events. Only applicable to pull_request (opened, synchronize, ready_for_review, reopened, labeled) and issue (opened, edited, labeled, assigned) events."
     required: false
@@ -254,6 +257,9 @@ inputs:
     default: ""
 
 outputs:
+  review_url:
+    description: "URL of the native COMMENT review published by review_mode"
+    value: ${{ steps.run.outputs.review_url }}
   skipped_due_to_fork:
     description: "True when execution was skipped because the request targets a fork PR"
     value: ${{ steps.run.outputs.skipped_due_to_fork }}
@@ -370,6 +376,7 @@ runs:
         SSH_SIGNING_KEY: ${{ inputs.ssh_signing_key }}
         BOT_ID: ${{ inputs.bot_id }}
         BOT_NAME: ${{ inputs.bot_name || 'github-actions[bot]' }}
+        REVIEW_MODE: ${{ inputs.review_mode }}
         TRACK_PROGRESS: ${{ inputs.track_progress }}
         ALL_INPUTS: ${{ toJson(inputs) }}
         MAX_TURNS: ${{ inputs.max_turns }}
