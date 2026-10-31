@@ -25,23 +25,35 @@ export type ReviewLocation = {
 const text = z.string().trim().min(1).max(12000);
 export const reviewSchema = z.strictObject({
   summary: text.describe(
-    "A concise plain-text review conclusion, without a list of findings",
+    "Review outcome only: one plain-text sentence, aiming for at most 15 words; do not repeat patch changes or list findings",
   ),
   walkthrough: text.describe(
-    "Plain-text explanation of what the PR changes and how the resulting behavior works",
+    "Main behavior change in one plain-text sentence, aiming for at most 35 words; omit implementation detail and the review outcome",
   ),
   changes: z
     .array(
       z.strictObject({
-        area: z.string().trim().min(1).max(120),
-        description: z.string().trim().min(1).max(2000),
+        area: z
+          .string()
+          .trim()
+          .min(1)
+          .max(120)
+          .describe("A 2–4 word area label"),
+        description: z
+          .string()
+          .trim()
+          .min(1)
+          .max(2000)
+          .describe(
+            "One direct sentence, aiming for at most 18 words; describe the behavior without repeating the walkthrough",
+          ),
         files: z.array(z.string().trim().min(1).max(500)).max(100),
       }),
     )
     .min(1)
     .max(8)
     .describe(
-      "Group related changes by behavior or subsystem, not one row per file",
+      "Use 2–4 groups for a broad patch or one for a small patch; up to three representative file paths per group",
     ),
   risk: z.strictObject({
     level: z.enum(["low", "moderate", "high"]),
@@ -159,8 +171,8 @@ export function renderReview(
     escapeHtml(clean(value)).replace(/\r?\n/g, "<br>");
   const changes = review.changes
     .map((change) => {
-      const visibleFiles = change.files.slice(0, 6);
-      const remainingFiles = change.files.slice(6);
+      const visibleFiles = change.files.slice(0, 3);
+      const remainingFiles = change.files.slice(3);
       const files = visibleFiles.length
         ? `<br><sub>${visibleFiles.map((file) => `<code>${html(file)}</code>`).join(" · ")}</sub>`
         : "";

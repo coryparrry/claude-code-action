@@ -255,7 +255,12 @@ describe("Claude-style review presentation", () => {
     };
     expect(reviewSchema.safeParse(broad).success).toBe(true);
     const body = renderReview(broad, head);
-    expect(body).toContain("<summary>6 more files</summary>");
+    expect(body).toContain("<summary>9 more files</summary>");
+    const visibleOverview = body.split("<details>")[0]!;
+    for (const file of files.slice(0, 3))
+      expect(visibleOverview).toContain(`<code>${file}</code>`);
+    for (const file of files.slice(3))
+      expect(visibleOverview).not.toContain(`<code>${file}</code>`);
     expect(body).not.toContain("<details open>");
     for (const file of files) expect(body).toContain(`<code>${file}</code>`);
     const api = fixture();

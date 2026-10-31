@@ -12,7 +12,7 @@ One native review summary
 Each finding is its own inline comment, marked red for a bug, yellow for an
 optional suggestion or purple for a pre-existing defect. The title and impact
 are visible; supporting evidence and verification expand inside that comment.
-The main summary leads with a **Walkthrough** explaining what changed, then the review outcome and **Changes** grouped by behavior or subsystem. A small flow diagram appears only when a real sequential flow helps explain the change. Merge-risk evidence and review scope/verification stay collapsed, followed by the reviewed-commit footer. Individual issues remain in their own inline comments.
+The main summary leads with a one-sentence **Walkthrough**, a short review outcome and **Changes** grouped by behavior or subsystem. Writing targets are 35 words for the walkthrough, 15 for the outcome and 18 per change description, usually across two to four groups. Three representative paths are visible per group; additional paths stay expandable. These targets do not truncate evidence or make otherwise valid reviews fail. A small flow diagram uses short labels only when a real sequential flow helps explain the change. Merge-risk evidence and review scope/verification stay collapsed, followed by the reviewed-commit footer. Individual issues remain in their own inline comments.
 
 The unboxed summary uses original SVG section icons, a code-inspection badge and
 an inspection-risk badge, with light and dark variants selected through GitHub's
@@ -67,7 +67,7 @@ Existing installations need the updated source pin.
 ## Summary data and verification
 
 The structured result includes `walkthrough`, grouped `changes` (area, description
-and file paths; lists over six paths expand separately), an inspection-based `risk` (low/moderate/high plus evidence), and
+and file paths; lists over three paths expand separately), an inspection-based `risk` (low/moderate/high plus evidence), and
 `flow` (null or two to eight short sequential step labels). These are returned with
 the existing conclusion, inspected scope, reasoning and individual findings.
 
