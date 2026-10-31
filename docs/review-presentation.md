@@ -28,7 +28,7 @@ model report alone does not prove review delivery; use the action conclusion
 and `review_url` output.
 
 ```yaml
-- uses: coryparrry/claude-code-action@db409d4fc95d72217fe4522db1e30f4766003a3a
+- uses: coryparrry/claude-code-action@65b09b2a13dff009d2fdfea98bb72878b3b60e15
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     review_mode: "true"
