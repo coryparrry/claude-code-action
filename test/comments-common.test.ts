@@ -55,6 +55,12 @@ describe("comments/common", () => {
       expect(body).toContain(SPINNER_HTML);
       expect(body).toContain("Codex is working…");
       expect(body).toContain(jobRunLink);
+      expect(body).toContain("- [ ] Read the request and repository context");
+      expect(body).toContain("- [ ] Work on the requested task");
+      expect(body).toContain("- [ ] Report results");
+      expect(body).toContain("<details open>");
+      expect(body).toContain("<summary>Preparing the task</summary>");
+      expect(body).not.toContain("<progress");
     });
 
     test("omits the branch link when none is provided (defaults to empty)", () => {

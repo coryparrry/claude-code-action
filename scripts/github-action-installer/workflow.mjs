@@ -1,15 +1,14 @@
 export const WORKFLOW_PATH = ".github/workflows/codex.yml";
 export const MANAGED_MARKER = "# Managed by the Codex GitHub Action installer.";
 export const DEFAULT_ACTION_REF =
-  "coryparrry/claude-code-action@2280ffca83bedda2c1c3480ee4f53dd492cb88d2";
+  "coryparrry/claude-code-action@07d0a94badb76002d5e143806b32f96e0a9d2c6d";
 export const DEFAULT_MODEL = "gpt-6-luna";
 export const DEFAULT_TRIGGER_PHRASE = "/codex";
 export const REVIEW_DIFF_PATH = ".git/codex-review.diff";
 export const AUTOMATIC_REVIEW_PROMPT = `Review this pull request for code quality, bugs, security and performance issues.
 Read the prepared patch in ${REVIEW_DIFF_PATH} first; it includes removed lines as well as additions.
-Use the repository and PR context. Provide actionable inline feedback and a summary.
-For final inline findings, call mcp__github_inline_comment__create_inline_comment with confirmed: true, using verified paths, line numbers and sides from the patch.
-If GitHub rejects a comment, correct its location and retry, or explain the finding in the summary. Claim an inline comment was posted only after the tool returns its GitHub URL.
+Use the repository and PR context. Return actionable findings and a concise summary together.
+Return verified findings using the native review schema. The action submits one native review summary with a separate coloured inline comment for each finding at its own code location. Do not create severity-specific reviews or a combined findings comment.
 Do not edit files, commit changes or implement fixes during this review.
 The author can request an implementation in a comment with ${DEFAULT_TRIGGER_PHRASE}.`;
 
@@ -134,10 +133,8 @@ jobs:
           codex_model: ${JSON.stringify(model)}
           codex_effort: low
           max_turns: "30"
-          track_progress: "true"
+          review_mode: "true"
           codex_sandbox: read-only
-          codex_args: >-
-            --allowedTools "mcp__github_inline_comment__create_inline_comment"
           prompt: |
             ${AUTOMATIC_REVIEW_PROMPT.replaceAll("\n", "\n            ")}
       - name: Save execution report
