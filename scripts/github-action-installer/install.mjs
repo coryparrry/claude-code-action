@@ -6,14 +6,15 @@ import {
   validateRepository,
 } from "./workflow.mjs";
 
+/** Resolve canonical repository identity and plan a safe, repeatable workflow installation. */
 export async function planInstallation(
   client,
   { repository, actors, runner, model, replaceSecret = false },
 ) {
   validateRepository(repository);
-  const workflow = renderWorkflow({ actors, runner, model });
   const metadata = await client.repository(repository);
   repository = validateRepository(metadata.nameWithOwner ?? repository);
+  const workflow = renderWorkflow({ repository, actors, runner, model });
   if (metadata.isArchived)
     throw new Error("Archived repositories cannot be configured.");
   if (!["ADMIN", "MAINTAIN", "WRITE"].includes(metadata.viewerPermission))
@@ -80,6 +81,7 @@ export async function planInstallation(
   return { ...plan, baseSha };
 }
 
+/** Apply a reviewed installation plan while preserving existing secrets and pending setup PRs. */
 export async function applyInstallation(
   client,
   plan,

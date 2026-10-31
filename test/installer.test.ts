@@ -32,11 +32,13 @@ import { Terminal } from "../scripts/github-action-installer/terminal.mjs";
 import { runCli } from "../scripts/install-github-app.mjs";
 
 const defaultOptions = {
+  repository: "octo/demo",
   actors: ["trusted-user"],
   runner: "ubuntu-latest",
   model: DEFAULT_MODEL,
 };
 
+/** Evaluate the supported GitHub condition subset against a synthetic event. */
 function evaluateWorkflowCondition(
   condition: string,
   event: Record<string, any>,
@@ -56,6 +58,7 @@ function evaluateWorkflowCondition(
   );
 }
 
+/** Build canonical repository metadata for installer API fixtures. */
 function repository(overrides: Record<string, any> = {}) {
   return {
     nameWithOwner: "octo/demo",
@@ -67,6 +70,7 @@ function repository(overrides: Record<string, any> = {}) {
   };
 }
 
+/** Record installer API calls and return configurable repository fixtures. */
 function fakeClient(overrides: Record<string, any> = {}): {
   client: Record<string, any>;
   calls: any[][];
@@ -106,6 +110,98 @@ function fakeClient(overrides: Record<string, any> = {}): {
 }
 
 describe("guided GitHub Action workflow", () => {
+  test.each(["generated", "installed"])(
+    "%s workflow skips copied repositories and external review heads",
+    async (source) => {
+      const target =
+        source === "generated" ? "octo/demo" : "coryparrry/claude-code-action";
+      const workflow = parse(
+        source === "generated"
+          ? renderWorkflow(defaultOptions)
+          : await readFile(
+              new URL("../.github/workflows/codex.yml", import.meta.url),
+              "utf8",
+            ),
+      );
+      const actor = source === "generated" ? "trusted-user" : "coryparrry";
+      /** Build command or review events with independently selectable repository origins. */
+      const event = (
+        event_name: string,
+        repository = target,
+        head = repository,
+      ) => ({
+        actor,
+        event_name,
+        repository,
+        event: {
+          comment: { body: "/codex inspect" },
+          review: { body: "/codex inspect" },
+          issue: { title: "/codex inspect", body: "" },
+          pull_request: event_name.startsWith("pull_request")
+            ? { draft: false, head: { repo: { full_name: head } } }
+            : undefined,
+        },
+      });
+      for (const eventName of [
+        "issues",
+        "issue_comment",
+        "pull_request_review",
+        "pull_request_review_comment",
+      ]) {
+        expect(
+          evaluateWorkflowCondition(workflow.jobs.codex.if, event(eventName)),
+        ).toBe(true);
+        expect(
+          evaluateWorkflowCondition(
+            workflow.jobs.codex.if,
+            event(eventName, "outsider/copied"),
+          ),
+        ).toBe(false);
+        if (eventName.startsWith("pull_request")) {
+          expect(
+            evaluateWorkflowCondition(
+              workflow.jobs.codex.if,
+              event(eventName, target, "outsider/fork"),
+            ),
+          ).toBe(false);
+          const deletedHead = event(eventName);
+          // GitHub expression missing properties evaluate as null; represent that
+          // as an empty object for the JavaScript condition evaluator.
+          deletedHead.event.pull_request!.head.repo = {} as any;
+          expect(
+            evaluateWorkflowCondition(workflow.jobs.codex.if, deletedHead),
+          ).toBe(false);
+        }
+      }
+      expect(
+        evaluateWorkflowCondition(
+          workflow.jobs.codex_review.if,
+          event("pull_request"),
+        ),
+      ).toBe(true);
+      expect(
+        evaluateWorkflowCondition(
+          workflow.jobs.codex_review.if,
+          event("pull_request", "outsider/copied"),
+        ),
+      ).toBe(false);
+      expect(
+        evaluateWorkflowCondition(
+          workflow.jobs.codex_review.if,
+          event("pull_request", target, "outsider/fork"),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  test("requires a valid repository binding", () => {
+    for (const repository of [undefined, "", "owner/repo' || true || '"]) {
+      expect(() => renderWorkflow({ ...defaultOptions, repository })).toThrow(
+        "owner/repository",
+      );
+    }
+  });
+
   test.each(["generated", "installed"])(
     "%s workflow retains available reports after success or failure",
     async (source) => {
@@ -217,6 +313,7 @@ describe("guided GitHub Action workflow", () => {
   test("allows multiple trusted actors and macOS runner, while pinning the action", () => {
     const workflow = parse(
       renderWorkflow({
+        repository: "octo/demo",
         actors: ["alice", "bob-2"],
         runner: "macos-latest",
         model: "gpt-6.1",
@@ -241,6 +338,7 @@ describe("guided GitHub Action workflow", () => {
     const workflow = parse(renderWorkflow(defaultOptions));
     const command = workflow.jobs.codex;
     const review = workflow.jobs.codex_review;
+    /** Locate the pinned action invocation within a generated job. */
     const actionStep = (job: any) =>
       job.steps.find((step: any) => step.uses === DEFAULT_ACTION_REF);
 
@@ -266,6 +364,7 @@ describe("guided GitHub Action workflow", () => {
     expect(commandCondition).not.toContain(
       "github.event_name == 'pull_request'",
     );
+    /** Build a same-repository event for command trigger routing checks. */
     const commandEvent = (event_name: string) => ({
       actor: "trusted-user",
       event_name,
@@ -416,15 +515,15 @@ describe("guided GitHub Action workflow", () => {
     ]) {
       expect(() => validateActor(value)).toThrow();
     }
-    expect(() => renderWorkflow({ actors: [] })).toThrow(
+    expect(() => renderWorkflow({ ...defaultOptions, actors: [] })).toThrow(
       "Select at least one trusted actor",
     );
     expect(() =>
-      renderWorkflow({ actors: ["trusted-user"], runner: "self-hosted" }),
+      renderWorkflow({ ...defaultOptions, runner: "self-hosted" }),
     ).toThrow();
     expect(() =>
       renderWorkflow({
-        actors: ["trusted-user"],
+        ...defaultOptions,
         model: "model\n  permissions: write",
       }),
     ).toThrow();
@@ -433,6 +532,18 @@ describe("guided GitHub Action workflow", () => {
 });
 
 describe("installation planning and application", () => {
+  test("binds the workflow to GitHub's canonical installation repository", async () => {
+    const { client } = fakeClient({
+      repository: repository({ nameWithOwner: "renamed/project" }),
+    });
+    const plan = await planInstallation(client, defaultOptions);
+    expect(plan.repository).toBe("renamed/project");
+    for (const job of Object.values(parse(plan.workflow).jobs) as any[]) {
+      expect(job.if).toContain("github.repository == 'renamed/project'");
+      expect(job.if).not.toContain("github.repository == 'octo/demo'");
+    }
+  });
+
   test("requires an active repository, write access, and an initialized default branch", async () => {
     for (const repo of [
       repository({ isArchived: true }),
@@ -442,7 +553,6 @@ describe("installation planning and application", () => {
       const { client } = fakeClient({ repository: repo });
       await expect(
         planInstallation(client, {
-          repository: "octo/demo",
           ...defaultOptions,
         }),
       ).rejects.toThrow();
@@ -454,7 +564,7 @@ describe("installation planning and application", () => {
       workflow: { sha: "abc", content: "name: user's workflow\n" },
     });
     await expect(
-      planInstallation(client, { repository: "octo/demo", ...defaultOptions }),
+      planInstallation(client, { ...defaultOptions }),
     ).rejects.toThrow(WORKFLOW_PATH);
     expect(calls.some(([name]) => name === "head")).toBe(false);
   });
@@ -466,7 +576,6 @@ describe("installation planning and application", () => {
       secrets: [{ name: "OPENAI_API_KEY" }],
     });
     const plan = await planInstallation(client, {
-      repository: "octo/demo",
       ...defaultOptions,
     });
     expect(plan).toMatchObject({
@@ -485,7 +594,6 @@ describe("installation planning and application", () => {
   test("plans and opens a draft setup PR, passing the API key only through stdin", async () => {
     const { client, calls } = fakeClient();
     const plan = await planInstallation(client, {
-      repository: "octo/demo",
       ...defaultOptions,
     });
     expect(plan).toMatchObject({
@@ -553,7 +661,6 @@ describe("installation planning and application", () => {
       return ref === "main" ? null : { sha: "pending-sha", content: workflow };
     };
     const plan = await planInstallation(client, {
-      repository: "octo/demo",
       ...defaultOptions,
     });
     expect(plan).toMatchObject({
@@ -583,6 +690,7 @@ describe("installation planning and application", () => {
       },
     ];
     const workflow = renderWorkflow(defaultOptions);
+    /** Create an installer client with an existing setup PR and configurable diff. */
     const makePendingClient = (
       content: string,
       files: { filename: string }[],
@@ -602,7 +710,7 @@ describe("installation planning and application", () => {
           { filename: WORKFLOW_PATH },
           { filename: "README.md" },
         ]),
-        { repository: "octo/demo", ...defaultOptions },
+        { ...defaultOptions },
       ),
     ).rejects.toThrow("other changes");
     await expect(
@@ -611,7 +719,7 @@ describe("installation planning and application", () => {
           renderWorkflow({ ...defaultOptions, actors: ["someone-else"] }),
           [{ filename: WORKFLOW_PATH }],
         ),
-        { repository: "octo/demo", ...defaultOptions },
+        { ...defaultOptions },
       ),
     ).rejects.toThrow("different settings");
   });
@@ -634,7 +742,7 @@ describe("installation planning and application", () => {
       files: [{ filename: ".github/workflows/other.yml" }],
     });
     await expect(
-      planInstallation(client, { repository: "octo/demo", ...defaultOptions }),
+      planInstallation(client, { ...defaultOptions }),
     ).rejects.toThrow("other changes");
   });
 
@@ -654,7 +762,6 @@ describe("installation planning and application", () => {
           ? null
           : { sha: "fork-workflow", content: renderWorkflow(defaultOptions) };
       const plan = await planInstallation(client, {
-        repository: "octo/demo",
         ...defaultOptions,
       });
       expect(plan.status).toBe("new");
@@ -668,7 +775,6 @@ describe("installation planning and application", () => {
   test("requires a key when needed and rejects unsafe branch names", async () => {
     const { client, calls } = fakeClient();
     const plan = await planInstallation(client, {
-      repository: "octo/demo",
       ...defaultOptions,
     });
     await expect(applyInstallation(client, plan)).rejects.toThrow(
@@ -689,7 +795,6 @@ describe("installation planning and application", () => {
       throw new Error("gh leaked sk-test-secret");
     };
     const plan = await planInstallation(client, {
-      repository: "octo/demo",
       ...defaultOptions,
     });
     await expect(
@@ -709,7 +814,6 @@ describe("installation planning and application", () => {
   test("reuses a secret added during review unless replacement was requested", async () => {
     const normal = fakeClient();
     const normalPlan = await planInstallation(normal.client, {
-      repository: "octo/demo",
       ...defaultOptions,
     });
     normal.client.secrets = async (repo: string) => {
@@ -724,7 +828,6 @@ describe("installation planning and application", () => {
 
     const replacement = fakeClient();
     const replacementPlan = await planInstallation(replacement.client, {
-      repository: "octo/demo",
       ...defaultOptions,
       replaceSecret: true,
     });
@@ -981,6 +1084,7 @@ process.exit(2);
       import.meta.dir,
       "../scripts/install-github-app.mjs",
     );
+    /** Run the installer CLI against the isolated fake GitHub executable. */
     const invoke = (args: string[], extraEnv: NodeJS.ProcessEnv = {}) =>
       spawnSync(process.execPath, [installer, ...args], {
         cwd,

@@ -12,6 +12,7 @@ Return verified findings using the native review schema. The action submits one 
 Do not edit files, commit changes or implement fixes during this review.
 The author can request an implementation in a comment with ${DEFAULT_TRIGGER_PHRASE}.`;
 
+/** Reject repository names that could escape a workflow expression or GitHub path. */
 export function validateRepository(value) {
   if (
     !/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+$/.test(value ?? "") ||
@@ -21,18 +22,22 @@ export function validateRepository(value) {
   return value;
 }
 
+/** Validate a trusted GitHub login before embedding it in a job condition. */
 export function validateActor(value) {
   if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(value ?? ""))
     throw new Error("Use a GitHub username for each trusted actor.");
   return value;
 }
 
+/** Render repository-bound command and review jobs for the selected installation. */
 export function renderWorkflow({
+  repository,
   actors,
   runner = "ubuntu-latest",
   model = DEFAULT_MODEL,
 }) {
   if (!actors?.length) throw new Error("Select at least one trusted actor.");
+  validateRepository(repository);
   actors.forEach(validateActor);
   if (!["ubuntu-latest", "macos-latest"].includes(runner))
     throw new Error("Choose ubuntu-latest or macos-latest for the runner.");
@@ -65,6 +70,9 @@ permissions:
 jobs:
   codex:
     if: >-
+      github.repository == '${repository}' &&
+      (!github.event.pull_request ||
+        github.event.pull_request.head.repo.full_name == github.repository) &&
       (${actorCheck}) &&
       (
         ((github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') &&
@@ -101,6 +109,7 @@ jobs:
 
   codex_review:
     if: >-
+      github.repository == '${repository}' &&
       github.event_name == 'pull_request' &&
       (${actorCheck}) &&
       !github.event.pull_request.draft &&

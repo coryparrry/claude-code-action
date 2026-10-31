@@ -21,16 +21,19 @@ import { RunContext, type FunctionTool } from "@openai/agents";
 
 const temporaryDirectories: string[] = [];
 
+/** Run fixture Git commands and return their trimmed output. */
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 }
 
+/** Parse generated YAML for assertions against the automatic review job. */
 function workflowYaml(source: string): any {
   return (
     Bun as unknown as { YAML: { parse: (yaml: string) => any } }
   ).YAML.parse(source);
 }
 
+/** Create diverged base and feature histories for three-dot review patch checks. */
 async function createPullRequestHistory(): Promise<{
   directory: string;
   baseSha: string;
@@ -78,7 +81,9 @@ afterEach(async () => {
 describe("generated automatic review patch", () => {
   test("captures base-to-head additions, removals, and deletions without base-only changes", async () => {
     const { directory, baseSha, headSha } = await createPullRequestHistory();
-    const workflow = workflowYaml(renderWorkflow({ actors: ["trusted-user"] }));
+    const workflow = workflowYaml(
+      renderWorkflow({ repository: "octo/demo", actors: ["trusted-user"] }),
+    );
     const review = workflow.jobs.codex_review;
     const checkout = review.steps.find(
       (step: any) => step.uses === "actions/checkout@v6",
@@ -144,6 +149,7 @@ describe("generated automatic review patch", () => {
       sandboxMode: "read-only",
       permissions,
     });
+    /** Invoke a selected agent tool within the configured test permission boundary. */
     const invoke = async (name: string, input: Record<string, unknown>) => {
       const selected = tools.find((tool) => tool.name === name) as FunctionTool;
       return selected.invoke(new RunContext(), JSON.stringify(input));
