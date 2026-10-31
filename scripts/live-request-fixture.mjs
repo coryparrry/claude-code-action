@@ -14,6 +14,14 @@ const api = (path, args = []) =>
   );
 const mode = process.argv[2];
 if (mode === "prepare") {
+  const bun = execFileSync("which", ["bun"], { encoding: "utf8" }).trim();
+  writeFileSync(
+    join(temp, "live-bun"),
+    '#!/bin/sh\nexport GITHUB_EVENT_NAME="$LIVE_EVENT_NAME"\nexport GITHUB_EVENT_PATH="$LIVE_EVENT_PATH"\nexec "' +
+      bun +
+      '" "$@"\n',
+    { mode: 0o700 },
+  );
   const repository = JSON.parse(
     execFileSync("gh", ["api", root], { encoding: "utf8" }),
   );

@@ -6,7 +6,7 @@ permissions:
   contents: read
 jobs:
   fixture-check:
-    if: github.head_ref == 'codex/live-request-workflows'
+    if: github.head_ref == 'codex/live-request-workflows' && github.event.action != 'labeled'
     name: Live request fixture CI
     runs-on: ubuntu-latest
     steps:
@@ -44,9 +44,10 @@ jobs:
         id: diagnosis
         uses: ./
         env:
-          GITHUB_EVENT_NAME: issue_comment
-          GITHUB_EVENT_PATH: ${{ runner.temp }}/live-diagnosis.json
+          LIVE_EVENT_NAME: issue_comment
+          LIVE_EVENT_PATH: ${{ runner.temp }}/live-diagnosis.json
         with:
+          path_to_bun_executable: ${{ runner.temp }}/live-bun
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           trigger_phrase: /verify-codex
           codex_model: gpt-6.1-terra
@@ -63,9 +64,10 @@ jobs:
         id: issue
         uses: ./
         env:
-          GITHUB_EVENT_NAME: issues
-          GITHUB_EVENT_PATH: ${{ runner.temp }}/live-issue.json
+          LIVE_EVENT_NAME: issues
+          LIVE_EVENT_PATH: ${{ runner.temp }}/live-issue.json
         with:
+          path_to_bun_executable: ${{ runner.temp }}/live-bun
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           trigger_phrase: /verify-codex
           codex_model: gpt-6.1-terra
@@ -89,9 +91,10 @@ jobs:
         id: inline
         uses: ./
         env:
-          GITHUB_EVENT_NAME: pull_request_review_comment
-          GITHUB_EVENT_PATH: ${{ runner.temp }}/live-inline.json
+          LIVE_EVENT_NAME: pull_request_review_comment
+          LIVE_EVENT_PATH: ${{ runner.temp }}/live-inline.json
         with:
+          path_to_bun_executable: ${{ runner.temp }}/live-bun
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           trigger_phrase: /verify-codex
           codex_model: gpt-6.1-terra
