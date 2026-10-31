@@ -52,7 +52,7 @@ no approval, request-changes or merge capability. Use the action conclusion and
 `review_url` output to verify delivery.
 
 ```yaml
-- uses: coryparrry/claude-code-action@a41ba839c8e4236e825332c5bae0357f94b2e8d7
+- uses: coryparrry/claude-code-action@728de09852182f3fe320b078b67f31ac4aa9a4f0
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     review_mode: "true"
