@@ -203,29 +203,30 @@ describe("Claude-style review presentation", () => {
     expect(body).toEndWith(INLINE_REVIEW_MARKER);
   });
 
-  test("renders a visible HTML summary card without duplicating individual issues", () => {
+  test("renders an unboxed HTML summary with visible coverage and a small revision footer", () => {
     const body = renderReview(review, head, target);
-    expect(body).toContain("<table>");
-    expect(body).toContain('<td colspan="3"><h3>Codex review</h3>');
+    expect(body).not.toContain("<table");
+    expect(body).toStartWith("<h3>Codex review</h3>");
     expect(body).toContain(`<p>${review.summary}</p>`);
     expect(body).toContain(
       `<a href="https://github.com/owner/repo/commit/${head}"><code>aaaaaaa</code></a>`,
     );
-    expect(body).toContain("<sub>Coverage</sub><br><strong>1 area</strong>");
     expect(body).toContain(
-      "<sub>Inline comments</sub><br><strong>1 finding</strong>",
+      "<details open>\n<summary>What was reviewed</summary>",
     );
+    expect(body).toContain("<p><sub>Reviewed commit ");
+    expect(body).not.toContain("Inline comments");
     expect(body).not.toContain(finding.title);
     expect(body).not.toContain(finding.body);
     const noFindings = renderReview(
       { ...review, reviewed: ["Area A", "Area B"], findings: [] },
       head,
     );
-    expect(noFindings).toContain("<strong>2 areas</strong>");
-    expect(noFindings).toContain("<strong>0 findings</strong>");
+    expect(noFindings).toContain("- [x] Area A\n- [x] Area B");
+    expect(noFindings).not.toContain("findings</strong>");
   });
 
-  test("model text cannot break the HTML summary card or its review marker", () => {
+  test("model text cannot inject HTML into the unboxed summary or its review marker", () => {
     const body = renderReview(
       {
         ...review,
@@ -237,7 +238,7 @@ describe("Claude-style review presentation", () => {
     expect(body).toContain(
       "A &lt;table&gt; &amp; &quot;quoted&quot; conclusion.<br>Second line. &lt;/td&gt;&lt;script&gt;alert(1)&lt;/script&gt;",
     );
-    expect(body.match(/<table>/g)).toHaveLength(1);
+    expect(body).not.toContain("<table>");
     expect(body).not.toContain("<script>");
     expect(reviewHead(body)).toBe(head);
   });

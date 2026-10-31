@@ -125,6 +125,12 @@ Independent frozen production installs also passed with the patched dependency
 graph: root installed 235 packages and base installed 186; both completed the
 offline SDK smoke run.
 
+### 2026-10-31 unboxed HTML summary
+
+Replaced the summary table with the selected unboxed layout: short conclusion, coverage expanded by default, collapsed review details and a small reviewed-commit footer. Removed the metadata grid and counters. Separate coloured inline findings, safe HTML escaping and review identity markers remain intact.
+
+Verification: 89 tests passed, 0 failed, with 398 assertions across eight scoped files. Root TypeScript, scoped Prettier and diff checks passed. The existing live review preview was updated in place and visually inspected in Chrome; it shows the conclusion, open coverage and subtle footer without a table. The actual bot workflow is selected through the updated immutable action pin.
+
 ### 2026-10-31 visible HTML review summary
 
 The main native review now renders a publisher-owned HTML summary card with a visible conclusion and a metadata row for reviewed commit, inspected areas and inline finding count. Coverage and review details remain expandable below it. Findings remain separate coloured inline comments; the card does not list their titles or evidence. Model conclusion text is escaped before insertion into HTML.

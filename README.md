@@ -4,7 +4,7 @@ A fork of [Anthropic's Claude Code Action](https://github.com/anthropics/claude-
 
 This is an independent adaptation, not an official OpenAI or Anthropic release. The upstream MIT copyright and license notices are retained in [LICENSE](LICENSE).
 
-Automatic reviews keep GitHub’s native review layout: a rendered HTML summary card and a separate coloured inline comment for each issue, with expandable evidence and code-location links. See [review presentation](docs/review-presentation.md) for the format and named-bot setup.
+Automatic reviews keep GitHub’s native review layout: an unboxed HTML summary and a separate coloured inline comment for each issue, with expandable evidence and code-location links. See [review presentation](docs/review-presentation.md) for the format and named-bot setup.
 
 ## Quickstart
 

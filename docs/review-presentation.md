@@ -12,7 +12,7 @@ One native review summary
 Each finding is its own inline comment, marked red for a bug, yellow for an
 optional suggestion or purple for a pre-existing defect. The title and impact
 are visible; supporting evidence and verification expand inside that comment.
-The main summary uses a GitHub-rendered HTML card: the review conclusion is visible above a metadata row showing the reviewed commit, inspected area count and inline finding count. Coverage and review details remain expandable below. Individual issues are never duplicated inside the card.
+The main summary uses unboxed GitHub-supported HTML: a short review conclusion, coverage open by default, collapsed supporting review details and a small reviewed-commit footer. It has no table, dashboard counters or combined findings list. Individual issues remain in their own inline comments.
 There is no combined findings comment and no separate review per severity.
 
 One API call submits the summary and all individual inline comments together.

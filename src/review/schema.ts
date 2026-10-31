@@ -105,6 +105,7 @@ export function renderReview(
   const coverage = renderDetails(
     "What was reviewed",
     review.reviewed.map((item) => `- [x] ${clean(item)}`).join("\n"),
+    true,
   );
   const evidence = renderDetails("Review details", clean(review.reasoning));
   const revision = location
@@ -114,15 +115,7 @@ export function renderReview(
     /\r?\n/g,
     "<br>",
   );
-  const areas = `${review.reviewed.length} ${review.reviewed.length === 1 ? "area" : "areas"}`;
-  const findings = `${review.findings.length} ${review.findings.length === 1 ? "finding" : "findings"}`;
-  const card = `<table>
-<tr><td colspan="3"><h3>Codex review</h3><p>${conclusion}</p></td></tr>
-<tr>
-<td><sub>Reviewed commit</sub><br>${revision}</td>
-<td><sub>Coverage</sub><br><strong>${areas}</strong></td>
-<td><sub>Inline comments</sub><br><strong>${findings}</strong></td>
-</tr>
-</table>`;
-  return `${card}\n\n${coverage}\n\n${evidence}\n\n<!-- codex-action:review:${head} -->\n${INLINE_REVIEW_MARKER}`;
+  const summary = `<h3>Codex review</h3>\n<p>${conclusion}</p>`;
+  const footer = `<p><sub>Reviewed commit ${revision}</sub></p>`;
+  return `${summary}\n\n${coverage}\n\n${evidence}\n\n${footer}\n\n<!-- codex-action:review:${head} -->\n${INLINE_REVIEW_MARKER}`;
 }
