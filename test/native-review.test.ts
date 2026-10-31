@@ -162,11 +162,11 @@ describe("Claude-style review presentation", () => {
     const body = renderReview(review, head);
     expect(body).toContain("Findings marked 🟡 are optional suggestions");
     expect(body).toContain(
-      "What was reviewed:\n- Account selection and cache lookup",
+      "What was reviewed:\n- [x] Account selection and cache lookup",
     );
     expect(body).toContain("<summary>Extended reasoning...</summary>");
     expect(body).not.toContain("finished");
-    expect(body).not.toContain("[x]");
+    expect(body).not.toContain("- [ ]");
   });
 
   test("validates required evidence, diff sides and positive integer lines", () => {

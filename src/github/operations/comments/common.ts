@@ -4,6 +4,16 @@ import { GITHUB_SERVER_URL } from "../../api/config";
 export const SPINNER_HTML =
   '<img src="https://github.com/user-attachments/assets/5ac382c7-e004-429b-8e35-7feb3e8f9c6f" width="14px" height="14px" style="vertical-align: middle; margin-left: 4px;" />';
 export const CODEX_COMMENT_MARKER = "<!-- codex-action:tracking -->";
+export const INITIAL_PROGRESS_BODY = `- [ ] Read the request and repository context
+- [ ] Work on the requested task
+- [ ] Report results
+
+<details open>
+<summary>Preparing the task</summary>
+
+Loading the request and repository context.
+
+</details>`;
 
 export function createJobRunLink(
   owner: string,
@@ -34,7 +44,7 @@ export function createCommentBody(
 ): string {
   return `${getRuntimeInstructions().product} is working… ${SPINNER_HTML}
 
-I'll analyze this and get back to you.
+${INITIAL_PROGRESS_BODY}
 
 ${jobRunLink}${branchLink}\n\n${CODEX_COMMENT_MARKER}`;
 }

@@ -42,6 +42,25 @@ patch as in the generated workflow. `review_mode` is incompatible with
 comments. Existing installed workflows need an updated action revision and
 `review_mode: "true"` to use this presentation.
 
+## Native progress display
+
+Interactive tasks start with GitHub task checkboxes, an animated spinner and an
+expanded current-step section. The agent replaces the generic checklist with
+task-specific steps and records observed results inside expandable sections.
+The initial loading template is removed during finalization, including failures.
+Native review summaries show completed coverage checkboxes alongside their
+existing evidence disclosures.
+
+The [live rendering test](https://github.com/coryparrry/claude-code-action/pull/6#issuecomment-6546724109)
+confirmed these components render on GitHub. GitHub removed the HTML `progress`
+element. An edit appeared without a reload in a signed-in session, but later
+edits needed a refresh. The comment API saves updates; it has no option to force
+an open PR page to re-render. This layout remains readable when live refresh is
+delayed, without relying on browser-side code or precise progress percentages.
+
+`review_mode` publishes its native review after inference. Interactive progress
+comments use the existing tag-mode comment tools.
+
 ## Bot identity
 
 GitHub determines the review author from the token. The default workflow token

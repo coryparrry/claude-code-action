@@ -56,5 +56,5 @@ export function renderReview(
   const legend = review.findings.length
     ? "Findings marked 🟡 are optional suggestions and need no follow-up push.\n\n"
     : "";
-  return `${legend}${summary}\n\nWhat was reviewed:\n${review.reviewed.map((item) => `- ${clean(item)}`).join("\n")}\n\n<details>\n<summary>Extended reasoning...</summary>\n\n${clean(review.reasoning)}\n\n</details>\n\n<!-- codex-action:review:${head} -->`;
+  return `${legend}${summary}\n\nWhat was reviewed:\n${review.reviewed.map((item) => `- [x] ${clean(item)}`).join("\n")}\n\n<details>\n<summary>Extended reasoning...</summary>\n\n${clean(review.reasoning)}\n\n</details>\n\n<!-- codex-action:review:${head} -->`;
 }

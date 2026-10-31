@@ -1,7 +1,10 @@
 import { getRuntimeInstructions } from "../../create-prompt/runtime-instructions";
 import { GITHUB_SERVER_URL } from "../api/config";
 import { redactSecrets } from "../utils/sanitizer";
-import { encodeBranchNameForUrl } from "./comments/common";
+import {
+  encodeBranchNameForUrl,
+  INITIAL_PROGRESS_BODY,
+} from "./comments/common";
 
 export type ExecutionDetails = {
   total_cost_usd?: number;
@@ -86,7 +89,14 @@ export function updateCommentBody(input: CommentUpdateInput): string {
   // Extract content from the original comment body
   // Remove the initial status header while preserving model-authored content.
   const workingPattern = /^Codex is working[…\.]{1,3}(?:\s*<img[^>]*>)?/i;
-  let bodyContent = originalBody.replace(workingPattern, "").trim();
+  let bodyContent = originalBody
+    .replace(workingPattern, "")
+    .replace(INITIAL_PROGRESS_BODY, "")
+    .replace(
+      /<details\b[^>]*>\s*<summary>\s*Preparing\s+the\s+task\s*<\/summary>\s*Loading\s+the\s+request\s+and\s+repository\s+context\.\s*<\/details>/gi,
+      "",
+    )
+    .trim();
 
   // Check if there's a PR link in the content
   let prLinkFromContent = "";

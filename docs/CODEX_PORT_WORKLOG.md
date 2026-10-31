@@ -125,6 +125,14 @@ Independent frozen production installs also passed with the patched dependency
 graph: root installed 235 packages and base installed 186; both completed the
 offline SDK smoke run.
 
+### 2026-10-31 native comment progress layout
+
+The live comment test showed GitHub's checkboxes, disclosure sections and animated spinner render correctly. The HTML progress element was stripped, and open-page refresh was inconsistent. Adopted the native layout without promising immediate browser refresh: interactive tasks start with a checklist/current-step disclosure, both tag prompt variants request task-specific steps and observed evidence, and native review summaries render completed coverage checkboxes.
+
+Finalization clears the initial loading disclosure even after checklist or whitespace edits, while preserving model-authored checked/incomplete tasks and evidence. Independent scoped review found the mutable-checklist cleanup case; it was fixed and rechecked.
+
+Verification: 71 tests passed, 0 failed, 282 assertions across comments-common, comment-logic, codex-prompt, codex-sticky-comment, native-review and inline-comment-integration tests. Root TypeScript, scoped Prettier and diff checks passed. These checks reused the existing SDK/runtime and HTTP fixtures; no paid model call was added to the tests.
+
 ### 2026-10-31 native review presentation
 
 The owner's reference PR (#1915 upstream) uses Anthropic's managed Code Review presentation, which is separate from the public action. Added opt-in `review_mode` with native COMMENT reviews, severity-marked line findings, expandable evidence, review scope and stable finding IDs. Existing OpenAI inference, GitHub token handling and action lifecycle remain in use. Automatic review workflow generation selects this mode; interactive tasks retain tracking comments.
