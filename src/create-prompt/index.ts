@@ -404,6 +404,7 @@ export function getEventTypeAndContext(envVars: PreparedContext): {
   }
 }
 
+/** Describe scoped commit/push operations, keeping commit-message punctuation out of shell commands. */
 function getCommitInstructions(
   eventData: EventData,
   githubData: FetchDataResult,
@@ -439,34 +440,18 @@ function getCommitInstructions(
       - Use: "${coAuthorLine}"`;
     }
   } else {
-    // Non-signing instructions
-    if (eventData.isPR && !eventData.claudeBranch) {
-      return `
-      - Use git commands via the ${runtime.shell} to commit and push your changes:
-        - Stage files: ${runtime.command(`git add <files>`)}
-        - Commit with a descriptive message: ${runtime.command(`git commit -m "<message>"`)}
-        ${
-          coAuthorLine
-            ? `- When committing and the trigger user is not "Unknown", include a Co-authored-by trailer:
-          ${runtime.command(`git commit -m "<message>\\n\\n${coAuthorLine}"`)}`
-            : ""
-        }
-        - Push to the remote: ${runtime.command(`${GIT_PUSH_WRAPPER} origin HEAD`)}`;
-    } else {
-      const branchName = eventData.claudeBranch || eventData.baseBranch;
-      return `
-      - You are already on the correct branch (${eventData.claudeBranch || "the PR branch"}). Do not create a new branch.
-      - Use git commands via the ${runtime.shell} to commit and push your changes:
-        - Stage files: ${runtime.command(`git add <files>`)}
-        - Commit with a descriptive message: ${runtime.command(`git commit -m "<message>"`)}
-        ${
-          coAuthorLine
-            ? `- When committing and the trigger user is not "Unknown", include a Co-authored-by trailer:
-          ${runtime.command(`git commit -m "<message>\\n\\n${coAuthorLine}"`)}`
-            : ""
-        }
-        - Push to the remote: ${runtime.command(`${GIT_PUSH_WRAPPER} origin ${branchName}`)}`;
-    }
+    const branchName =
+      eventData.isPR && !eventData.claudeBranch
+        ? "HEAD"
+        : eventData.claudeBranch || eventData.baseBranch;
+    return `
+      ${eventData.isPR && !eventData.claudeBranch ? "- Push directly to the existing PR branch; do not create a new branch." : `- You are already on the correct branch (${eventData.claudeBranch || "the PR branch"}). Do not create a new branch.`}
+      - Use git commands via the ${runtime.shell} to commit and push your changes.
+      - Stage only the requested files: ${runtime.command(`git add <files>`)}
+      - Use the file-writing tool to write the complete descriptive commit message to .git/codex-commit-message.txt. Include the title and any body/trailers as literal file content.
+      ${coAuthorLine ? `- Include this trailer in that message file: ${coAuthorLine}` : ""}
+      - Commit using ${runtime.command(`git commit --file .git/codex-commit-message.txt`)}. Keep message text out of shell arguments: scoped shell rules reject punctuation such as angle brackets and parentheses, even inside quotes.
+      - Push using ${runtime.command(`${GIT_PUSH_WRAPPER} origin ${branchName}`)}.`;
   }
 }
 
@@ -850,7 +835,7 @@ ${
   - mcp__github_file_ops__delete_files: {"paths": ["path/to/old.js"], "message": "chore: remove deprecated file"}`
     : `- Use git commands via the ${runtime.shell} for version control (remember that you have access to these git commands):
   - Stage files: ${runtime.command(`git add <files>`)}
-  - Commit changes: ${runtime.command(`git commit -m "<message>"`)}
+  - Commit changes: ${runtime.command(`git commit --file .git/codex-commit-message.txt`)}
   - Push to remote: ${runtime.command(`${GIT_PUSH_WRAPPER} origin <branch>`)}
   - Delete files: ${runtime.command(`git rm <files>`)} followed by commit and push
   - Check status: ${runtime.command(`git status`)}
