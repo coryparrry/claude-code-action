@@ -4,13 +4,13 @@ A fork of [Anthropic's Claude Code Action](https://github.com/anthropics/claude-
 
 This is an independent adaptation, not an official OpenAI or Anthropic release. The upstream MIT copyright and license notices are retained in [LICENSE](LICENSE).
 
-Automatic reviews keep GitHub’s native review layout: one main summary and a separate coloured inline comment for each issue, with expandable evidence and code-location links. See [review presentation](docs/review-presentation.md) for the format and named-bot setup.
+Automatic reviews keep GitHub’s native review layout: a rendered HTML summary card and a separate coloured inline comment for each issue, with expandable evidence and code-location links. See [review presentation](docs/review-presentation.md) for the format and named-bot setup.
 
 ## Quickstart
 
 Use this repository as a GitHub Action in your workflow. No local installer is required.
 
-The examples pin source commit `79148d3eb244bdbebea2a7bfbf947ceaa6087c23`, which includes native review presentation and the pending runtime reliability fixes. No release tag is required. Existing installations must update their workflow to this revision and enable `review_mode` for automatic reviews.
+The examples pin source commit `bef7919576bb17a38faef1087d9e97d9eaebef0a`, which includes native review presentation and the pending runtime reliability fixes. No release tag is required. Existing installations must update their workflow to this revision and enable `review_mode` for automatic reviews.
 
 Add your existing OpenAI key as the repository Actions secret `OPENAI_API_KEY`. Save this workflow as `.github/workflows/codex.yml` in the repository where you want the action to operate. Replace `your-github-username` with the trusted user's login. The workflow must be on the default branch for `issue_comment` events.
 
@@ -55,7 +55,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: agent
-        uses: coryparrry/claude-code-action@79148d3eb244bdbebea2a7bfbf947ceaa6087c23
+        uses: coryparrry/claude-code-action@bef7919576bb17a38faef1087d9e97d9eaebef0a
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -99,7 +99,7 @@ jobs:
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
       - id: agent
-        uses: coryparrry/claude-code-action@79148d3eb244bdbebea2a7bfbf947ceaa6087c23
+        uses: coryparrry/claude-code-action@bef7919576bb17a38faef1087d9e97d9eaebef0a
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -152,7 +152,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
-      - uses: coryparrry/claude-code-action@79148d3eb244bdbebea2a7bfbf947ceaa6087c23
+      - uses: coryparrry/claude-code-action@bef7919576bb17a38faef1087d9e97d9eaebef0a
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           codex_sandbox: read-only

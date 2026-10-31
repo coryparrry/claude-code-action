@@ -40,7 +40,7 @@ no approval, request-changes or merge capability. Use the action conclusion and
 `review_url` output to verify delivery.
 
 ```yaml
-- uses: coryparrry/claude-code-action@79148d3eb244bdbebea2a7bfbf947ceaa6087c23
+- uses: coryparrry/claude-code-action@bef7919576bb17a38faef1087d9e97d9eaebef0a
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     review_mode: "true"
