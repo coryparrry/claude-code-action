@@ -38,7 +38,7 @@ permissions:
 jobs:
   codex:
     if: >-
-      (github.actor == 'coryparrry') &&
+      (github.actor == 'your-github-username') &&
       (
         ((github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') &&
           contains(github.event.comment.body, '/codex')) ||
@@ -75,7 +75,7 @@ jobs:
   codex_review:
     if: >-
       github.event_name == 'pull_request' &&
-      (github.actor == 'coryparrry') &&
+      (github.actor == 'your-github-username') &&
       !github.event.pull_request.draft &&
       github.event.pull_request.head.repo.full_name == github.repository
     permissions:
