@@ -154,8 +154,14 @@ test("preserves the workflow capability inputs around the Codex backend", () => 
     "track_progress",
   ])
     expect(metadata.inputs[input]).toBeDefined();
-  const postStep = metadata.runs.steps.find(
-    (step) => step.name === "Post buffered inline comments",
+  const runStep = metadata.runs.steps.find(
+    (step) => step.name === "Run Codex Action",
   );
-  expect(postStep?.env?.OPENAI_API_KEY).toContain("inputs.openai_api_key");
+  expect(runStep?.env?.OPENAI_API_KEY).toContain("inputs.openai_api_key");
+  expect(runStep?.env?.CLASSIFY_INLINE_COMMENTS).toContain(
+    "inputs.classify_inline_comments",
+  );
+  expect(runStep?.env?.BUFFER_INLINE_COMMENTS).toContain(
+    "inputs.buffer_inline_comments",
+  );
 });

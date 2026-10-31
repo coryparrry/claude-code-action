@@ -30,6 +30,12 @@ import {
   isWorkflowRunEvent,
 } from "../github/context";
 import type { GitHubContext } from "../github/context";
+import {
+  loadReviewHistory,
+  publishReview,
+  type ReviewTarget,
+} from "../review/publisher";
+import { nativeReviewOptions, reviewPrompt } from "../review/runtime";
 import { detectMode } from "../modes/detector";
 import { prepareTagMode } from "../modes/tag";
 import { prepareAgentMode } from "../modes/agent";
@@ -40,6 +46,7 @@ import { actionRuntimeOptions } from "./runtime-options";
 import { initializeInlineCommentBuffer } from "../mcp/inline-comment-buffer";
 import { collectActionInputsPresence } from "./collect-inputs";
 import { updateCommentLink } from "./update-comment-link";
+import { main as postBufferedInlineComments } from "./post-buffered-inline-comments";
 import { formatTurnsFromData } from "./format-turns";
 import type { Turn } from "./format-turns";
 import { redactSecrets } from "../github/utils/sanitizer";
@@ -81,6 +88,8 @@ async function writeStepSummary(executionFile: string): Promise<void> {
 }
 
 async function run() {
+  const nativeReview = process.env.REVIEW_MODE === "true";
+  let deliveryError: string | undefined;
   let githubToken: string | undefined;
   let commentId: number | undefined;
   let claudeBranch: string | undefined;
@@ -107,7 +116,15 @@ async function run() {
     // Phase 1: Prepare
     const actionInputsPresent = collectActionInputsPresence();
     context = parseGitHubContext();
-    const modeName = detectMode(context);
+    if (nativeReview) {
+      if (!isPullRequestEvent(context) || context.inputs.trackProgress)
+        throw new Error(
+          "review_mode requires a pull_request event and track_progress: false",
+        );
+      context.inputs.prompt ||=
+        "Review this pull request for concrete correctness, security and regression defects.";
+    }
+    const modeName = nativeReview ? "agent" : detectMode(context);
     console.log(
       `Auto-detected mode: ${modeName} for event: ${context.eventName}`,
     );
@@ -162,6 +179,34 @@ async function run() {
     }
 
     validateCodexInputs();
+
+    const reviewTarget: ReviewTarget | undefined =
+      nativeReview && isPullRequestEvent(context)
+        ? {
+            owner: context.repository.owner,
+            repo: context.repository.repo,
+            pull_number: context.payload.pull_request.number,
+            head: context.payload.pull_request.head.sha,
+            base: context.payload.pull_request.base.sha,
+            author: context.inputs.botName,
+          }
+        : undefined;
+    if (reviewTarget) {
+      const history = await loadReviewHistory(octokit.rest, reviewTarget);
+      if (history.reviewedHeads.has(reviewTarget.head)) {
+        if (history.review)
+          core.setOutput("review_url", history.review.html_url);
+        core.setOutput("conclusion", "success");
+        console.log(
+          "This bot has already reviewed the current head; skipping duplicate review.",
+        );
+        return;
+      }
+      context.inputs.prompt = reviewPrompt(
+        context.inputs.prompt,
+        history.context,
+      );
+    }
 
     // Run prepare
     console.log(
@@ -228,6 +273,12 @@ async function run() {
             GITHUB_EVENT_PATH: process.env.GITHUB_EVENT_PATH || "",
             GITHUB_WORKSPACE: process.env.GITHUB_WORKSPACE || process.cwd(),
           },
+      ...(nativeReview
+        ? await nativeReviewOptions(
+            prepareResult.claudeArgs,
+            actionRuntimeOptions(process.env),
+          )
+        : {}),
     });
 
     claudeSuccess = result.conclusion === "success";
@@ -246,6 +297,17 @@ async function run() {
         JSON.stringify(result.structuredOutput),
       );
     }
+    if (reviewTarget && result.conclusion === "success") {
+      const url = await publishReview(
+        octokit.rest,
+        reviewTarget,
+        result.structuredOutput,
+      );
+      if (url) {
+        core.setOutput("review_url", url);
+        core.info(`Review published: ${url}`);
+      }
+    }
     core.setOutput("conclusion", result.conclusion);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -259,6 +321,41 @@ async function run() {
     core.setOutput("conclusion", "failure");
   } finally {
     // Phase 4: Cleanup (always runs)
+
+    // Complete the inherited comment delivery before announcing success.
+    if (
+      !nativeReview &&
+      prepareCompleted &&
+      context &&
+      isEntityContext(context) &&
+      context.isPR &&
+      githubToken &&
+      octokit &&
+      process.env.BUFFER_INLINE_COMMENTS !== "false" &&
+      process.env.CLASSIFY_INLINE_COMMENTS !== "false"
+    ) {
+      try {
+        await postBufferedInlineComments({
+          env: {
+            ...process.env,
+            GITHUB_TOKEN: githubToken,
+            REPO_OWNER: context.repository.owner,
+            REPO_NAME: context.repository.repo,
+            PR_NUMBER: String(context.entityNumber),
+            INPUT_CODEX_MODEL: process.env.CODEX_MODEL,
+            INPUT_CODEX_EFFORT: process.env.CODEX_EFFORT,
+          },
+          octokit: octokit.rest,
+        });
+      } catch (error) {
+        deliveryError = redactSecrets(
+          `Inline feedback delivery failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        claudeSuccess = false;
+        core.setFailed(deliveryError);
+        core.setOutput("conclusion", "failure");
+      }
+    }
 
     // Update tracking comment
     if (
@@ -281,6 +378,7 @@ async function run() {
           outputFile: executionFile,
           prepareSuccess,
           prepareError,
+          deliveryError,
           useCommitSigning: usesApiCommitSigning(context.inputs),
           restoredConfigPaths,
         });

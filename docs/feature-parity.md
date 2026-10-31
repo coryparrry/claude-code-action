@@ -68,11 +68,12 @@ provider parity.
 
 ## Delivery and verification
 
-The example workflows retain the existing immutable baseline
-`0129d1e1fe31c282af7ebfa2bbe7ac1e1d080c71`. That pin does not include the
-changes from this audit. Release the reviewed
-source and update consumer workflow refs before treating those changes as
-delivered. No new release tag or consumer-repository installation is claimed.
+The maintained examples and generated workflow pin source commit
+`07d0a94badb76002d5e143806b32f96e0a9d2c6d`. This revision submits one native review summary with a separate coloured inline comment per finding; see
+[review presentation](./review-presentation.md). This adds the managed Claude
+bot's presentation, not parity with its hosted review engine. Existing consumers
+need to update their workflow revision and enable `review_mode`. No release tag
+or consumer-repository installation is claimed.
 
 Offline regression and transport fixtures establish local behavior, including
 failure paths. They do not verify live model access, cloud account policy,

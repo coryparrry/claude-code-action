@@ -28,7 +28,11 @@ server.tool(
   "update_codex_comment",
   "Update the Codex comment with progress and results (automatically handles both issue and PR comments)",
   {
-    body: z.string().describe("The updated comment content"),
+    body: z
+      .string()
+      .describe(
+        "The updated comment content. Keep task progress and results in this tracking comment using task lists and expandable details for supporting evidence.",
+      ),
   },
   async ({ body }) => {
     try {

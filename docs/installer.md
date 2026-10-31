@@ -30,7 +30,7 @@ command arguments, workflow files or installer output.
 The installer opens draft setup PRs. Review and merge them onto each repository's
 default branch. The generated workflow then automatically reviews same-repository,
 non-draft PRs opened, updated, reopened or marked ready by a selected trusted user.
-Reviews post feedback with progress tracking and use read-only code access.
+Each reviewed head gets one native GitHub review summary with a separate coloured inline comment for each finding at its actual diff location. Each issue has its own discussion and expandable evidence; there is no combined findings comment. Same-head reruns reuse the submitted review. They run with read/search tools and do not produce a task-completion tracking comment. The action publishes only validated output against the reviewed head; invalid output, a changed PR or rejected delivery fails the action. See [review presentation](./review-presentation.md) for details and named-bot authentication.
 A preparation step saves the PR's base-to-head patch inside `.git/` so reviews
 can inspect additions and deleted lines without granting the agent shell access.
 A newer review run cancels an older review for the same PR.
@@ -48,6 +48,11 @@ Check the Actions tab for the run. The workflow allows only the selected trusted
 users to trigger either job. Fork PRs remain disabled by the action. Automatic
 reviews call the selected model on each qualifying PR event; `/codex` requests
 call it when explicitly requested.
+
+Command and review jobs save execution reports in the run's Actions artifacts
+for seven days, including failed runs that produced a report. Reports can contain
+private prompts, repository content and tool output; access follows the
+repository's GitHub permissions.
 
 ## Run from any directory
 

@@ -125,6 +125,9 @@ inputs:
     description: "GitHub username for git operations and sticky comments with a custom token"
     required: false
     default: ""
+  review_mode:
+    description: "Submit one native review summary and a separate coloured inline comment per finding (pull_request events only; incompatible with track_progress)"
+    default: "false"
   track_progress:
     description: "Force tag mode with tracking comments for pull_request and issue events. Only applicable to pull_request (opened, synchronize, ready_for_review, reopened, labeled) and issue (opened, edited, labeled, assigned) events."
     required: false
@@ -254,6 +257,9 @@ inputs:
     default: ""
 
 outputs:
+  review_url:
+    description: "URL of the native review submitted by review_mode"
+    value: ${{ steps.run.outputs.review_url }}
   skipped_due_to_fork:
     description: "True when execution was skipped because the request targets a fork PR"
     value: ${{ steps.run.outputs.skipped_due_to_fork }}
@@ -370,6 +376,7 @@ runs:
         SSH_SIGNING_KEY: ${{ inputs.ssh_signing_key }}
         BOT_ID: ${{ inputs.bot_id }}
         BOT_NAME: ${{ inputs.bot_name || 'github-actions[bot]' }}
+        REVIEW_MODE: ${{ inputs.review_mode }}
         TRACK_PROGRESS: ${{ inputs.track_progress }}
         ALL_INPUTS: ${{ toJson(inputs) }}
         MAX_TURNS: ${{ inputs.max_turns }}
@@ -410,33 +417,6 @@ runs:
         "$BUN_EXECUTABLE" --no-env-file \
           --config="${GITHUB_ACTION_PATH}/bunfig.toml" \
           run "${GITHUB_ACTION_PATH}/src/entrypoints/cleanup-ssh-signing.ts"
-
-    - name: Post buffered inline comments
-      if: always() && inputs.buffer_inline_comments != 'false' && inputs.classify_inline_comments != 'false' && steps.run.outputs.conclusion != '' && steps.run.outputs.skipped_due_to_fork != 'true'
-      shell: bash
-      env:
-        BUN_EXECUTABLE: ${{ inputs.path_to_bun_executable || 'bun' }}
-        OPENAI_API_KEY: ${{ inputs.openai_api_key || env.OPENAI_API_KEY }}
-        OPENAI_PROVIDER: ${{ inputs.openai_provider || env.OPENAI_PROVIDER }}
-        OPENAI_IDENTITY_PROVIDER_ID: ${{ inputs.openai_identity_provider_id || env.OPENAI_IDENTITY_PROVIDER_ID }}
-        OPENAI_SERVICE_ACCOUNT_ID: ${{ inputs.openai_service_account_id || env.OPENAI_SERVICE_ACCOUNT_ID }}
-        OPENAI_OIDC_AUDIENCE: ${{ inputs.openai_oidc_audience || env.OPENAI_OIDC_AUDIENCE }}
-        AWS_BEARER_TOKEN_BEDROCK: ${{ inputs.bedrock_api_key || env.AWS_BEARER_TOKEN_BEDROCK }}
-        AZURE_OPENAI_ENDPOINT: ${{ inputs.azure_openai_endpoint || env.AZURE_OPENAI_ENDPOINT }}
-        AZURE_OPENAI_API_KEY: ${{ inputs.azure_openai_api_key || env.AZURE_OPENAI_API_KEY }}
-        AZURE_OPENAI_AD_TOKEN: ${{ inputs.azure_openai_ad_token || env.AZURE_OPENAI_AD_TOKEN }}
-        INPUT_CODEX_MODEL: ${{ inputs.codex_model }}
-        INPUT_CODEX_EFFORT: ${{ inputs.codex_effort }}
-        CLASSIFY_INLINE_COMMENTS: ${{ inputs.classify_inline_comments }}
-        GITHUB_TOKEN: ${{ steps.run.outputs.github_token || inputs.github_token || github.token }}
-        REPO_OWNER: ${{ github.event.repository.owner.login }}
-        REPO_NAME: ${{ github.event.repository.name }}
-        PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
-      run: |
-        # No --tsconfig-override: see the "Run Codex Action" step above.
-        "$BUN_EXECUTABLE" --no-env-file \
-          --config="${GITHUB_ACTION_PATH}/bunfig.toml" \
-          run "${GITHUB_ACTION_PATH}/src/entrypoints/post-buffered-inline-comments.ts"
 
     - name: Revoke GitHub App installation token
       if: always() && steps.run.outputs.github_app_token_created == 'true'

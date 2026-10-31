@@ -202,6 +202,75 @@ describe("Codex action-owned instructions", () => {
     );
   });
 
+  test.each([false, true])(
+    "native progress instructions cover simple prompt: %s",
+    (simple) => {
+      process.env.USE_SIMPLE_PROMPT = String(simple);
+      const prompt = generatePrompt(context, data, false, "tag");
+      expect(prompt).toContain("<details open><summary>");
+      expect(prompt).toContain("task-specific checklist");
+      expect(prompt).toContain(
+        "Update the same comment at meaningful milestones",
+      );
+      expect(prompt).toContain("do not promise immediate live refresh");
+      expect(prompt).toContain("remove loading indicators");
+      expect(prompt).toContain("mcp__github_comment__update_codex_comment");
+      expect(prompt).not.toContain("Code review findings belong");
+      expect(prompt).not.toContain("under one native review");
+    },
+  );
+
+  test.each([false, true])(
+    "finalization clears only the initial progress template on failure: %s",
+    (actionFailed) => {
+      const observedWork =
+        "- [x] Inspected the parser\n- [ ] Reproduce the edge case\n\n<details>\n<summary>Evidence</summary>\n\nInspected parser.ts; runtime reproduction is pending.\n\n</details>";
+      const body = updateCommentBody({
+        currentBody:
+          createCommentBody(
+            "[View job run](https://github.com/owner/repo/actions/runs/1)",
+          ) +
+          "\n\n" +
+          observedWork,
+        actionFailed,
+        executionDetails: null,
+        jobUrl: "https://github.com/owner/repo/actions/runs/1",
+        triggerUsername: "requester",
+      });
+      expect(body).not.toContain("Preparing the task");
+      expect(body).not.toContain("Loading the request");
+      expect(body).not.toContain("- [ ] Work on the requested task");
+      expect(body).not.toContain("<img");
+      expect(body).toContain(observedWork);
+    },
+  );
+
+  test.each([false, true])(
+    "finalization clears loading after a checklist update on failure: %s",
+    (actionFailed) => {
+      const initial = createCommentBody(
+        "[View job run](https://github.com/owner/repo/actions/runs/1)",
+      )
+        .replace("- [ ] Read the request", "- [x] Read the request")
+        .replace("<details open>", '<details open="">\n  ')
+        .replace("Loading the request", "Loading  the\nrequest");
+      const result = updateCommentBody({
+        currentBody:
+          initial +
+          "\n\n<details>\n<summary>Evidence</summary>\n\nRead parser.ts; the next task is pending.\n\n</details>",
+        actionFailed,
+        executionDetails: null,
+        jobUrl: "https://github.com/owner/repo/actions/runs/1",
+        triggerUsername: "requester",
+      });
+      expect(result).not.toContain("Preparing");
+      expect(result).not.toContain("Loading");
+      expect(result).toContain("- [x] Read the request");
+      expect(result).toContain("- [ ] Work on the requested task");
+      expect(result).toContain("<summary>Evidence</summary>");
+    },
+  );
+
   test("brands initial, final and failure comments without rewriting body content", () => {
     process.env.ACTION_ENGINE = "codex";
     const initial = createCommentBody(

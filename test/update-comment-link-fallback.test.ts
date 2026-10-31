@@ -59,3 +59,18 @@ test("does not reinterpret authorization failures as an issue fallback", async (
   expect(getIssue).not.toHaveBeenCalled();
   expect(updateIssue).not.toHaveBeenCalled();
 });
+
+test("shows failed delivery using the existing tracking comment error format", async () => {
+  const { params, updateIssue } = fixture(404);
+  await updateCommentLink({
+    ...params,
+    claudeSuccess: false,
+    deliveryError: "Inline feedback delivery failed: GitHub rejected the line",
+  });
+  const body = (updateIssue.mock.calls as unknown[][])[0]?.[0] as {
+    body: string;
+  };
+  expect(body.body).toContain("Codex encountered an error");
+  expect(body.body).toContain("GitHub rejected the line");
+  expect(body.body).not.toContain("finished");
+});

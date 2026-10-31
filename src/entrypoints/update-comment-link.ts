@@ -30,6 +30,7 @@ export type UpdateCommentLinkParams = {
   outputFile?: string;
   prepareSuccess: boolean;
   prepareError?: string;
+  deliveryError?: string;
   useCommitSigning: boolean;
   /**
    * Paths restored from the PR base branch by restoreConfigFromBase. The
@@ -186,7 +187,7 @@ export async function updateCommentLink(
     duration_api_ms?: number;
   } | null = null;
   let actionFailed = false;
-  let errorDetails: string | undefined;
+  let errorDetails = params.deliveryError;
 
   if (!params.prepareSuccess && params.prepareError) {
     actionFailed = true;

@@ -283,10 +283,9 @@ export async function main(options: PostBufferedCommentsOptions = {}) {
   const prNumber = env.PR_NUMBER;
 
   if (!githubToken || !owner || !repo || !prNumber) {
-    console.log(
-      "::warning::Missing GITHUB_TOKEN/REPO_OWNER/REPO_NAME/PR_NUMBER — cannot post buffered comments",
+    throw new Error(
+      "Missing GITHUB_TOKEN/REPO_OWNER/REPO_NAME/PR_NUMBER — cannot post buffered comments",
     );
-    return;
   }
 
   // Partition: confirmed=false are never posted; the rest are candidates
@@ -297,7 +296,10 @@ export async function main(options: PostBufferedCommentsOptions = {}) {
     console.log(`  ${neverPost.length} with confirmed=false — not posting`);
   }
 
-  const toPost = await selectCommentsToPost(candidates, options.classify);
+  const toPost = await selectCommentsToPost(
+    candidates,
+    options.classify ?? ((bodies) => classifyComments(bodies, { env })),
+  );
   // The model session has ended, so this step exclusively owns the buffer.
   // Persist each successful delivery so a retry only sees undelivered entries.
   let remaining = [...toPost];
@@ -329,6 +331,11 @@ export async function main(options: PostBufferedCommentsOptions = {}) {
     }
   }
   console.log(`Posted ${posted}/${toPost.length}`);
+  if (remaining.length) {
+    throw new Error(
+      `Failed to deliver ${remaining.length}/${toPost.length} inline review comments; undelivered comments remain buffered for retry`,
+    );
+  }
 }
 
 if (import.meta.main) {

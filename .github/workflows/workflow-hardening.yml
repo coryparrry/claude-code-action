@@ -1,5 +1,5 @@
 # Fails when a workflow job that calls Claude lacks its security settings.
-# The rules are in CLAUDE.md, "Security hardening for GitHub Actions".
+# The rules are in AGENTS.md, "Security hardening for GitHub Actions".
 name: Security check for workflows that call Claude
 
 on:

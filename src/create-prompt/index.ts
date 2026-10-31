@@ -601,6 +601,7 @@ To review or diff PR changes, compare against \`origin/${eventData.baseBranch}\`
 You cannot submit formal GitHub PR reviews, approve, or merge PRs (security reasons). If asked, politely decline and point to the ${runtime.helpLabel}: ${runtime.helpUrl}
 
 Communication:
+${runtime.progressComment}
 - Your ONLY visible output is your GitHub comment - update it with progress and results
 - Use mcp__github_comment__update_codex_comment to update (only "body" param needed)
 - Use checklist format for tasks: - [ ] incomplete, - [x] complete
@@ -730,6 +731,8 @@ IMPORTANT CLARIFICATIONS:
 - ALL communication happens through your GitHub comment - that's how users see your feedback, answers, and progress. your normal responses are not seen.
 
 Follow these steps:
+
+${runtime.progressComment}
 
 1. Create a Todo List:
    - Use your GitHub comment to maintain a detailed task list based on the request.

@@ -1,0 +1,119 @@
+# Native reviews with individual inline findings
+
+Set `review_mode: "true"` to use GitHub's normal review hierarchy:
+
+```text
+One native review summary
+├─ Coloured inline comment for issue A at its code location
+├─ Coloured inline comment for issue B at its code location
+└─ Coloured inline comment for issue C at its code location
+```
+
+Each finding is its own inline comment, marked red for a bug, yellow for an
+optional suggestion or purple for a pre-existing defect. The title and impact
+are visible; supporting evidence and verification expand inside that comment.
+The main summary leads with a one-sentence **Walkthrough**, a short review outcome and **Changes** grouped by behavior or subsystem. Writing targets are 35 words for the walkthrough, 15 for the outcome and 18 per change description, usually across two to four groups. Three representative paths are visible per group; additional paths stay expandable. These targets do not truncate evidence or make otherwise valid reviews fail. A small flow diagram uses short labels only when a real sequential flow helps explain the change. Merge-risk evidence and review scope/verification stay collapsed, followed by the reviewed-commit footer. Individual issues remain in their own inline comments.
+
+The unboxed summary uses original SVG section icons, a code-inspection badge and
+an inspection-risk badge, with light and dark variants selected through GitHub's
+supported `<picture>` rendering. Assets are served from an immutable commit in
+this public repository, so other installations receive the same graphics without
+setting up a hosting service or custom GitHub App. Headings remain selectable
+text, and badges have readable alternative labels if images are unavailable.
+The graphic labels and URLs are fixed by the renderer; model output cannot
+supply image URLs. These badges do not represent executed CI checks or approval.
+Regenerate the assets with `node scripts/generate-review-assets.mjs`; publishing
+new assets also requires updating `REVIEW_ASSET_REVISION` in the visual renderer.
+
+There is no combined findings comment and no separate review per severity.
+
+One API call submits the summary and all individual inline comments together.
+Every finding's path, line and diff side are validated against the PR's actual
+patch, including renamed files and deleted lines. The publisher never moves an
+issue to unrelated code. A finding without a commentable location fails before
+submission with an explicit diagnostic; it does not become an aggregate list or
+silently disappear. Binary-only diffs cannot support line comments. A review
+with no findings submits just the summary.
+
+Same-head reruns return the completed review URL. New reviewed heads get a new
+commit-specific review. Follow-ups receive the full latest bot-owned summary
+and its individual finding comments as untrusted reference data, rechecking
+findings that still apply. Duplicate IDs within one result are removed.
+
+The OpenAI runtime returns validated data using read/search tools. The trusted
+publisher checks the current PR head and open state before publication. Ambiguous
+mutations are not blindly retried; a rerun locates a saved completed review.
+The 60,000 UTF-8 byte limit applies to each comment individually, so multiple
+findings may collectively exceed it without requiring a combined comment.
+
+Review mode retains model, effort, turn and budget controls and excludes inherited
+MCP, hooks, plugins and session resumption. It only submits COMMENT reviews, with
+no approval, request-changes or merge capability. Use the action conclusion and
+`review_url` output to verify delivery.
+
+```yaml
+- uses: coryparrry/claude-code-action@07d0a94badb76002d5e143806b32f96e0a9d2c6d
+  with:
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+    review_mode: "true"
+    codex_sandbox: read-only
+    prompt: Review the prepared patch in .git/codex-review.diff.
+```
+
+Use same-repository `pull_request` events and prepare the base-to-head patch as in
+the generated workflow. `review_mode` is incompatible with `track_progress`.
+Existing installations need the updated source pin.
+
+## Summary data and verification
+
+The structured result includes `walkthrough`, grouped `changes` (area, description
+and file paths; lists over three paths expand separately), an inspection-based `risk` (low/moderate/high plus evidence), and
+`flow` (null or two to eight short sequential step labels). These are returned with
+the existing conclusion, inspected scope, reasoning and individual findings.
+
+The renderer owns HTML and Mermaid syntax. Model prose is escaped; diagram labels
+are reduced to safe plain text and rendered into a fixed linear graph. The model
+cannot supply Mermaid directives, HTML or script/link actions. Trivial or
+non-sequential changes use `flow: null`.
+
+Risk is an assessment from code inspection, not a CI result or merge approval.
+Review mode has read/search tools and does not execute tests. The summary never
+fabricates passing checks, percentages or test results. It uses the walkthrough
+and expandable report structure without duplicating findings in a summary index.
+
+## Other comments and progress
+
+Task progress, finding evidence, risk, review scope and error diagnostics share the
+same GitHub-supported disclosure renderer. Task comments use checkboxes and an
+expanded current step; error details and completed evidence stay collapsed.
+Finalization removes the initial loading state, including edited checklists and
+failures, while preserving model-authored task state and evidence.
+
+The [rendering test](https://github.com/coryparrry/claude-code-action/pull/6#issuecomment-6546724109)
+verified native checkboxes, a spinner and disclosures. GitHub strips HTML progress
+elements, and open-page refresh remains inconsistent. The API saves edits but cannot
+force viewers' PR pages to re-render immediately.
+
+Reviews publish after inference; interactive progress uses existing tag-mode tools.
+This reproduces presentation, not the managed Claude service's review engine,
+check runs or automatic thread resolution.
+
+## Bot identity
+
+GitHub determines the review author from the token. The default workflow token
+posts as `github-actions[bot]`. For a named bot with its own avatar, use your own
+GitHub App through `github_app_id` and `github_app_private_key` (and
+`github_app_installation_id` when needed), or pass its installation token in
+`github_token`. Set `bot_name` to that App's exact bot login, including `[bot]`,
+so follow-up review lookup uses the same author. An explicit installation token can use contents read and pull requests write
+access. The built-in App token minting currently requests contents, issues and
+pull requests write access by default, so the installation must allow those. Setting `bot_name` alone
+does not change GitHub's author. The hosted Codex integration is a separate bot
+and its comments are independent of this action.
+
+## Installing for other people
+
+The current installer creates workflow and API-key setup PRs and uses the built-in
+`github-actions[bot]` identity. It does not register or host a shared GitHub App.
+Users of the updated action automatically receive the same HTML summary and inline
+finding layout after enabling `review_mode`; a custom bot identity is separate.

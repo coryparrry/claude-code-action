@@ -42,7 +42,7 @@ for (const action of ["../action.yml", "../base-action/action.yml"]) {
           step.run?.includes("--no-env-file"),
         );
         expect(runtimeSteps.length).toBe(
-          action.includes("base-action") ? 2 : 5,
+          action.includes("base-action") ? 2 : 4,
         );
         for (const step of runtimeSteps) {
           expect(step.env?.BUN_EXECUTABLE).toBe(

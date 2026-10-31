@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail if a workflow job that calls Claude, or .github/egress-firewall.yaml, breaks a rule in CLAUDE.md,
+"""Fail if a workflow job that calls Claude, or .github/egress-firewall.yaml, breaks a rule in AGENTS.md,
 "Security hardening for GitHub Actions". Run from the repository root. A job calls Claude when it runs the
 Claude Code action, or when it or a local action it uses mentions ANTHROPIC_FEDERATION_RULE_ID.
 """
@@ -16,7 +16,7 @@ WORKFLOW_DIR = pathlib.Path(".github/workflows")
 POLICY_PATH = pathlib.Path(".github/egress-firewall.yaml")
 SIGN_IN_MARKER = "anthropic_federation_rule_id"
 CLAUDE_ACTIONS = ("anthropics/claude-code-action", "anthropics/claude-code-base-action")
-HELP = 'See CLAUDE.md, "Security hardening for GitHub Actions".'
+HELP = 'See AGENTS.md, "Security hardening for GitHub Actions".'
 # Claude Code runs auto mode only on claude-opus-4-6 and newer models. On an older model it
 # falls back to its default permission mode, with no safety review.
 AUTO_MODE_MIN_VERSION = (4, 6)
