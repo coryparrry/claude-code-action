@@ -7,6 +7,7 @@ import {
 } from "../src/mcp/github-actions-context";
 
 type Run = Parameters<typeof summarizeWorkflowRuns>[0][number];
+/** Build a workflow run with explicit identity and outcome overrides. */
 function run(overrides: Partial<Run> = {}): Run {
   return {
     id: 1,
@@ -36,10 +37,15 @@ describe("CI diagnosis context", () => {
       null,
     ];
     const runs = conclusions.map((conclusion, i) =>
-      run({ workflow_id: i, conclusion }),
+      run({ id: i + 1, workflow_id: i, conclusion }),
     );
     runs.push(
-      run({ workflow_id: 100, status: "in_progress", conclusion: null }),
+      run({
+        id: 100,
+        workflow_id: 100,
+        status: "in_progress",
+        conclusion: null,
+      }),
     );
     expect(summarizeWorkflowRuns(runs).summary).toEqual({
       total_runs: 10,
@@ -56,12 +62,12 @@ describe("CI diagnosis context", () => {
 
   test("selects the latest run and attempt before applying a failure filter", () => {
     const runs = [
-      run({ id: 3, run_number: 2, run_attempt: 2, conclusion: "success" }),
-      run({ id: 2, run_number: 2, run_attempt: 1 }),
+      run({ id: 1, run_number: 1, run_attempt: 2, conclusion: "success" }),
+      run({ id: 1, run_number: 1, run_attempt: 1 }),
       run({ id: 1, run_number: 1 }),
     ];
     expect(summarizeWorkflowRuns(runs).runs.map((item) => item.id)).toEqual([
-      3,
+      1,
     ]);
     expect(summarizeWorkflowRuns(runs, "failure").summary).toMatchObject({
       total_runs: 0,
@@ -70,8 +76,26 @@ describe("CI diagnosis context", () => {
   });
 
   test("keeps distinct workflows and events even when names match", () => {
-    const runs = [run(), run({ workflow_id: 11 }), run({ event: "push" })];
+    const runs = [
+      run(),
+      run({ id: 2, workflow_id: 11 }),
+      run({ id: 3, event: "push" }),
+    ];
     expect(summarizeWorkflowRuns(runs).summary.failed).toBe(3);
+  });
+
+  test("does not hide an independent failed run behind a later success", () => {
+    const result = summarizeWorkflowRuns([
+      run(),
+      run({ id: 2, run_number: 2, conclusion: "success" }),
+    ]);
+    expect(result.summary).toMatchObject({
+      total_runs: 2,
+      failed: 1,
+      passed: 1,
+      superseded_runs: 0,
+    });
+    expect(result.runs.map((entry) => entry.id)).toEqual([1, 2]);
   });
 
   test("fetches the current PR revision and does not prefilter away superseding success", async () => {
@@ -81,7 +105,10 @@ describe("CI diagnosis context", () => {
       actions: { listWorkflowRunsForRepo: () => {} },
       paginate: async (_method: unknown, params: unknown) => {
         requests.push(params);
-        return [run(), run({ id: 2, run_number: 2, conclusion: "success" })];
+        return [
+          run(),
+          run({ id: 1, run_number: 1, run_attempt: 2, conclusion: "success" }),
+        ];
       },
     } as unknown as Octokit;
     const result = await getCIStatus(

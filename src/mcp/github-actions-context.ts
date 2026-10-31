@@ -13,11 +13,11 @@ const FAILURE_CONCLUSIONS = new Set([
   "startup_failure",
 ]);
 
-/** Count the latest run of each workflow/event without reviving superseded failures. */
+/** Keep independent workflow invocations and collapse only attempts of the same run. */
 export function summarizeWorkflowRuns(runs: WorkflowRun[], status?: string) {
   const latest = new Map<string, WorkflowRun>();
   for (const run of runs) {
-    const key = JSON.stringify([run.workflow_id, run.event, run.head_branch]);
+    const key = String(run.id);
     const previous = latest.get(key);
     if (
       !previous ||
@@ -68,7 +68,7 @@ export function summarizeWorkflowRuns(runs: WorkflowRun[], status?: string) {
   };
 }
 
-/** Bind CI evidence to the PR revision and choose latest runs before status filtering. */
+/** Bind CI evidence to the PR revision and choose latest attempts before status filtering. */
 export async function getCIStatus(
   client: Octokit,
   params: PRParams,

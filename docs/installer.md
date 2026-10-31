@@ -3,7 +3,8 @@
 The guided installer handles repository selection, the API-key secret and the
 workflow PR. It runs locally using Node.js and GitHub CLI, without Bun or extra
 Node dependencies. The generated workflow uses Terra 6.1 (`gpt-6.1-terra`) at Max effort, the reviewed
-action commit and the repository's built-in workflow token.
+action commit and the repository's built-in workflow token. A custom `--model`
+selection leaves reasoning effort unset so the provider can use a compatible default.
 
 The reviewed runtime changes are included in that source pin. See the
 [feature comparison](./feature-parity.md) for coverage and remaining differences.

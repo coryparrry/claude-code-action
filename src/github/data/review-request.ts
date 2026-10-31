@@ -6,13 +6,22 @@ import {
 } from "../context";
 import { filterCommentsByActor, filterCommentsToTriggerTime } from "./fetcher";
 
-export type ReviewRequest = {
-  commentId: number;
+export type ReviewLocation = {
   path: string;
   line: number | null;
   originalLine: number | null;
   commitId: string;
   diffHunk: string;
+  side?: string;
+  startLine?: number | null;
+  originalStartLine?: number | null;
+  startSide?: string | null;
+  originalCommitId?: string | null;
+};
+
+export type ReviewRequest = ReviewLocation & {
+  commentId: number;
+  parentLocation?: ReviewLocation;
   parentId?: number;
   parentBody?: string;
   parentUnavailable?: boolean;
@@ -32,6 +41,11 @@ export async function fetchReviewRequest(
     originalLine: comment.original_line ?? null,
     commitId: comment.commit_id,
     diffHunk: comment.diff_hunk,
+    side: comment.side,
+    startLine: comment.start_line,
+    originalStartLine: comment.original_start_line,
+    startSide: comment.start_side,
+    originalCommitId: comment.original_commit_id,
     ...(comment.in_reply_to_id && { parentId: comment.in_reply_to_id }),
   };
   if (!request.parentId) return request;
@@ -74,6 +88,18 @@ export async function fetchReviewRequest(
     );
     if (safeParents.length) {
       request.parentBody = parent.body;
+      request.parentLocation = {
+        path: parent.path,
+        line: parent.line ?? null,
+        originalLine: parent.original_line ?? null,
+        commitId: parent.commit_id,
+        diffHunk: parent.diff_hunk,
+        side: parent.side,
+        startLine: parent.start_line,
+        originalStartLine: parent.original_start_line,
+        startSide: parent.start_side,
+        originalCommitId: parent.original_commit_id,
+      };
       request.parentUnavailable = false;
     }
   } catch {

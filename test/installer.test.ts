@@ -228,6 +228,19 @@ describe("guided GitHub Action workflow", () => {
     }
   });
 
+  test("lets a custom model choose its provider-supported default effort", () => {
+    const workflow = parse(
+      renderWorkflow({ ...defaultOptions, model: "gpt-5.4" }),
+    );
+    for (const name of ["codex", "codex_review"]) {
+      const step = workflow.jobs[name].steps.find(
+        (step: any) => step.uses === DEFAULT_ACTION_REF,
+      );
+      expect(step.with.codex_model).toBe("gpt-5.4");
+      expect(step.with.codex_effort).toBeUndefined();
+    }
+  });
+
   test("allows multiple trusted actors and macOS runner, while pinning the action", () => {
     const workflow = parse(
       renderWorkflow({

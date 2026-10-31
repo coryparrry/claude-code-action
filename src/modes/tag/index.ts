@@ -155,6 +155,8 @@ export async function prepareTagMode({
   // SSH signing still uses git CLI, just with signing enabled
   if (!useApiCommitSigning) {
     tagModeTools.push(
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
       `Bash(${gitPushWrapper}:*)`,
@@ -175,6 +177,7 @@ export async function prepareTagMode({
     repo: context.repository.repo,
     branch: branchInfo.claudeBranch || branchInfo.currentBranch,
     baseBranch: branchInfo.baseBranch,
+    branchSourceSha: branchInfo.sourceSha,
     claudeCommentId: commentId.toString(),
     allowedTools: Array.from(new Set(tagModeTools)),
     mode: "tag",

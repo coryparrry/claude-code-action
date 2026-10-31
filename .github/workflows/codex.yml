@@ -39,7 +39,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: agent
-        uses: coryparrry/claude-code-action@a88d70b785001bf6c7b69bcea2dd2fd1147ab897
+        uses: coryparrry/claude-code-action@e0ef924fe4908e4f1ee043ee6d62c3f07b4cb07a
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -47,7 +47,7 @@ jobs:
           codex_effort: max
           max_turns: "30"
           track_progress: "true"
-          allowed_tools: "Bash(bun --no-env-file test:*),Bash(bun --no-env-file run typecheck:*)"
+          allowed_tools: "Bash(bun --no-env-file install --frozen-lockfile:*),Bash(bun --no-env-file test:*),Bash(bun --no-env-file run typecheck:*)"
       - name: Save execution report
         if: ${{ always() && steps.agent.outputs.execution_file != '' }}
         uses: actions/upload-artifact@v4
@@ -84,7 +84,7 @@ jobs:
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
       - id: agent
-        uses: coryparrry/claude-code-action@a88d70b785001bf6c7b69bcea2dd2fd1147ab897
+        uses: coryparrry/claude-code-action@e0ef924fe4908e4f1ee043ee6d62c3f07b4cb07a
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}

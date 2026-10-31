@@ -12,6 +12,7 @@ type PrepareConfigParams = {
   repo: string;
   branch: string;
   baseBranch: string;
+  branchSourceSha?: string;
   claudeCommentId?: string;
   allowedTools: string[];
   mode: AutoDetectedMode;
@@ -64,6 +65,7 @@ async function checkActionsReadPermission(
   }
 }
 
+/** Configure scoped GitHub MCP servers and preserve ancestry for signed replacement work. */
 export async function prepareMcpConfig(
   params: PrepareConfigParams,
 ): Promise<string> {
@@ -73,6 +75,7 @@ export async function prepareMcpConfig(
     repo,
     branch,
     baseBranch,
+    branchSourceSha,
     claudeCommentId,
     allowedTools,
     context,
@@ -140,6 +143,7 @@ export async function prepareMcpConfig(
           REPO_NAME: repo,
           BRANCH_NAME: branch,
           BASE_BRANCH: baseBranch,
+          ...(branchSourceSha && { BRANCH_SOURCE_SHA: branchSourceSha }),
           REPO_DIR: process.env.GITHUB_WORKSPACE || process.cwd(),
           GITHUB_EVENT_NAME: process.env.GITHUB_EVENT_NAME || "",
           IS_PR: process.env.IS_PR || "false",
