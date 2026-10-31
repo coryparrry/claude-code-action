@@ -22,6 +22,38 @@ export const reviewSchema = z.strictObject({
   summary: text.describe(
     "A concise plain-text review conclusion, without a list of findings",
   ),
+  walkthrough: text.describe(
+    "Plain-text explanation of what the PR changes and how the resulting behavior works",
+  ),
+  changes: z
+    .array(
+      z.strictObject({
+        area: z.string().trim().min(1).max(120),
+        description: z.string().trim().min(1).max(2000),
+        files: z.array(z.string().trim().min(1).max(500)).max(6),
+      }),
+    )
+    .min(1)
+    .max(8)
+    .describe(
+      "Group related changes by behavior or subsystem, not one row per file",
+    ),
+  risk: z.strictObject({
+    level: z.enum(["low", "moderate", "high"]),
+    explanation: text.describe(
+      "Evidence for this inspection-based merge-risk assessment; never claim CI passed or tests ran",
+    ),
+  }),
+  flow: z
+    .union([
+      z.strictObject({
+        steps: z.array(z.string().trim().min(1).max(120)).min(2).max(8),
+      }),
+      z.null(),
+    ])
+    .describe(
+      "A short real sequential flow when it helps explain the change; null for trivial or non-sequential changes",
+    ),
   reviewed: z.array(text).min(1).max(30),
   reasoning: text,
   findings: z
@@ -96,26 +128,55 @@ export function reviewHead(
   )?.[1];
 }
 
-/** One native summary; each finding is submitted separately at its own code location. */
+/** Render a small data-only diagram; model output never supplies Mermaid syntax. */
+function renderFlow(steps: string[]): string {
+  const labels = steps.map((step) =>
+    clean(step)
+      .replace(/\s+/g, " ")
+      .replace(/[^\p{L}\p{N} /_.:()-]/gu, "")
+      .trim(),
+  );
+  if (labels.some((label) => !label)) return "";
+  const nodes = labels.map((label, index) => `  N${index}["${label}"]`);
+  const edges = labels
+    .slice(1)
+    .map((_, index) => `  N${index} --> N${index + 1}`);
+  return `<h3>Flow diagram</h3>\n\n\`\`\`mermaid\nflowchart LR\n${[...nodes, ...edges].join("\n")}\n\`\`\``;
+}
+
+/** A walkthrough-led summary keeps issue details in their individual inline comments. */
 export function renderReview(
   review: Review,
   head: string,
   location?: ReviewLocation,
 ): string {
-  const coverage = renderDetails(
-    "What was reviewed",
-    review.reviewed.map((item) => `- [x] ${clean(item)}`).join("\n"),
-    true,
+  const html = (value: string) =>
+    escapeHtml(clean(value)).replace(/\r?\n/g, "<br>");
+  const changes = review.changes
+    .map((change) => {
+      const files = change.files.length
+        ? `<br><sub>${change.files.map((file) => `<code>${html(file)}</code>`).join(" · ")}</sub>`
+        : "";
+      return `<li><strong>${html(change.area)}</strong>: ${html(change.description)}${files}</li>`;
+    })
+    .join("\n");
+  const walkthrough = `<h3>Walkthrough</h3>\n<p>${html(review.walkthrough)}</p>\n\n<p><strong>Review outcome:</strong> ${html(review.summary)}</p>`;
+  const changeSummary = `<h3>Changes</h3>\n<ul>\n${changes}\n</ul>`;
+  const flow = review.flow ? renderFlow(review.flow.steps) : "";
+  const risk = renderDetails(
+    `Merge risk · ${review.risk.level[0]!.toUpperCase()}${review.risk.level.slice(1)}`,
+    `${html(review.risk.explanation)}\n\n<sub>Assessment from code inspection; this is not a CI result or merge approval.</sub>`,
   );
-  const evidence = renderDetails("Review details", clean(review.reasoning));
+  const scope = review.reviewed
+    .map((item) => `<li>${html(item)}</li>`)
+    .join("\n");
+  const details = renderDetails(
+    "Review scope & verification",
+    `<strong>What was reviewed</strong>\n<ul>\n${scope}\n</ul>\n\n<strong>Verification</strong>\n<p>This review uses read/search tools and does not execute tests.</p>\n<p>${html(review.reasoning)}</p>`,
+  );
   const revision = location
     ? `<a href="${escapeHtml(`${GITHUB_SERVER_URL}/${location.owner}/${location.repo}/commit/${head}`)}"><code>${escapeHtml(head.slice(0, 7))}</code></a>`
     : `<code>${escapeHtml(head.slice(0, 7))}</code>`;
-  const conclusion = escapeHtml(clean(review.summary)).replace(
-    /\r?\n/g,
-    "<br>",
-  );
-  const summary = `<h3>Codex review</h3>\n<p>${conclusion}</p>`;
   const footer = `<p><sub>Reviewed commit ${revision}</sub></p>`;
-  return `${summary}\n\n${coverage}\n\n${evidence}\n\n${footer}\n\n<!-- codex-action:review:${head} -->\n${INLINE_REVIEW_MARKER}`;
+  return `${[walkthrough, changeSummary, flow, risk, details, footer].filter(Boolean).join("\n\n")}\n\n<!-- codex-action:review:${head} -->\n${INLINE_REVIEW_MARKER}`;
 }

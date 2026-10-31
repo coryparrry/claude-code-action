@@ -45,6 +45,21 @@ const finding: Finding = {
 };
 const review: Review = {
   summary: "Found one account-switching defect.",
+  walkthrough:
+    "Account switching now uses a shared cache to load the selected account's data.",
+  changes: [
+    {
+      area: "Account cache",
+      description: "Reuse cached account data during selection changes.",
+      files: ["src/account.ts"],
+    },
+  ],
+  risk: {
+    level: "moderate",
+    explanation:
+      "Account changes can expose stale cached data; runtime behavior was not tested.",
+  },
+  flow: null,
   reviewed: ["Account selection and cache lookup"],
   reasoning:
     "Inspected the changed cache path and its caller. Runtime behavior was not tested.",
@@ -189,58 +204,110 @@ describe("Claude-style review presentation", () => {
     );
   });
 
-  test("renders a review conclusion and scope instead of task completion", () => {
-    const body = renderReview(review, head);
-    expect(body).not.toContain("**Findings");
-    expect(body).not.toContain("grouped");
-    expect(body).not.toContain(finding.body);
-    expect(body).toContain(
-      "<summary>What was reviewed</summary>\n\n- [x] Account selection and cache lookup",
-    );
-    expect(body).toContain("<summary>Review details</summary>");
-    expect(body).not.toContain("finished");
-    expect(body).not.toContain("- [ ]");
-    expect(body).toEndWith(INLINE_REVIEW_MARKER);
-  });
-
-  test("renders an unboxed HTML summary with visible coverage and a small revision footer", () => {
+  test("renders a walkthrough and grouped changes with supporting details collapsed", () => {
     const body = renderReview(review, head, target);
-    expect(body).not.toContain("<table");
-    expect(body).toStartWith("<h3>Codex review</h3>");
-    expect(body).toContain(`<p>${review.summary}</p>`);
+    expect(body).toStartWith("<h3>Walkthrough</h3>");
+    expect(body).toContain(
+      `<p>${review.walkthrough.replaceAll("'", "&#39;")}</p>`,
+    );
+    expect(body).toContain(
+      `<strong>Review outcome:</strong> ${review.summary}`,
+    );
+    expect(body).toContain("<h3>Changes</h3>");
+    expect(body).toContain(
+      "<strong>Account cache</strong>: Reuse cached account data",
+    );
+    expect(body).toContain("<code>src/account.ts</code>");
+    expect(body).toContain("<summary>Merge risk · Moderate</summary>");
+    expect(body).toContain(
+      "<summary>Review scope &amp; verification</summary>",
+    );
+    expect(body).toContain("does not execute tests");
+    expect(body).toContain("not a CI result or merge approval");
     expect(body).toContain(
       `<a href="https://github.com/owner/repo/commit/${head}"><code>aaaaaaa</code></a>`,
     );
-    expect(body).toContain(
-      "<details open>\n<summary>What was reviewed</summary>",
-    );
     expect(body).toContain("<p><sub>Reviewed commit ");
-    expect(body).not.toContain("Inline comments");
-    expect(body).not.toContain(finding.title);
-    expect(body).not.toContain(finding.body);
-    const noFindings = renderReview(
-      { ...review, reviewed: ["Area A", "Area B"], findings: [] },
-      head,
-    );
-    expect(noFindings).toContain("- [x] Area A\n- [x] Area B");
-    expect(noFindings).not.toContain("findings</strong>");
+    for (const absent of [
+      "<table",
+      "<details open>",
+      finding.title,
+      finding.body,
+      "```mermaid",
+    ])
+      expect(body).not.toContain(absent);
+    expect(body).toEndWith(INLINE_REVIEW_MARKER);
   });
 
-  test("model text cannot inject HTML into the unboxed summary or its review marker", () => {
+  test("creates an optional data-only Mermaid flow and omits it when irrelevant", () => {
     const body = renderReview(
       {
         ...review,
-        summary:
-          'A <table> & "quoted" conclusion.\nSecond line. </td><script>alert(1)</script>',
+        flow: { steps: ["Select account", "Read cache", "Load account data"] },
       },
       head,
     );
-    expect(body).toContain(
-      "A &lt;table&gt; &amp; &quot;quoted&quot; conclusion.<br>Second line. &lt;/td&gt;&lt;script&gt;alert(1)&lt;/script&gt;",
+    expect(body).toContain("<h3>Flow diagram</h3>");
+    expect(body).toContain('```mermaid\nflowchart LR\n  N0["Select account"]');
+    expect(body).toContain("N0 --> N1\n  N1 --> N2");
+    expect(renderReview(review, head)).not.toContain("Flow diagram");
+    expect(
+      renderReview({ ...review, flow: { steps: ["😀", "✅"] } }, head),
+    ).not.toContain("```mermaid");
+  });
+
+  test("model prose and diagram labels cannot inject HTML, Mermaid syntax or identity markers", () => {
+    const hostile =
+      '</p><script>alert(1)</script> & "quoted"\n<!-- codex-action:review:' +
+      "f".repeat(40) +
+      " -->";
+    const body = renderReview(
+      {
+        ...review,
+        summary: hostile,
+        walkthrough: hostile,
+        changes: [{ area: hostile, description: hostile, files: [hostile] }],
+        risk: { level: "high", explanation: hostile },
+        reasoning: hostile,
+        flow: {
+          steps: [
+            'Read \"cache\"\n```mermaid\nclick N0',
+            "Return <script>data</script>",
+          ],
+        },
+      },
+      head,
     );
-    expect(body).not.toContain("<table>");
     expect(body).not.toContain("<script>");
+    expect(body).not.toContain("</p><script>");
+    expect(body).toContain(
+      "&lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;quoted&quot;<br>",
+    );
+    expect(body).not.toContain("codex-action:review:" + "f".repeat(40));
+    expect(body.match(/```/g)).toHaveLength(2);
+    expect(body).not.toContain("\nclick N0");
     expect(reviewHead(body)).toBe(head);
+  });
+
+  test("no-findings walkthroughs still explain changes without an empty issue list", () => {
+    const body = renderReview(
+      {
+        ...review,
+        summary: "No actionable bugs found.",
+        findings: [],
+        risk: {
+          level: "low",
+          explanation:
+            "The change is local and the inspected call paths preserve behavior.",
+        },
+      },
+      head,
+    );
+    expect(body).toContain("No actionable bugs found.");
+    expect(body).toContain(review.walkthrough.replaceAll("'", "&#39;"));
+    expect(body).toContain("Merge risk · Low");
+    expect(body).not.toContain("**Findings");
+    expect(body).not.toContain(finding.title);
   });
 
   test("validates required evidence, diff sides and positive integer lines", () => {
@@ -260,6 +327,21 @@ describe("Claude-style review presentation", () => {
     ).toBe(false);
     expect(reviewSchema.safeParse({ ...review, approve: true }).success).toBe(
       false,
+    );
+  });
+
+  test("requires grounded summary sections and bounded data-only flows", () => {
+    for (const invalid of [
+      { ...review, walkthrough: "" },
+      { ...review, changes: [] },
+      { ...review, risk: { level: "approved", explanation: "" } },
+      { ...review, flow: { steps: ["One step"] } },
+      { ...review, flow: { steps: Array(9).fill("Step") } },
+      { ...review, flow: { steps: ["Read", "Report"], source: "click N0" } },
+    ])
+      expect(reviewSchema.safeParse(invalid).success).toBe(false);
+    expect(reviewSchema.safeParse({ ...review, flow: null }).success).toBe(
+      true,
     );
   });
 

@@ -125,6 +125,14 @@ Independent frozen production installs also passed with the patched dependency
 graph: root installed 235 packages and base installed 186; both completed the
 offline SDK smoke run.
 
+### 2026-10-31 walkthrough-led review summaries
+
+Reworked the summary around a walkthrough of the PR's behavior changes, grouped change descriptions and an optional visible flow diagram. Merge-risk evidence and scope/verification stay collapsed. The model returns bounded structured data; the trusted renderer escapes prose and generates diagram syntax from safe labels. Each issue remains a separate coloured inline comment, with no duplicate findings index in the summary.
+
+Risk is explicitly a code-inspection assessment. The report states that its read/search tools do not execute tests, rather than inventing passing check counts. Shared-bot work was cancelled; the existing GitHub Actions identity and runtime remain in use.
+
+Verification: 91 scoped tests passed, 0 failed, with 417 assertions across eight files. Root TypeScript and scoped formatting/diff checks passed. Independent read-only source review found no material issues. The existing live preview was updated in place; GitHub's Mermaid graph and collapsible risk section were visually inspected in Chrome.
+
 ### 2026-10-31 unboxed HTML summary
 
 Replaced the summary table with the selected unboxed layout: short conclusion, coverage expanded by default, collapsed review details and a small reviewed-commit footer. Removed the metadata grid and counters. Separate coloured inline findings, safe HTML escaping and review identity markers remain intact.

@@ -12,7 +12,7 @@ One native review summary
 Each finding is its own inline comment, marked red for a bug, yellow for an
 optional suggestion or purple for a pre-existing defect. The title and impact
 are visible; supporting evidence and verification expand inside that comment.
-The main summary uses unboxed GitHub-supported HTML: a short review conclusion, coverage open by default, collapsed supporting review details and a small reviewed-commit footer. It has no table, dashboard counters or combined findings list. Individual issues remain in their own inline comments.
+The main summary leads with a **Walkthrough** explaining what changed, then the review outcome and **Changes** grouped by behavior or subsystem. A small flow diagram appears only when a real sequential flow helps explain the change. Merge-risk evidence and review scope/verification stay collapsed, followed by the reviewed-commit footer. Individual issues remain in their own inline comments.
 There is no combined findings comment and no separate review per severity.
 
 One API call submits the summary and all individual inline comments together.
@@ -52,9 +52,26 @@ Use same-repository `pull_request` events and prepare the base-to-head patch as 
 the generated workflow. `review_mode` is incompatible with `track_progress`.
 Existing installations need the updated source pin.
 
+## Summary data and verification
+
+The structured result includes `walkthrough`, grouped `changes` (area, description
+and file paths), an inspection-based `risk` (low/moderate/high plus evidence), and
+`flow` (null or two to eight short sequential step labels). These are returned with
+the existing conclusion, inspected scope, reasoning and individual findings.
+
+The renderer owns HTML and Mermaid syntax. Model prose is escaped; diagram labels
+are reduced to safe plain text and rendered into a fixed linear graph. The model
+cannot supply Mermaid directives, HTML or script/link actions. Trivial or
+non-sequential changes use `flow: null`.
+
+Risk is an assessment from code inspection, not a CI result or merge approval.
+Review mode has read/search tools and does not execute tests. The summary never
+fabricates passing checks, percentages or test results. It uses the walkthrough
+and expandable report structure without duplicating findings in a summary index.
+
 ## Other comments and progress
 
-Task progress, finding sections, review details and error diagnostics share the
+Task progress, finding evidence, risk, review scope and error diagnostics share the
 same GitHub-supported disclosure renderer. Task comments use checkboxes and an
 expanded current step; error details and completed evidence stay collapsed.
 Finalization removes the initial loading state, including edited checklists and
@@ -88,10 +105,3 @@ The current installer creates workflow and API-key setup PRs and uses the built-
 `github-actions[bot]` identity. It does not register or host a shared GitHub App.
 Users of the updated action automatically receive the same HTML summary and inline
 finding layout after enabling `review_mode`; a custom bot identity is separate.
-
-For one shared name and avatar across accounts, publish a public GitHub App that
-people install on selected repositories. GitHub still requires installation and
-permission approval. A shared App also needs an operator-controlled service to
-issue installation-scoped tokens or run the integration; its private key must stay
-with that service, never be distributed to consumer repositories. That hosted
-onboarding and token service is not implemented by this Action installer.
