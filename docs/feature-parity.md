@@ -69,7 +69,7 @@ provider parity.
 ## Delivery and verification
 
 The maintained examples and generated workflow pin source commit
-`ab11fd1f14fc26ed6defba4d2a373309559d8c85`. This revision submits one native review summary with a separate coloured inline comment per finding; see
+`79148d3eb244bdbebea2a7bfbf947ceaa6087c23`. This revision submits one native review summary with a separate coloured inline comment per finding; see
 [review presentation](./review-presentation.md). This adds the managed Claude
 bot's presentation, not parity with its hosted review engine. Existing consumers
 need to update their workflow revision and enable `review_mode`. No release tag
