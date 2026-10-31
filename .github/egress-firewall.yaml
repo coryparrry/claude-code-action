@@ -27,3 +27,6 @@ allow:
   - azure.archive.ubuntu.com
   - archive.ubuntu.com
   - security.ubuntu.com
+
+  # Live Terra verification on the isolated fixture branch.
+  - api.openai.com

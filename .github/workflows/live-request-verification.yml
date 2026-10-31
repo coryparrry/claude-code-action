@@ -1,0 +1,114 @@
+name: Live request verification
+on:
+  pull_request:
+    types: [opened, synchronize, labeled]
+permissions:
+  contents: read
+jobs:
+  fixture-check:
+    if: github.head_ref == 'codex/live-request-workflows'
+    name: Live request fixture CI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun --no-env-file test test/fixtures/live-request/normalize.test.ts
+  verify:
+    if: >-
+      github.event.action == 'labeled' && github.event.label.name == 'codex-live-verify' &&
+      github.actor == 'coryparrry' && github.head_ref == 'codex/live-request-workflows' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04-firewall
+    timeout-minutes: 35
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      LIVE_PR: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Prepare actual GitHub event snapshots
+        run: node scripts/live-request-fixture.mjs prepare
+      - name: Diagnose real failing fixture CI
+        id: diagnosis
+        uses: ./
+        env:
+          GITHUB_EVENT_NAME: issue_comment
+          GITHUB_EVENT_PATH: ${{ runner.temp }}/live-diagnosis.json
+        with:
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          trigger_phrase: /verify-codex
+          codex_model: gpt-6.1-terra
+          codex_effort: max
+          codex_sandbox: read-only
+          claude_args: --permission-mode auto --no-session-persistence
+          max_turns: "25"
+      - name: Verify diagnosis and preserve its report
+        env:
+          LIVE_CONCLUSION: ${{ steps.diagnosis.outputs.conclusion }}
+          LIVE_REPORT: ${{ steps.diagnosis.outputs.execution_file }}
+        run: node scripts/live-request-fixture.mjs diagnosis
+      - name: Implement actual fixture issue
+        id: issue
+        uses: ./
+        env:
+          GITHUB_EVENT_NAME: issues
+          GITHUB_EVENT_PATH: ${{ runner.temp }}/live-issue.json
+        with:
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          trigger_phrase: /verify-codex
+          codex_model: gpt-6.1-terra
+          codex_effort: max
+          base_branch: codex/requested-change-workflows
+          branch_prefix: codex/live-issue-
+          allowed_tools: Write(test/fixtures/live-request/**),Edit(test/fixtures/live-request/**)
+          claude_args: --permission-mode auto --no-session-persistence
+          max_turns: "25"
+      - name: Verify pushed issue result and PR handoff
+        env:
+          LIVE_CONCLUSION: ${{ steps.issue.outputs.conclusion }}
+          LIVE_REPORT: ${{ steps.issue.outputs.execution_file }}
+          LIVE_BRANCH: ${{ steps.issue.outputs.branch_name }}
+        run: node scripts/live-request-fixture.mjs issue
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Implement actual inline reply
+        id: inline
+        uses: ./
+        env:
+          GITHUB_EVENT_NAME: pull_request_review_comment
+          GITHUB_EVENT_PATH: ${{ runner.temp }}/live-inline.json
+        with:
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          trigger_phrase: /verify-codex
+          codex_model: gpt-6.1-terra
+          codex_effort: max
+          allowed_tools: Write(test/fixtures/live-request/**),Edit(test/fixtures/live-request/**),Bash(bun --no-env-file test test/fixtures/live-request/normalize.test.ts:*)
+          claude_args: --permission-mode auto --no-session-persistence
+          max_turns: "25"
+      - name: Verify pushed inline fix and passing regression
+        env:
+          LIVE_CONCLUSION: ${{ steps.inline.outputs.conclusion }}
+          LIVE_REPORT: ${{ steps.inline.outputs.execution_file }}
+        run: node scripts/live-request-fixture.mjs inline
+      - name: Save live reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-request-reports-${{ github.run_id }}
+          path: ${{ runner.temp }}/live-*-report.json
+          if-no-files-found: warn
+          retention-days: 7
