@@ -113,8 +113,14 @@ if (mode === "denied") {
         calls.some((call: any) => call.id === item.tool_use_id),
     );
   assert.equal(results.length, 2);
-  for (const result of results)
-    assert.equal(JSON.parse(result.content).url, issue.html_url);
+  for (const result of results) {
+    const envelope = JSON.parse(result.content);
+    assert.notEqual(envelope.isError, true);
+    const text = envelope.content.find(
+      (entry: any) => entry.type === "text",
+    )?.text;
+    assert.equal(JSON.parse(text).url, issue.html_url);
+  }
   const tracking = await api(
     `issues/comments/${process.env.TRACKING_COMMENT_ID}`,
   );
