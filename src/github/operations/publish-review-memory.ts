@@ -160,16 +160,24 @@ async function validateReviewProducer(
 export async function publishReviewRun(
   client: Octokit,
   options: RepositoryMemoryOptions,
-  runId: number,
+  source: { id: number; attempt: number },
   trustedActors: string[],
   decodeArchive = readCandidateArchive,
   verifyProof = verifyReviewProof,
 ): Promise<string> {
-  if (!Number.isSafeInteger(runId) || runId < 1)
+  if (
+    ![source.id, source.attempt].every(
+      (value) => Number.isSafeInteger(value) && value > 0,
+    )
+  )
     throw new Error("Invalid source workflow run");
   const run = (
     await retryGitHubRead(() =>
-      client.rest.actions.getWorkflowRun({ ...options, run_id: runId }),
+      client.rest.actions.getWorkflowRunAttempt({
+        ...options,
+        run_id: source.id,
+        attempt_number: source.attempt,
+      }),
     )
   ).data;
   const repository = `${options.owner}/${options.repo}`.toLowerCase();

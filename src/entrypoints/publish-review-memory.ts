@@ -17,13 +17,18 @@ export async function maintainRepositoryMemory(
     throw new Error("Invalid memory repository");
   const [owner, repo] = repository.split("/") as [string, string];
   const options = { owner, repo };
-  if (eventName === "workflow_run")
+  if (eventName === "workflow_run") {
+    const source = event.workflow_run ?? {};
     return publishReviewRun(
       client,
       options,
-      Number(event.workflow_run?.id),
+      {
+        id: Number(source.id),
+        attempt: Number(source.run_attempt),
+      },
       trustedActors,
     );
+  }
   if (
     eventName === "pull_request_target" &&
     event.action === "closed" &&

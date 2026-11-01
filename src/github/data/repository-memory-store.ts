@@ -35,11 +35,9 @@ const memoryIndexSchema = z.strictObject({
 });
 
 /** Recognize an identical learning without separate IDs or record-file bookkeeping. */
-function sameLearning(
-  a: RepositoryMemoryRecord,
-  b: RepositoryMemoryRecord,
-): boolean {
+function sameLearning(a: MemoryEntry, b: MemoryEntry): boolean {
   return (
+    a.baseRef === b.baseRef &&
     a.sourcePr === b.sourcePr &&
     a.head === b.head &&
     a.note === b.note &&
@@ -257,7 +255,7 @@ export async function mutateMemoryBranch(
   options: RepositoryMemoryOptions,
   mutate: (index: MemoryIndex) => {
     index: MemoryIndex;
-    requiredRecord?: RepositoryMemoryRecord;
+    requiredRecord?: MemoryEntry;
   },
 ): Promise<boolean> {
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -346,21 +344,18 @@ export async function storeRepositoryMemory(
   state: { merged: boolean; baseRef: string; updatedAt: string },
 ): Promise<boolean> {
   return mutateMemoryBranch(client, options, (index) => {
-    const existing = index.entries.find((entry) => sameLearning(entry, record));
+    const entry: MemoryEntry = { ...record, ...state };
+    const existing = index.entries.find((prior) => sameLearning(prior, entry));
     if (existing && (existing.merged || !state.merged)) return { index };
-    const entry: MemoryEntry = {
-      ...record,
-      ...state,
-    };
     return {
       index: {
         ...index,
         entries: [
-          ...index.entries.filter((prior) => !sameLearning(prior, record)),
+          ...index.entries.filter((prior) => !sameLearning(prior, entry)),
           entry,
         ],
       },
-      requiredRecord: record,
+      requiredRecord: entry,
     };
   });
 }

@@ -20,7 +20,7 @@ export async function signFixtureCandidate(value: any, claims: Record<string, un
 export const verifyFixtureProof: typeof verifyReviewProof = (candidate, run, id) => verifyReviewProof(candidate, run, id, localProofKeys);
 
 /** Feed signed fixture artifacts through the real publisher and verifier. */
-export const publishFixtureRun: typeof publishReviewRun = (client, options, runId, actors, decode, verify = verifyFixtureProof) => publishReviewRun(client, options, runId, actors, async archive => signFixtureCandidate(JSON.parse(await (decode ?? readCandidateArchive)(archive))), verify);
+export const publishFixtureRun = (client: Octokit, options: { owner: string; repo: string }, runId: number, actors: string[], decode: Parameters<typeof publishReviewRun>[4] = readCandidateArchive, verify = verifyFixtureProof) => publishReviewRun(client, options, { id: runId, attempt: 1 }, actors, async archive => signFixtureCandidate(JSON.parse(await (decode ?? readCandidateArchive)(archive))), verify);
 
 import type { Octokit } from "@octokit/rest";
 import { REPOSITORY_MEMORY_BRANCH, type RepositoryMemoryRecord } from "../../src/github/data/repository-memory";
@@ -64,6 +64,7 @@ export function memoryFixture() {
     },
     actions: {
       getWorkflowRun: async ({ run_id }: any) => ({ data: runs.get(run_id) }),
+      getWorkflowRunAttempt: async ({ run_id }: any) => ({ data: runs.get(run_id) }),
       listWorkflowRunArtifacts: async () => ({ data: { artifacts } }),
       downloadArtifact: async () => ({ data: new Uint8Array([0]).buffer }),
     },

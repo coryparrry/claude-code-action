@@ -1,3 +1,9 @@
+import { maintainRepositoryMemory } from "../src/entrypoints/publish-review-memory";
+import { publishReviewRun as publishAttempt } from "../src/github/operations/publish-review-memory";
+import {
+  signFixtureCandidate,
+  verifyFixtureProof,
+} from "./fixtures/repository-memory";
 import { expect, test } from "bun:test";
 import {
   publishFixtureRun as publishReviewRun,
@@ -324,4 +330,79 @@ test("an already merged retargeted PR cannot publish its old-base proposal", asy
     ),
   ).toContain("retargeted");
   expect(fixture.branch()).toBeUndefined();
+});
+
+test("a successful completed attempt survives a newer failed rerun", async () => {
+  const fixture = memoryFixture();
+  const successful = structuredClone(fixture.runs.get(42));
+  Object.assign(fixture.runs.get(42), {
+    run_attempt: 2,
+    conclusion: "failure",
+  });
+  let selected = 0;
+  fixture.api.actions.getWorkflowRunAttempt = async ({
+    attempt_number,
+  }: any) => {
+    selected = attempt_number;
+    return { data: successful };
+  };
+  await publishAttempt(
+    fixture.client,
+    memoryOptions,
+    { id: 42, attempt: 1 },
+    ["trusted-user"],
+    async () => signFixtureCandidate(JSON.parse(candidate())),
+    verifyFixtureProof,
+  );
+  expect(selected).toBe(1);
+  expect(
+    (await readMemorySnapshot(fixture.client, memoryOptions)).index.entries,
+  ).toHaveLength(1);
+});
+
+test("workflow-run dispatch uses the immutable event attempt", async () => {
+  const fixture = memoryFixture();
+  let selected = 0;
+  fixture.api.actions.getWorkflowRunAttempt = async ({
+    attempt_number,
+  }: any) => {
+    selected = attempt_number;
+    return { data: { ...fixture.runs.get(42), conclusion: "failure" } };
+  };
+  await maintainRepositoryMemory(
+    fixture.client,
+    "owner/repo",
+    "workflow_run",
+    { workflow_run: { id: 42, run_attempt: 3 } },
+    ["trusted-user"],
+  );
+  expect(selected).toBe(3);
+});
+
+test("identical facts remain distinct by reviewed base until the final merge", async () => {
+  const fixture = memoryFixture();
+  await storeRepositoryMemory(
+    fixture.client,
+    memoryOptions,
+    memoryRecord,
+    pending,
+  );
+  await storeRepositoryMemory(fixture.client, memoryOptions, memoryRecord, {
+    ...pending,
+    baseRef: "release",
+  });
+  expect(
+    (await readMemorySnapshot(fixture.client, memoryOptions)).index.entries,
+  ).toHaveLength(2);
+  fixture.pulls.get(1).base.ref = "release";
+  fixture.pulls.get(1).merged_at = "2026-11-01";
+  await reconcilePullMemory(fixture.client, memoryOptions, 1);
+  expect(
+    (
+      await loadRepositoryMemory(fixture.client, memoryOptions, {
+        ...current,
+        baseRef: "release",
+      })
+    ).records,
+  ).toEqual([memoryRecord]);
 });
