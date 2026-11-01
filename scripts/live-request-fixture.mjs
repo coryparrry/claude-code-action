@@ -223,7 +223,7 @@ if (mode === "prepare") {
       assert.equal(content, "issue-handoff-terra-max-20261031\n");
       const comment = api(`issues/comments/${process.env.LIVE_COMMENT}`).body;
       assert(
-        comment.includes("Create a PR") &&
+        /\[Create PR[^\]]*\]\(/.test(comment) &&
           (comment.includes(branch) ||
             comment.includes(encodeURIComponent(branch))),
       );

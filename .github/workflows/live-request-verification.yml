@@ -52,7 +52,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: git diff --no-ext-diff --no-textconv "$BASE_SHA...$HEAD_SHA" -- > .git/codex-review.diff
       - id: agent
-        uses: coryparrry/claude-code-action@39cf9a682e1fc1fd562672af07a8bc8866643d2b
+        uses: coryparrry/claude-code-action@06567dcbc813b4c6e5ff1595bd4a804bae23d5ad
         env:
           LIVE_EVENT_NAME: pull_request
           LIVE_EVENT_PATH: ${{ runner.temp }}/live-review.json
@@ -65,6 +65,7 @@ jobs:
           codex_sandbox: read-only
           claude_args: --permission-mode auto --no-session-persistence
           max_turns: "30"
+          max_budget_usd: "0.50"
           prompt: |
             Review only test/fixtures/live-request/normalize.ts and its regression contract.
             normalizeLabel(null) must return the empty string. Report a concrete patch-introduced violation if present.
@@ -102,6 +103,7 @@ jobs:
     outputs:
       head_sha: ${{ steps.check_inline.outputs.head_sha }}
       comment_id: ${{ steps.check_inline.outputs.comment_id }}
+      comment_type: ${{ steps.inline.outputs.comment_type }}
       issue_sha: ${{ steps.check_issue.outputs.head_sha }}
     env:
       GH_TOKEN: ${{ github.token }}
@@ -120,7 +122,7 @@ jobs:
           LIVE_PHASE: commands
         run: node scripts/live-request-fixture.mjs prepare
       - id: diagnosis
-        uses: coryparrry/claude-code-action@39cf9a682e1fc1fd562672af07a8bc8866643d2b
+        uses: coryparrry/claude-code-action@06567dcbc813b4c6e5ff1595bd4a804bae23d5ad
         env:
           LIVE_EVENT_NAME: issue_comment
           LIVE_EVENT_PATH: ${{ runner.temp }}/live-diagnosis.json
@@ -133,6 +135,7 @@ jobs:
           codex_sandbox: read-only
           claude_args: --permission-mode auto --no-session-persistence
           max_turns: "30"
+          max_budget_usd: "0.50"
           append_system_prompt: |
             Diagnose the current PR CI only. Use get_ci_status, run details and download_job_log.
             Read the returned excerpt directly. Cite the current head SHA, failing run/job and actual error.
@@ -144,7 +147,7 @@ jobs:
           LIVE_COMMENT: ${{ steps.diagnosis.outputs.comment_id }}
         run: node "$RUNNER_TEMP/live-request-fixture.mjs" diagnosis
       - id: inline
-        uses: coryparrry/claude-code-action@39cf9a682e1fc1fd562672af07a8bc8866643d2b
+        uses: coryparrry/claude-code-action@06567dcbc813b4c6e5ff1595bd4a804bae23d5ad
         env:
           LIVE_EVENT_NAME: pull_request_review_comment
           LIVE_EVENT_PATH: ${{ runner.temp }}/live-inline.json
@@ -158,6 +161,7 @@ jobs:
           allowed_tools: "Write(test/fixtures/live-request/**),Edit(test/fixtures/live-request/**)"
           claude_args: --permission-mode auto --no-session-persistence
           max_turns: "30"
+          max_budget_usd: "0.50"
           append_system_prompt: |
             Implement the requested normalizeLabel fix and relevant regression coverage.
             Commit and push with the scoped Git tools. Do not install packages, execute tests or run repository code here.
@@ -172,7 +176,7 @@ jobs:
           LIVE_COMMENT: ${{ steps.inline.outputs.comment_id }}
         run: node "$RUNNER_TEMP/live-request-fixture.mjs" inline
       - id: issue
-        uses: coryparrry/claude-code-action@39cf9a682e1fc1fd562672af07a8bc8866643d2b
+        uses: coryparrry/claude-code-action@06567dcbc813b4c6e5ff1595bd4a804bae23d5ad
         env:
           LIVE_EVENT_NAME: issues
           LIVE_EVENT_PATH: ${{ runner.temp }}/live-issue.json
@@ -187,6 +191,7 @@ jobs:
           allowed_tools: "Write(test/fixtures/live-request/**),Edit(test/fixtures/live-request/**)"
           claude_args: --permission-mode auto --no-session-persistence
           max_turns: "30"
+          max_budget_usd: "0.50"
           append_system_prompt: |
             Implement only the issue's requested text file. Read it back, commit and push with the scoped Git tools, then provide the Create a PR handoff.
             Do not install packages, execute tests or run repository code in this write job. Validation runs separately.
@@ -239,11 +244,8 @@ jobs:
       - run: node -e 'require("node:assert/strict").equal(require("node:fs").readFileSync("test/fixtures/live-request/issue-result.txt", "utf8"), "issue-handoff-terra-max-20261031\n")'
 
   report_validation:
-    needs:
-      - commands
-      - validate_inline
-    if: always() && needs.commands.outputs.head_sha != '' &&
-      needs.commands.outputs.comment_id != ''
+    needs: [commands, validate_inline]
+    if: always() && needs.commands.outputs.head_sha != '' && needs.commands.outputs.comment_id != ''
     permissions:
       issues: write
       pull-requests: write
@@ -255,51 +257,29 @@ jobs:
           API_URL: ${{ github.api_url }}
           REPOSITORY: ${{ github.repository }}
           COMMENT_ID: ${{ needs.commands.outputs.comment_id }}
+          COMMENT_TYPE: ${{ needs.commands.outputs.comment_type }}
           HEAD_SHA: ${{ needs.commands.outputs.head_sha }}
           VALIDATION_RESULT: ${{ needs.validate_inline.result }}
-          RUN_URL:
-            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{
-            github.run_id }}/attempts/${{ github.run_attempt }}
-        run: >
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        run: |
           node --input-type=module <<'NODE'
-
-          const { API_URL, REPOSITORY, COMMENT_ID, HEAD_SHA, VALIDATION_RESULT,
-          RUN_URL, GH_TOKEN } = process.env;
-
-          if (!/^\d+$/.test(COMMENT_ID) || !/^[a-f0-9]{40}$/.test(HEAD_SHA)) throw
-          new Error('Invalid delivery metadata');
-
-          const url =
-          `${API_URL}/repos/${REPOSITORY}/issues/comments/${COMMENT_ID}`;
-
-          const headers = { Authorization: `Bearer ${GH_TOKEN}`, Accept:
-          'application/vnd.github+json', 'Content-Type': 'application/json' };
-
+          const { API_URL, REPOSITORY, COMMENT_ID, COMMENT_TYPE, HEAD_SHA, VALIDATION_RESULT, RUN_URL, GH_TOKEN } = process.env;
+          if (!/^\d+$/.test(COMMENT_ID) || !/^[a-f0-9]{40}$/.test(HEAD_SHA)) throw new Error('Invalid delivery metadata');
+          if (!['issue', 'review'].includes(COMMENT_TYPE)) throw new Error('Invalid tracking comment type');
+          const resource = COMMENT_TYPE === 'review' ? 'pulls/comments' : 'issues/comments';
+          const url = `${API_URL}/repos/${REPOSITORY}/${resource}/${COMMENT_ID}`;
+          const headers = { Authorization: `Bearer ${GH_TOKEN}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' };
           const response = await fetch(url, { headers });
-
-          if (!response.ok) throw new Error(`Comment read failed:
-          ${response.status}`);
-
+          if (!response.ok) throw new Error(`Comment read failed: ${response.status}`);
           const comment = await response.json();
-
           const marker = `<!-- codex-validation:${HEAD_SHA} -->`;
-
           const endMarker = '<!-- /codex-validation -->';
-
-          const section = `${marker}\nValidation for \`${HEAD_SHA}\`:
-          **${VALIDATION_RESULT}**. [View checks](${RUN_URL}).\n${endMarker}`;
-
+          const section = `${marker}\nValidation for \`${HEAD_SHA}\`: **${VALIDATION_RESULT}**. [View checks](${RUN_URL}).\n${endMarker}`;
           const start = comment.body.indexOf(marker);
-
           const end = start < 0 ? -1 : comment.body.indexOf(endMarker, start);
-
-          const body = start >= 0 && end >= 0 ? comment.body.slice(0, start) +
-          section + comment.body.slice(end + endMarker.length) :
-          `${comment.body}\n\n${section}`;
-
+          const body = start >= 0 && end >= 0 ? comment.body.slice(0, start) + section + comment.body.slice(end + endMarker.length) : `${comment.body}\n\n${section}`;
           if (body !== comment.body) {
             const update = await fetch(url, { method: 'PATCH', headers, body: JSON.stringify({ body }) });
             if (!update.ok) throw new Error(`Comment update failed: ${update.status}`);
           }
-
           NODE
