@@ -7,3 +7,8 @@ export function addCents(left: number, right: number): number {
   if (!Number.isSafeInteger(result)) throw new RangeError("Ledger overflow");
   return result;
 }
+
+/** Negate an integer-cent amount through the validated ledger operation. */
+export function negateCents(value: number): number {
+  return addCents(0, -value);
+}
