@@ -25,3 +25,7 @@ test("preserves the literal null label", () => {
 test("trims Unicode whitespace without changing internal whitespace", () => {
   expect(normalizeLabel("\u00a0a\u2003b\u00a0")).toBe("a\u2003b");
 });
+
+test("trims outer line endings without changing internal line breaks", () => {
+  expect(normalizeLabel("\r\n  hello\r\nworld  \r\n")).toBe("hello\r\nworld");
+});
