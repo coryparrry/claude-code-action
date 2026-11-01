@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { recordDelivery } from "../github/operations/delivery";
 // GitHub File Operations MCP Server
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -376,6 +377,7 @@ server.tool(
         githubToken,
       });
 
+      recordDelivery(newCommitData.sha, branch);
       const simplifiedResult = {
         commit: {
           sha: newCommitData.sha,
@@ -537,6 +539,7 @@ server.tool(
         githubToken,
       });
 
+      recordDelivery(newCommitData.sha, branch);
       const simplifiedResult = {
         commit: {
           sha: newCommitData.sha,

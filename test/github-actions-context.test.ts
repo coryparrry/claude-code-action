@@ -13,6 +13,7 @@ function run(overrides: Partial<Run> = {}): Run {
     id: 1,
     workflow_id: 10,
     event: "pull_request",
+    pull_requests: [{ number: 1 }],
     head_branch: "feature",
     head_sha: "current",
     run_number: 1,
@@ -121,6 +122,25 @@ describe("CI diagnosis context", () => {
     expect(result.summary.total_runs).toBe(0);
   });
 
+  test("excludes other PRs sharing the same SHA without dropping push runs", async () => {
+    const client = {
+      pulls: { get: async () => ({ data: { head: { sha: "current" } } }) },
+      paginate: async () => [
+        run({ id: 1 }),
+        run({ id: 2, pull_requests: [{ number: 2 }] as Run["pull_requests"] }),
+        run({ id: 3, pull_requests: [] }),
+        run({ id: 4, event: "push", pull_requests: [] }),
+      ],
+      actions: { listWorkflowRunsForRepo: {} },
+    } as unknown as Octokit;
+    const result = await getCIStatus(client, {
+      owner: "o",
+      repo: "r",
+      pull_number: 1,
+    });
+    expect(result.runs.map((item) => item.id)).toEqual([1, 4]);
+  });
+
   test("marks stale evidence and includes setup failures and latest-attempt steps", async () => {
     const requests: unknown[] = [];
     const client = {
@@ -171,4 +191,26 @@ describe("CI diagnosis context", () => {
     ]);
     expect(result.jobs[0]?.steps[1]?.conclusion).toBe("skipped");
   });
+});
+
+test("run details do not treat another PR at the same SHA as current evidence", async () => {
+  const client = {
+    actions: {
+      getWorkflowRun: async () => ({
+        data: run({ pull_requests: [{ number: 2 }] as Run["pull_requests"] }),
+      }),
+      listJobsForWorkflowRun: {},
+    },
+    pulls: { get: async () => ({ data: { head: { sha: "current" } } }) },
+    paginate: async () => [],
+  } as unknown as Octokit;
+  const result = await getWorkflowRunDetails(client, {
+    owner: "o",
+    repo: "r",
+    pull_number: 1,
+    run_id: 1,
+  });
+  expect(result.head_sha).toBe("current");
+  expect(result.is_current_pr).toBe(false);
+  expect(result.is_current_head).toBe(false);
 });

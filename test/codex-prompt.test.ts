@@ -95,12 +95,12 @@ describe("Codex action-owned instructions", () => {
     });
   }
 
-  test("uses shell commands without Claude Bash invocation syntax", () => {
+  test("uses structured Git tools without shell invocation syntax", () => {
     process.env.ACTION_ENGINE = "codex";
     delete process.env.USE_SIMPLE_PROMPT;
     const prompt = generatePrompt(context, data, false, "tag");
-    expect(prompt).toContain("via the shell tool");
-    expect(prompt).toContain("`git add <files>`");
+    expect(prompt).toContain("scoped mcp__github_git");
+    expect(prompt).toContain("mcp__github_git__commit_files");
     expect(prompt).not.toContain("Bash(");
   });
 

@@ -1,6 +1,13 @@
 import type { PreparedContext } from "./types";
 import type { FetchDataResult } from "../github/data/fetcher";
-import { redactSecrets, sanitizeContent } from "../github/utils/sanitizer";
+import { redactSecrets } from "../github/utils/sanitizer";
+import { sanitizeReviewBody } from "./review-content";
+
+/** Route prepared attachments through opaque IDs rather than out-of-workspace file reads. */
+export function formatContextImages(data: FetchDataResult): string {
+  if (!data.contextImages?.length) return "";
+  return `PREPARED ATTACHMENTS: Use mcp__github_context__view_image with the corresponding ID to view these images. Local download paths in quoted context are not file-tool inputs.\n${JSON.stringify(data.contextImages.map(({ id, url, path }) => ({ id, url, reference: path })))}`;
+}
 
 /** Keep webhook locations separate from instructions, including in simple prompts. */
 export function formatReviewRequest(data: FetchDataResult): string {
@@ -10,7 +17,9 @@ export function formatReviewRequest(data: FetchDataResult): string {
     data.reviewRequest,
     (key, value) =>
       typeof value === "string"
-        ? redactSecrets(key === "diffHunk" ? value : sanitizeContent(value))
+        ? redactSecrets(
+            key === "parentBody" ? sanitizeReviewBody(value) : value,
+          )
         : value,
     2,
   ).replace(

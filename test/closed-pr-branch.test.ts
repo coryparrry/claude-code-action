@@ -32,8 +32,12 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 describe("closed PR replacement ancestry", () => {
-  for (const useCommitSigning of [false, true]) {
-    test(`retains a deleted original head with API signing ${useCommitSigning}`, async () => {
+  for (const { useCommitSigning, state, override } of [
+    { useCommitSigning: false, state: "CLOSED", override: "" },
+    { useCommitSigning: true, state: "CLOSED", override: "alternate" },
+    { useCommitSigning: false, state: "MERGED", override: "" },
+  ]) {
+    test(`preserves ${state} ancestry and target with signing ${useCommitSigning}, override ${override}`, async () => {
       const root = mkdtempSync(join(tmpdir(), "closed-pr-"));
       const originalCwd = process.cwd();
       try {
@@ -58,14 +62,21 @@ describe("closed PR replacement ancestry", () => {
         git(seed, "commit", "-m", "original feature");
         const head = git(seed, "rev-parse", "HEAD");
         git(seed, "push", "origin", `${head}:refs/pull/42/head`);
-        git(root, "clone", remote, workspace);
+        git(seed, "checkout", "-B", "main", "origin/main");
+        writeFileSync(join(seed, "base.txt"), "new base\n");
+        git(seed, "add", "base.txt");
+        git(seed, "commit", "-m", "advance target");
+        const target = git(seed, "rev-parse", "HEAD");
+        for (const branch of ["main", "release", "alternate"])
+          git(seed, "push", "origin", `HEAD:refs/heads/${branch}`);
+        git(root, "clone", "--depth=1", `file://${remote}`, workspace);
         process.chdir(workspace);
         const data = {
           contextData: {
-            state: "CLOSED",
+            state,
             title: "Original feature",
             labels: { nodes: [] },
-            baseRefName: "main",
+            baseRefName: "release",
             headRefName: "deleted-original",
             headRefOid: head,
             commits: { totalCount: 1 },
@@ -74,19 +85,44 @@ describe("closed PR replacement ancestry", () => {
         const context = createMockContext({
           isPR: true,
           entityNumber: 42,
-          inputs: { useCommitSigning, branchPrefix: "codex/" },
+          inputs: {
+            useCommitSigning,
+            branchPrefix: "codex/",
+            baseBranch: override,
+          },
         });
         const result = await setupBranch(
-          { rest: {} } as Octokits,
+          {
+            rest: {
+              git: {
+                getRef: async () => ({ data: { object: { sha: target } } }),
+              },
+            },
+          } as unknown as Octokits,
           data,
           context,
         );
-        expect(result.baseBranch).toBe("main");
-        expect(result.sourceSha).toBe(head);
-        expect(git(workspace, "rev-parse", "HEAD")).toBe(head);
-        expect(
-          readFileSync(join(workspace, "original-feature.txt"), "utf8"),
-        ).toBe("preserved feature\n");
+        expect(result.baseBranch).toBe(override || "release");
+        expect(git(workspace, "rev-parse", "HEAD")).toBe(
+          state === "CLOSED" ? head : target,
+        );
+        if (state === "CLOSED") {
+          expect(result.sourceSha).toBe(head);
+          expect(
+            readFileSync(join(workspace, "original-feature.txt"), "utf8"),
+          ).toBe("preserved feature\n");
+          expect(
+            git(
+              workspace,
+              "merge-base",
+              `origin/${override || "release"}`,
+              "HEAD",
+            ),
+          ).toMatch(/^[a-f0-9]{40}$/);
+        } else
+          expect(readFileSync(join(workspace, "base.txt"), "utf8")).toBe(
+            "new base\n",
+          );
         if (!useCommitSigning)
           expect(git(workspace, "branch", "--show-current")).toBe(
             result.claudeBranch!,

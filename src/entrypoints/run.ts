@@ -1,6 +1,10 @@
 #!/usr/bin/env bun
 
 import { usesApiCommitSigning } from "../github/operations/commit-signing";
+import {
+  deliveredHead,
+  initializeDeliveryReceipt,
+} from "../github/operations/delivery";
 
 /**
  * Unified entrypoint for the Codex GitHub Action.
@@ -33,6 +37,7 @@ import type { GitHubContext } from "../github/context";
 import {
   loadReviewHistory,
   publishReview,
+  retireReviewSummaries,
   type ReviewTarget,
 } from "../review/publisher";
 import { nativeReviewOptions, reviewPrompt } from "../review/runtime";
@@ -87,12 +92,14 @@ async function writeStepSummary(executionFile: string): Promise<void> {
   }
 }
 
+/** Prepare, execute and finalize one action invocation, including verified delivery metadata. */
 async function run() {
   const nativeReview = process.env.REVIEW_MODE === "true";
   let deliveryError: string | undefined;
   let githubToken: string | undefined;
   let commentId: number | undefined;
   let claudeBranch: string | undefined;
+  let deliveryBranch: string | undefined;
   let baseBranch: string | undefined;
   let executionFile: string | undefined;
   let claudeSuccess = false;
@@ -106,6 +113,10 @@ async function run() {
   // Track whether we've completed prepare phase, so we can attribute errors correctly
   let prepareCompleted = false;
   try {
+    core.exportVariable(
+      "CODEX_GIT_DELIVERY_RECEIPT",
+      initializeDeliveryReceipt(),
+    );
     core.exportVariable(
       "CODEX_INLINE_COMMENTS_BUFFER",
       initializeInlineCommentBuffer(),
@@ -194,8 +205,15 @@ async function run() {
     if (reviewTarget) {
       const history = await loadReviewHistory(octokit.rest, reviewTarget);
       if (history.reviewedHeads.has(reviewTarget.head)) {
-        if (history.review)
+        if (history.review) {
+          await retireReviewSummaries(
+            octokit.rest,
+            reviewTarget,
+            history.review,
+            history,
+          );
           core.setOutput("review_url", history.review.html_url);
+        }
         core.setOutput("conclusion", "success");
         console.log(
           "This bot has already reviewed the current head; skipping duplicate review.",
@@ -219,6 +237,7 @@ async function run() {
 
     commentId = prepareResult.commentId;
     claudeBranch = prepareResult.branchInfo.claudeBranch;
+    deliveryBranch = claudeBranch || prepareResult.branchInfo.currentBranch;
     baseBranch = prepareResult.branchInfo.baseBranch;
     prepareCompleted = true;
 
@@ -397,7 +416,31 @@ async function run() {
     }
 
     // Set remaining action-level outputs
-    core.setOutput("branch_name", claudeBranch);
+    core.setOutput("branch_name", deliveryBranch);
+    core.setOutput("comment_id", commentId);
+    if (
+      !nativeReview &&
+      claudeSuccess &&
+      octokit &&
+      context &&
+      deliveryBranch
+    ) {
+      try {
+        core.setOutput(
+          "head_sha",
+          await deliveredHead(
+            octokit,
+            context.repository.owner,
+            context.repository.repo,
+            deliveryBranch,
+          ),
+        );
+      } catch {
+        core.warning(
+          "Unable to resolve the remote branch for downstream validation",
+        );
+      }
+    }
     core.setOutput("github_token", githubToken);
     core.setOutput(
       "github_app_token_created",

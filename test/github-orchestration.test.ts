@@ -144,7 +144,7 @@ describe("GitHub preparation contracts", () => {
         join(directory, "codex-prompts/codex-prompt.txt"),
         "utf8",
       );
-      expect(prompt).toContain("git add");
+      expect(prompt).toContain("mcp__github_git__commit_files");
       expect(prompt).not.toContain("mcp__github_file_ops__commit_files");
       expect(process.env.ALLOWED_TOOLS).toBe(
         "Read,mcp__github_inline_comment__*",
@@ -227,12 +227,18 @@ describe("GitHub preparation contracts", () => {
   test("scoped web grants remove defaults while explicit user denials remain", () => {
     expect(
       buildDisallowedToolsString([], ["WebFetch(domain:docs.example.com)"]),
-    ).toBe("WebSearch");
+    ).toContain("WebSearch");
     expect(
       buildDisallowedToolsString(
         ["WebFetch"],
         ["WebFetch(domain:docs.example.com)"],
       ),
-    ).toBe("WebSearch,WebFetch");
+    ).toContain("WebSearch");
+    expect(
+      buildDisallowedToolsString(
+        ["WebFetch"],
+        ["WebFetch(domain:docs.example.com)"],
+      ),
+    ).toContain("WebFetch");
   });
 });

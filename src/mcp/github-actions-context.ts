@@ -80,7 +80,12 @@ export async function getCIStatus(
     repo: params.repo,
     head_sha: pr.head.sha,
   });
-  return { head_sha: pr.head.sha, ...summarizeWorkflowRuns(runs, status) };
+  const scoped = runs.filter(
+    (run) =>
+      !["pull_request", "pull_request_target"].includes(run.event) ||
+      run.pull_requests?.some((pull) => pull.number === params.pull_number),
+  );
+  return { head_sha: pr.head.sha, ...summarizeWorkflowRuns(scoped, status) };
 }
 
 /** Surface stale-run evidence and setup/step outcomes rather than only failed names. */
@@ -95,10 +100,14 @@ export async function getWorkflowRunDetails(
     listWorkflowJobs(client, { owner, repo, run_id, filter: "latest" }),
   ]);
   const run = runResult.data;
+  const isCurrentPR =
+    !["pull_request", "pull_request_target"].includes(run.event) ||
+    !!run.pull_requests?.some((pull) => pull.number === pull_number);
   return {
     head_sha: run.head_sha,
     current_head_sha: prResult.data.head.sha,
-    is_current_head: run.head_sha === prResult.data.head.sha,
+    is_current_pr: isCurrentPR,
+    is_current_head: isCurrentPR && run.head_sha === prResult.data.head.sha,
     run_attempt: run.run_attempt,
     status: run.status,
     conclusion: run.conclusion,

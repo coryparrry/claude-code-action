@@ -539,7 +539,7 @@ describe("generatePrompt", () => {
     const prompt = await generatePrompt(envVars, mockGitHubData, false, "tag");
 
     // Should contain PR-specific instructions (git commands when not using signing)
-    expect(prompt).toContain("scripts/git-push.sh origin");
+    expect(prompt).toContain("mcp__github_git__push");
     expect(prompt).toContain(
       "Always push to the existing branch when triggered on a PR",
     );
@@ -677,7 +677,7 @@ describe("generatePrompt", () => {
     const prompt = await generatePrompt(envVars, mockGitHubData, false, "tag");
 
     // Should contain open PR instructions (git commands when not using signing)
-    expect(prompt).toContain("scripts/git-push.sh origin");
+    expect(prompt).toContain("mcp__github_git__push");
     expect(prompt).toContain(
       "Always push to the existing branch when triggered on a PR",
     );
@@ -815,10 +815,10 @@ describe("generatePrompt", () => {
     const prompt = await generatePrompt(envVars, mockGitHubData, false, "tag");
 
     // Should have git command instructions
-    expect(prompt).toContain("Use git commands via the shell tool");
-    expect(prompt).toContain("git add");
-    expect(prompt).toContain("git commit");
-    expect(prompt).toContain("scripts/git-push.sh origin");
+    expect(prompt).toContain("mcp__github_git__commit_files");
+    expect(prompt).toContain("mcp__github_git__commit_files");
+    expect(prompt).toContain("mcp__github_git__commit_files");
+    expect(prompt).toContain("mcp__github_git__push");
 
     // Should use the minimal comment tool
     expect(prompt).toContain("mcp__github_comment__update_codex_comment");
@@ -856,7 +856,7 @@ describe("generatePrompt", () => {
     expect(prompt).toContain("mcp__github_comment__update_codex_comment");
 
     // Should not have git command instructions
-    expect(prompt).not.toContain("Use git commands via the shell tool");
+    expect(prompt).not.toContain("mcp__github_git__commit_files");
 
     // Bash is off unless the user passes --allowedTools through claude_args.
     // allowed_tools was removed in v1.0 and must not appear as live guidance.
@@ -945,7 +945,7 @@ describe("generatePrompt", () => {
         expect(prompt).toContain(
           "compare against `origin/develop` (NOT main/master)",
         );
-        expect(prompt).toContain("git diff origin/develop...HEAD");
+        expect(prompt).toContain("mcp__github_git__get_diff with base: true");
 
         // 4. Capability limits + FAQ pointer
         expect(prompt).toContain(
@@ -1105,9 +1105,9 @@ describe("buildAllowedToolsString", () => {
     expect(result).toContain("Read");
 
     // Default is no commit signing, so should have specific Bash git commands
-    expect(result).toContain("Bash(git add:*)");
-    expect(result).toContain("Bash(git commit:*)");
-    expect(result).toContain("scripts/git-push.sh:*)");
+    expect(result).toContain("mcp__github_git__commit_files");
+    expect(result).toContain("mcp__github_git__push");
+    expect(result).toContain("mcp__github_git__push");
     expect(result).toContain("mcp__github_comment__update_codex_comment");
 
     // Should not have commit signing tools
@@ -1127,8 +1127,8 @@ describe("buildAllowedToolsString", () => {
     expect(result).not.toContain("Write");
 
     // Should have specific Bash git commands for non-signing mode
-    expect(result).toContain("Bash(git add:*)");
-    expect(result).toContain("Bash(git commit:*)");
+    expect(result).toContain("mcp__github_git__commit_files");
+    expect(result).toContain("mcp__github_git__push");
     expect(result).toContain("mcp__github_comment__update_codex_comment");
 
     // Should not have commit signing tools
@@ -1220,10 +1220,10 @@ describe("buildAllowedToolsString", () => {
     expect(result).not.toContain("Write");
 
     // Specific Bash git commands should be included
-    expect(result).toContain("Bash(git add:*)");
-    expect(result).toContain("Bash(git commit:*)");
-    expect(result).toContain("scripts/git-push.sh:*)");
-    expect(result).toContain("Bash(git rm:*)");
+    expect(result).toContain("mcp__github_git__commit_files");
+    expect(result).toContain("mcp__github_git__push");
+    expect(result).toContain("mcp__github_git__push");
+    expect(result).toContain("mcp__github_git__delete_files");
 
     // Comment tool from minimal server should be included
     expect(result).toContain("mcp__github_comment__update_codex_comment");
@@ -1239,7 +1239,7 @@ describe("buildAllowedToolsString", () => {
 
     // Base tools should be present
     expect(result).toContain("Read");
-    expect(result).toContain("Bash(git add:*)");
+    expect(result).toContain("mcp__github_git__commit_files");
 
     // Custom tools should be included
     expect(result).toContain("CustomTool1");
@@ -1311,7 +1311,7 @@ describe("buildDisallowedToolsString", () => {
     expect(result).not.toContain("WebFetch");
 
     // Result should be empty since no custom disallowed tools provided
-    expect(result).toBe("");
+    expect(result).toContain("Write(.git/**)");
   });
 
   test("should handle custom disallowed tools when all hardcoded tools are overridden", async () => {
@@ -1327,7 +1327,8 @@ describe("buildDisallowedToolsString", () => {
     expect(result).not.toContain("WebFetch");
 
     // Only custom disallowed tools should remain
-    expect(result).toBe("BadTool1,BadTool2");
+    expect(result).toContain("Write(.git/**)");
+    expect(result).toEndWith("BadTool1,BadTool2");
   });
 });
 
