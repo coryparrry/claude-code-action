@@ -47,7 +47,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: agent
-        uses: coryparrry/claude-code-action@06567dcbc813b4c6e5ff1595bd4a804bae23d5ad
+        uses: coryparrry/claude-code-action@8982119b2aaec3fcbb4e15fef72c8bd5b61cec84
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -158,7 +158,7 @@ jobs:
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
       - id: agent
-        uses: coryparrry/claude-code-action@06567dcbc813b4c6e5ff1595bd4a804bae23d5ad
+        uses: coryparrry/claude-code-action@8982119b2aaec3fcbb4e15fef72c8bd5b61cec84
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
