@@ -276,3 +276,12 @@ describe("automatic branch-backed repository memory", () => {
     ).toBeLessThanOrEqual(2000);
   });
 });
+
+test("the retrieval budget counts the encoded prompt bytes, including escaped delimiters", () => {
+  const expansion = { ...memoryRecord, note: "<".repeat(500) };
+  const selected = boundRepositoryMemory([expansion, memoryRecord]);
+  expect(selected).toEqual([memoryRecord]);
+  expect(
+    Buffer.byteLength(JSON.stringify(selected).replaceAll("<", "\\u003c")),
+  ).toBeLessThanOrEqual(2000);
+});

@@ -114,8 +114,9 @@ export function boundRepositoryMemory(
   const selected: RepositoryMemoryRecord[] = [];
   for (const record of records) {
     if (
-      Buffer.byteLength(JSON.stringify([...selected, record])) <=
-      REPOSITORY_MEMORY_BYTES
+      Buffer.byteLength(
+        JSON.stringify([...selected, record]).replaceAll("<", "\\u003c"),
+      ) <= REPOSITORY_MEMORY_BYTES
     )
       selected.push(record);
     if (selected.length === 3) break;
