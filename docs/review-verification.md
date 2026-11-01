@@ -74,3 +74,20 @@ Plan/read-only mode blocks scoped Git, file-operation and standard GitHub MCP
 repository mutations even when explicitly allowed. The dedicated tracking-comment
 update tool remains available to report progress; read-only does not suppress
 that reporting channel.
+
+## Follow-up review efficiency and delivery edges
+
+Retired overviews keep their original replacement link instead of being rewritten
+on every later commit. Only the previous full overview is retired, keeping update
+work linear across a PR's history. Finding memory retains the claim and cause
+before clipping long verification appendices.
+
+Symlink targets are preserved as regular text directly from HEAD objects, never
+by following their destinations, so target-line findings can satisfy the read gate.
+Scoped Git diffs check both Read and Grep denials for every changed path before
+returning content. Agent-mode PR writes prepare a clean actual-head checkout in
+place of GitHub's synthetic merge ref and refuse to overwrite existing work.
+
+A remotely confirmed push remains eligible for isolated validation even if a
+later model call fails. The model failure stays visible separately from the
+validation result.

@@ -93,6 +93,20 @@ describe("restoreConfigFromBase", () => {
     expect(mappings[".claude-pr/CLAUDE.md"]).toBe("CLAUDE.md");
   });
 
+  test("symlink targets are inspectable HEAD text without following their destinations", () => {
+    symlinkSync("/outside/not-readable", join(repoDir, "link.txt"));
+    git(["add", "link.txt"]);
+    git(["commit", "-m", "head link"]);
+    restoreConfigFromBase("main");
+    const mapping = Object.entries(getReviewSourceMappings()).find(
+      ([, original]) => original === "link.txt",
+    );
+    expect(mapping).toBeDefined();
+    expect(readRepoFile(mapping![0])).toBe("/outside/not-readable");
+    expect(lstatRepoFile(mapping![0]).isSymbolicLink()).toBe(false);
+    expect(countClaudePrExcludeEntries()).toBe(1);
+  });
+
   afterEach(() => {
     process.chdir(originalCwd);
     if (tempDir) {

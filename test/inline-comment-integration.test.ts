@@ -14,6 +14,7 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
+/** Serve real HTTP delivery and ref checks for the root action integration. */
 function githubFixture() {
   const lines: number[] = [];
   const models: string[] = [];
@@ -22,8 +23,9 @@ function githubFixture() {
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
+    /** Return only the GitHub and model boundaries exercised by this fixture. */
     async fetch(request) {
-      const path = new URL(request.url).pathname;
+      const path = decodeURIComponent(new URL(request.url).pathname);
       if (request.method === "POST" && path === "/v1/responses") {
         const input = (await request.json()) as { model: string };
         models.push(input.model);
@@ -84,6 +86,8 @@ function githubFixture() {
         }
         return Response.json({ id: 45, body: "Codex is working…\nFinding." });
       }
+      if (path.endsWith("/git/ref/heads/feature"))
+        return Response.json({ object: { sha: "b".repeat(40) } });
       if (path.endsWith("/pulls/12")) {
         return Response.json({
           head: { sha: "a".repeat(40), repo: { full_name: "owner/repo" } },
@@ -157,9 +161,13 @@ test("upstream immediate-post tool exposes invalid lines and confirms a correcte
   }
 }, 15000);
 
-test.each([3, 124])(
-  "root action finalizes tracking after buffered line %i delivery",
-  async (line) => {
+test.each([
+  [3, false],
+  [124, false],
+  [3, true],
+] as const)(
+  "root action finalizes tracking after buffered line %i delivery and model failure %s",
+  async (line, failure) => {
     const fixture = githubFixture();
     const event = join(directory, "event.json");
     const output = join(directory, "output.txt");
@@ -199,13 +207,14 @@ test.each([3, 124])(
     mock.module(root + "/src/modes/tag/index.ts", () => ({ prepareTagMode: async () => {
       await mkdir(process.env.RUNNER_TEMP + "/codex-prompts", { recursive: true });
       await writeFile(process.env.RUNNER_TEMP + "/codex-prompts/codex-prompt.txt", "Review this change");
-      return { commentId: 45, branchInfo: { baseBranch: "main" }, claudeArgs: "" };
+      return { commentId: 45, branchInfo: { baseBranch: "main", currentBranch: "feature" }, claudeArgs: "" };
     } }));
     mock.module(root + "/base-action/src/run-codex.ts", () => ({ runCodex: async () => {
       await writeFile(process.env.CODEX_INLINE_COMMENTS_BUFFER, JSON.stringify({ ts: "now", path: "src/main.ts", line: ${line}, body: "Fix this bug" }) + "\\n");
       const executionFile = process.env.RUNNER_TEMP + "/codex-execution-output.json";
       await writeFile(executionFile, JSON.stringify([{ type: "result", duration_ms: 1, is_error: false }]));
-      return { conclusion: "success", executionFile };
+      await writeFile(process.env.CODEX_GIT_DELIVERY_RECEIPT, JSON.stringify({sha:"b".repeat(40),branch:"feature"}));
+      ${failure ? 'throw new Error("Provider failed after push");' : 'return { conclusion: "success", executionFile };'}
     } }));
   `,
     );
@@ -244,19 +253,23 @@ test.each([3, 124])(
         new Response(child.stderr).text(),
       ]);
       expect(stdout + stderr).toContain("Posted");
-      expect(code).toBe(line === 124 ? 1 : 0);
+      expect(code).toBe(line === 124 || failure ? 1 : 0);
       const conclusions = [
         ...(await readFile(output, "utf8")).matchAll(
           /conclusion<<[^\n]+\n([^\n]+)/g,
         ),
       ];
       expect(conclusions.at(-1)?.[1]).toBe(
-        line === 124 ? "failure" : "success",
+        line === 124 || failure ? "failure" : "success",
       );
+      expect(await readFile(output, "utf8")).toContain("head_sha<<");
+      expect(await readFile(output, "utf8")).toContain("b".repeat(40));
       expect(fixture.events).toEqual(["classify", "inline", "tracking"]);
       expect(fixture.models).toEqual(["fixture-review-model"]);
       expect(fixture.body()).toContain(
-        line === 124 ? "Codex encountered an error" : "Codex finished",
+        line === 124 || failure
+          ? "Codex encountered an error"
+          : "Codex finished",
       );
       if (line === 124)
         expect(fixture.body()).toContain("Inline feedback delivery failed");

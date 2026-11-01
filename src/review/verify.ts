@@ -107,6 +107,7 @@ export async function verifyReviewCandidates(
     maxTurns,
     maxBudgetUsd,
     executionFileName: "codex-review-verifier-output.json",
+    readAliases: sourceContext.aliases,
   });
   if (verified.conclusion !== "success")
     throw new Error(

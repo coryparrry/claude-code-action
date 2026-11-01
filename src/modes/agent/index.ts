@@ -1,3 +1,4 @@
+import { prepareAgentPrHead } from "../../github/operations/prepare-agent-head";
 import { usesApiCommitSigning } from "../../github/operations/commit-signing";
 import { mkdir, rm, writeFile } from "fs/promises";
 import { prepareMcpConfig } from "../../mcp/install-mcp-server";
@@ -109,6 +110,16 @@ export async function prepareAgentMode({
     process.env.GITHUB_HEAD_REF ||
     process.env.GITHUB_REF_NAME ||
     defaultBranch;
+
+  if (
+    process.env.CODEX_SANDBOX !== "read-only" &&
+    allowedTools.some((tool) =>
+      /^mcp__github_git(?:$|__(?:push|commit_files|delete_files|\*)(?:\(|$))/.test(
+        tool,
+      ),
+    )
+  )
+    prepareAgentPrHead(context);
 
   // Get our GitHub MCP servers config
   const ourMcpConfig = await prepareMcpConfig({

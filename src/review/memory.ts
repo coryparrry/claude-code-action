@@ -12,6 +12,14 @@ export type RememberedFinding = {
   resolved: boolean | null;
 };
 
+/** Keep the claim and cause rather than letting a long verification appendix displace them. */
+export function compactFindingBody(body: string, limit = 1800): string {
+  const claim = body.split("\n\n**Verification:**", 1)[0]!.trim();
+  if (claim.length <= limit) return redactSecrets(claim);
+  const half = Math.floor((limit - 5) / 2);
+  return redactSecrets(`${claim.slice(0, half)}\n...\n${claim.slice(-half)}`);
+}
+
 /** Recover action-owned finding IDs from modern, grouped and compact archived bodies. */
 export function rememberedFromBody(
   body: string,
@@ -53,9 +61,7 @@ export function rememberedFromBody(
       found.set(id, {
         ...source,
         id,
-        body: redactSecrets(
-          body.slice(Math.max(previous, match.index! - 1800), match.index),
-        ).trim(),
+        body: compactFindingBody(body.slice(previous, match.index)),
       });
     previous = match.index! + match[0].length;
   }
@@ -68,7 +74,7 @@ export function renderReviewMemory(records: RememberedFinding[]): string {
   const compact = records.map(({ id, path, body }) => ({
     id,
     path: Buffer.from(path).subarray(0, 400).toString("utf8"),
-    body: Buffer.from(body).subarray(0, 500).toString("utf8"),
+    body: compactFindingBody(body, 500),
   }));
   const encoded = Buffer.from(JSON.stringify(compact)).toString("base64");
   if (encoded.length > 50_000)

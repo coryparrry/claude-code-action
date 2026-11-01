@@ -657,7 +657,9 @@ describe("individual native GitHub review delivery", () => {
     expect(api.reviews).toHaveLength(2);
     expect(api.reviews[1].commit_id).toBe(next);
     expect(api.comments).toHaveLength(2);
-    expect(api.reviews[0].body).toContain("Superseded by the [current review]");
+    expect(api.reviews[0].body).toContain(
+      "Superseded by the [replacement review]",
+    );
     expect(api.reviews[0].body).not.toContain(finding.title);
     expect(api.reviews[1].body).toContain(review.summary);
     const edits = api.requests.filter((item) => item.method === "PUT").length;
@@ -683,7 +685,7 @@ describe("individual native GitHub review delivery", () => {
     await publishReview(api.client, target, review);
     expect(api.reviews).toHaveLength(3);
     expect(api.reviews[2].body).toContain(review.summary);
-    expect(api.reviews[0].body).toContain(api.reviews[2].html_url);
+    expect(api.reviews[0].body).toContain(api.reviews[1].html_url);
     expect(api.reviews[1].body).toContain(api.reviews[2].html_url);
     api.setHead(next);
     await expect(publishReview(api.client, target, review)).rejects.toThrow(
@@ -1198,4 +1200,19 @@ test("legacy review-body findings remain remembered after their overview is reti
       await loadReviewHistory(api.client, { ...target, head: next }, true)
     ).knownFindings?.has(findingId(finding)),
   ).toBe(true);
+});
+
+test("retired overview bodies are not rewritten on every later head", async () => {
+  const api = fixture();
+  for (let i = 0; i < 10; i++) {
+    const revision = String(i).repeat(40);
+    api.setHead(revision);
+    await publishReview(api.client, { ...target, head: revision }, review);
+  }
+  expect(
+    api.requests.filter((request) => request.method === "PUT"),
+  ).toHaveLength(9);
+  expect(
+    api.reviews.filter((item) => !item.body.startsWith("Superseded by")),
+  ).toHaveLength(1);
 });

@@ -331,6 +331,7 @@ async function run() {
           },
       ...reviewOptions,
       ...reviewLimits,
+      readAliases: sourceContext.aliases,
     });
 
     claudeSuccess = result.conclusion === "success";
@@ -473,13 +474,7 @@ async function run() {
     core.setOutput("branch_name", deliveryBranch);
     core.setOutput("comment_id", commentId);
     core.setOutput("comment_type", commentId ? trackingCommentType || "" : "");
-    if (
-      !nativeReview &&
-      claudeSuccess &&
-      octokit &&
-      context &&
-      deliveryBranch
-    ) {
+    if (!nativeReview && octokit && context && deliveryBranch) {
       try {
         core.setOutput(
           "head_sha",

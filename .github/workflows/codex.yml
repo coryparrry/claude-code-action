@@ -72,7 +72,7 @@ jobs:
 
   validate_change:
     needs: codex
-    if: needs.codex.outputs.head_sha != ''
+    if: always() && needs.codex.outputs.head_sha != ''
     permissions:
       contents: read
     runs-on: ubuntu-latest

@@ -482,3 +482,23 @@ test("empty candidate reviews do not make a paid verifier call", async () => {
   expect(result.executionFile).toBeUndefined();
   expect(result.review.reasoning).toContain("no verifier model call was made");
 });
+
+test("long verification text cannot displace a remembered trigger and cause during retirement", () => {
+  const marker = "<!-- codex-action:finding:abcdef123456 -->";
+  const text = `**Original title**\n\nTrigger: null input reaches normalization.\n\nCause: the caller has no null guard.\n\n**Verification:** ${"unrelated appendix ".repeat(800)}\n\n${marker}`;
+  const [remembered] = rememberedFromBody(text, {
+    path: "old.ts",
+    url: "",
+    resolved: true,
+  });
+  expect(remembered!.body).toContain("Original title");
+  expect(remembered!.body).toContain("no null guard");
+  expect(remembered!.body.length).toBeLessThanOrEqual(1800);
+  const [archived] = rememberedFromBody(renderReviewMemory([remembered!]), {
+    path: "",
+    url: "",
+    resolved: true,
+  });
+  expect(archived!.body).toContain("null input");
+  expect(archived!.body).toContain("no null guard");
+});

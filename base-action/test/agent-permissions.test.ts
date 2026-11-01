@@ -550,3 +550,23 @@ describe("AgentPermissions", () => {
     ).toThrow("not allowed");
   });
 });
+
+test("trusted source snapshot aliases retain original-path Read and Grep denials", () => {
+  for (const deny of ["Read(secret-link)", "Grep(secret-link)"]) {
+    const permission = new AgentPermissions({
+      cwd: "/workspace",
+      allowedTools: ["Read", "Grep"],
+      disallowedTools: [deny],
+      readAliases: { ".claude-pr/symlink-targets/abc.txt": "secret-link" },
+    });
+    expect(() =>
+      permission.assertDenied(
+        "Read",
+        "/workspace/.claude-pr/symlink-targets/abc.txt",
+      ),
+    ).toThrow("denied");
+    expect(() =>
+      permission.assertDenied("Grep", ".claude-pr/symlink-targets/abc.txt"),
+    ).toThrow("denied");
+  }
+});

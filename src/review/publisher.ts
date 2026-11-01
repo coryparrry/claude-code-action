@@ -68,7 +68,9 @@ export async function loadReviewHistory(
   );
   const active = owned.filter(
     (review) =>
-      !review.body?.startsWith("Superseded by the [current review](") &&
+      !/^Superseded by the \[(?:current|replacement) review\]\(/.test(
+        review.body || "",
+      ) &&
       (!verifiedOnly || review.body.includes(VERIFIED_REVIEW_MARKER)),
   );
   const reviewedHeads = new Set<string>();
@@ -145,11 +147,17 @@ export async function retireReviewSummaries(
       "The pull request changed or closed before overview cleanup; rerun on its current head.",
     );
   for (const previous of history.summaries ?? []) {
-    if (previous.id === current.id) continue;
+    if (
+      previous.id === current.id ||
+      /^Superseded by the \[(?:current|replacement) review\]\(/.test(
+        previous.body,
+      )
+    )
+      continue;
     const memory = renderReviewMemory(
       rememberedFromBody(previous.body, { path: "", url: "", resolved: null }),
     );
-    const body = `Superseded by the [current review](${current.html_url}). Historical inline findings remain attached to this review.${memory}\n\n<!-- codex-action:review:${previous.head} -->\n<!-- codex-action:inline-review -->`;
+    const body = `Superseded by the [replacement review](${current.html_url}). Historical inline findings remain attached to this review.${memory}\n\n<!-- codex-action:review:${previous.head} -->\n<!-- codex-action:inline-review -->`;
     if (previous.body === body) continue;
     const currentPR = await retryRead(() =>
       client.rest.pulls.get({

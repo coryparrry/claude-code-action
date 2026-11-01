@@ -165,6 +165,31 @@ function modelOutput(
   };
 }
 
+/** Check every changed path before a scoped Git diff reaches hooks or the model. */
+export function assertGitDiffReadable(
+  output: unknown,
+  permissions: AgentPermissions,
+): void {
+  if (record(output) && output.isError === true) return;
+  if (!record(output) || !Array.isArray(output.content))
+    throw new Error("Git diff is missing trusted changed-path metadata");
+  const text = output.content
+    .filter((item) => record(item) && item.type === "text")
+    .map((item) => (item as { text: string }).text)
+    .join("\n");
+  const data: unknown = JSON.parse(text);
+  if (
+    !record(data) ||
+    !Array.isArray(data.files) ||
+    !data.files.every((path) => typeof path === "string")
+  )
+    throw new Error("Git diff is missing trusted changed-path metadata");
+  for (const path of data.files) {
+    permissions.assertDenied("Read", path);
+    permissions.assertDenied("Grep", path);
+  }
+}
+
 /** Connect actual MCP transports and expose legacy-named SDK function tools. */
 export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
   tools: Tool[];
@@ -526,6 +551,7 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
         if (names.has(name)) throw new Error("Duplicate MCP tool name");
         names.add(name);
         const validate = ajv.compile(mcpTool.inputSchema);
+        /** Invoke one MCP tool through policy, hooks and bounded output. */
         const execute = async (
           original: Record<string, unknown>,
           context?: AgentMcpInvocationContext,
@@ -593,6 +619,8 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
               context,
             );
             let output: unknown = result;
+            if (eventName === "mcp__github_git__get_diff")
+              assertGitDiffReadable(output, permissions);
             if (!context?.skipHooks) {
               const postHook = await bounded(
                 async () =>

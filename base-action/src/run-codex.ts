@@ -99,6 +99,7 @@ export type CodexOptions = Omit<
   executionFileName?: import("./execution-file").ExecutionFilename;
   modelPrices?: Record<string, ModelPrice>;
   workspace?: string;
+  readAliases?: Record<string, string>;
 };
 const DEFAULT_MODEL = "gpt-6-luna";
 export function resolveCodexModel(
@@ -519,6 +520,7 @@ export async function runCodex(
     );
     const permissions = new AgentPermissions({
       cwd: workspace,
+      readAliases: options.readAliases,
       sandboxMode: sandbox,
       permissionMode: selectedAgent?.readonly
         ? "read-only"

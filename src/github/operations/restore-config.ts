@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { execFileSync } from "child_process";
 import {
   appendFileSync,
@@ -43,6 +44,26 @@ export const SENSITIVE_PATHS = [
   "AGENTS.override.md",
   ".husky",
 ];
+
+/** Preserve symlink target text from HEAD as regular data, without reading or following its destination. */
+function snapshotSymlinkTargets(): void {
+  const entries = execFileSync("git", ["ls-tree", "-r", "-z", "HEAD"], {
+    encoding: "utf8",
+    maxBuffer: Infinity,
+  }).split("\0");
+  for (const entry of entries) {
+    const match = /^120000 blob ([a-f0-9]{40})\t([\s\S]+)$/.exec(entry);
+    if (!match) continue;
+    const path = match[2]!;
+    const snapshot = `.claude-pr/symlink-targets/${createHash("sha256").update(path).digest("hex")}.txt`;
+    mkdirSync(dirname(snapshot), { recursive: true });
+    writeFileSync(
+      snapshot,
+      execFileSync("git", ["cat-file", "blob", match[1]!]),
+    );
+    reviewSources.set(snapshot, path);
+  }
+}
 
 function addCodexInstructionPaths(paths: Set<string>, files: string[]): void {
   for (const file of files) {
@@ -337,6 +358,7 @@ export function restoreConfigFromBase(baseBranch: string): string[] {
       );
     }
   }
+  snapshotSymlinkTargets();
   if (existsSync(".claude-pr")) {
     console.log(
       "Preserved PR's sensitive paths -> .claude-pr/ for review agents (not executed)",

@@ -80,6 +80,7 @@ test("repository validation executes without write credentials or model secrets"
       .allowed_tools,
   ).toBeUndefined();
   const validation = workflow.jobs.validate_change;
+  expect(validation.if).toContain("always()");
   expect(validation.permissions).toEqual({ contents: "read" });
   expect(validation.steps[0].with).toMatchObject({
     ref: "${{ needs.codex.outputs.head_sha }}",

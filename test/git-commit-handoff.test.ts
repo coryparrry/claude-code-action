@@ -270,3 +270,113 @@ test("LFS preflight uses current remote ancestry without trusting missing or sta
     git(cwd, "for-each-ref", "--format=%(refname)", "refs/codex-delivery/"),
   ).toBe("");
 });
+
+test("scoped MCP diffs cannot bypass Read or Grep denials, including unfiltered diffs", async () => {
+  const { createAgentMcpTools } = await import("../base-action/src/agent-mcp");
+  const { cwd, tool } = fixture();
+  writeFileSync(join(cwd, "protected.txt"), "hidden tracked content\n");
+  await tool.commit(["protected.txt"], "test: protected baseline");
+  writeFileSync(join(cwd, "protected.txt"), "changed hidden content\n");
+  writeFileSync(join(cwd, "existing.txt"), "public edit\n");
+  for (const deny of ["Read(protected.txt)", "Grep(protected.txt)"]) {
+    let observed = "";
+    const client = await createAgentMcpTools({
+      mcpConfig: JSON.stringify({
+        mcpServers: {
+          github_git: {
+            command: process.execPath,
+            args: [
+              "--no-env-file",
+              join(import.meta.dir, "../src/mcp/github-git-server.ts"),
+            ],
+            env: { REPO_DIR: cwd, BRANCH_NAME: "main", GIT_READ_ONLY: "true" },
+          },
+        },
+      }),
+      environment: { PATH: process.env.PATH || "" },
+      permissions: new AgentPermissions({
+        cwd,
+        allowedTools: ["mcp__github_git__get_diff"],
+        disallowedTools: [deny],
+      }),
+      deadline: Date.now() + 10_000,
+      afterTool: async (event) => {
+        observed += String(event.output || "");
+      },
+    });
+    try {
+      await expect(
+        client.invoke("mcp__github_git__get_diff", {}),
+      ).rejects.toThrow("denied");
+      expect(observed).not.toContain("changed hidden content");
+      await expect(
+        client.invoke("mcp__github_git__get_diff", {
+          paths: ["protected.txt"],
+        }),
+      ).rejects.toThrow("denied");
+      const publicDiff = await client.invoke("mcp__github_git__get_diff", {
+        paths: ["existing.txt"],
+      });
+      expect(publicDiff).toContain("public edit");
+      expect(publicDiff).not.toContain("changed hidden content");
+    } finally {
+      await client.close();
+    }
+  }
+});
+
+test("agent PR preparation replaces a clean merge checkout and refuses to overwrite existing work", async () => {
+  const { prepareAgentPrHead } = await import(
+    "../src/github/operations/prepare-agent-head"
+  );
+  const { createMockContext } = await import("./mockContext");
+  const { cwd } = fixture();
+  const prHead = git(cwd, "rev-parse", "HEAD");
+  writeFileSync(join(cwd, "synthetic.txt"), "merge content\n");
+  git(cwd, "add", "synthetic.txt");
+  git(cwd, "commit", "-m", "synthetic merge fixture");
+  const mergeHead = git(cwd, "rev-parse", "HEAD");
+  const context = createMockContext({
+    eventName: "pull_request",
+    isPR: true,
+    payload: { pull_request: { head: { sha: prHead } } } as any,
+  });
+  prepareAgentPrHead(context, { GITHUB_REF: "refs/pull/7/merge" }, cwd);
+  expect(git(cwd, "rev-parse", "HEAD")).toBe(prHead);
+  git(cwd, "checkout", "--detach", mergeHead);
+  writeFileSync(join(cwd, "existing.txt"), "preserve my work\n");
+  expect(() =>
+    prepareAgentPrHead(context, { GITHUB_REF: "refs/pull/7/merge" }, cwd),
+  ).toThrow("existing work");
+  expect(await Bun.file(join(cwd, "existing.txt")).text()).toBe(
+    "preserve my work\n",
+  );
+});
+
+test("PR-head preparation preserves ignored files that collide with tracked head paths", async () => {
+  const { prepareAgentPrHead } = await import(
+    "../src/github/operations/prepare-agent-head"
+  );
+  const { createMockContext } = await import("./mockContext");
+  const { cwd } = fixture();
+  writeFileSync(join(cwd, "artifact.bin"), "PR content\n");
+  git(cwd, "add", "artifact.bin");
+  git(cwd, "commit", "-m", "PR tracks artifact");
+  const prHead = git(cwd, "rev-parse", "HEAD");
+  git(cwd, "rm", "artifact.bin");
+  writeFileSync(join(cwd, ".gitignore"), "artifact.bin\n");
+  git(cwd, "add", ".gitignore");
+  git(cwd, "commit", "-m", "merge checkout removes artifact");
+  writeFileSync(join(cwd, "artifact.bin"), "preserve ignored work\n");
+  const context = createMockContext({
+    eventName: "pull_request",
+    isPR: true,
+    payload: { pull_request: { head: { sha: prHead } } } as any,
+  });
+  expect(() =>
+    prepareAgentPrHead(context, { GITHUB_REF: "refs/pull/7/merge" }, cwd),
+  ).toThrow();
+  expect(await Bun.file(join(cwd, "artifact.bin")).text()).toBe(
+    "preserve ignored work\n",
+  );
+});

@@ -119,7 +119,20 @@ export class TaskGit {
         throw new Error("Choose either staged or PR-base comparison");
       args.push(`origin/${this.options.baseBranch}...HEAD`);
     }
-    return this.output(this.git([...args, "--", ...files]));
+    const changed = this.git([
+      ...args,
+      "--name-only",
+      "--no-renames",
+      "-z",
+      "--",
+      ...files,
+    ])
+      .split("\0")
+      .filter(Boolean);
+    return {
+      ...this.output(this.git([...args, "--", ...files])),
+      files: changed,
+    };
   }
 
   /** Commit only selected files, treating the complete message as literal argv data. */

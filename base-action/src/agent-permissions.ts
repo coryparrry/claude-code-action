@@ -9,6 +9,7 @@ import {
 export type AgentPermissionOptions = {
   cwd: string;
   additionalDirectories?: string[];
+  readAliases?: Record<string, string>;
   allowedTools?: string[];
   disallowedTools?: string[];
   askTools?: string[];
@@ -290,6 +291,23 @@ export class AgentPermissions {
   /** Apply hard denies and mode restrictions before any approval or explicit allow. */
   assertDenied(name: string, target?: string): void {
     name = canonicalToolName(name);
+    const original =
+      target && ["Read", "Grep"].includes(name)
+        ? this.options.readAliases?.[
+            relative(this.options.cwd, resolve(this.options.cwd, target))
+              .split(sep)
+              .join("/")
+          ]
+        : undefined;
+    if (
+      original &&
+      this.denied.some(
+        (rule) =>
+          this.matches(rule, "Read", original) ||
+          this.matches(rule, "Grep", original),
+      )
+    )
+      throw new Error(`Tool permission denied: ${name}`);
     for (const rules of this.toolScopes) {
       const matchingTools = rules.filter((rule) =>
         this.matches({ ...rule, scope: undefined }, name),
