@@ -1,4 +1,5 @@
 export const WORKFLOW_PATH = ".github/workflows/codex.yml";
+export const MEMORY_WORKFLOW_PATH = ".github/workflows/codex-memory.yml";
 export const MANAGED_MARKER = "# Managed by the Codex GitHub Action installer.";
 export const DEFAULT_ACTION_REF =
   "coryparrry/claude-code-action@8982119b2aaec3fcbb4e15fef72c8bd5b61cec84";
@@ -125,6 +126,8 @@ ${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_t
       cancel-in-progress: true
     runs-on: ${runner}
     timeout-minutes: 35
+    env:
+      CODEX_REVIEW_REPOSITORY_MEMORY: "true"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -157,5 +160,55 @@ ${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_t
             \${{ steps.agent.outputs.verification_file }}
           if-no-files-found: error
           retention-days: 7
+      - name: Save repository learning
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: codex-review-memory-\${{ github.run_id }}-\${{ github.run_attempt }}
+          path: \${{ runner.temp }}/codex-review-memory/\${{ github.run_id }}-\${{ github.run_attempt }}/candidate.json
+          if-no-files-found: ignore
+`;
+}
+
+/** Install the trusted publisher beside the review workflow, with no per-repo configuration. */
+export function renderMemoryWorkflow({ repository, actors }) {
+  if (!actors?.length) throw new Error("Select at least one trusted actor.");
+  validateRepository(repository);
+  actors.forEach(validateActor);
+  const action = DEFAULT_ACTION_REF.replace("@", "/review-memory@");
+  return `${MANAGED_MARKER}
+name: Codex memory
+
+on:
+  workflow_run:
+    workflows: [Codex]
+    types: [completed]
+  pull_request_target:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  memory:
+    if: >-
+      github.repository == '${repository}' && (
+      (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.event == 'pull_request' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        contains(fromJSON('${JSON.stringify(actors)}'), github.event.workflow_run.actor.login)) ||
+      (github.event_name == 'pull_request_target' &&
+        github.event.action == 'closed' &&
+        github.event.pull_request.head.repo.full_name == github.repository))
+    permissions:
+      contents: write
+      actions: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: ${action}
+        with:
+          github_token: \${{ github.token }}
+          trusted_actors: ${JSON.stringify(actors.join(","))}
 `;
 }

@@ -11,7 +11,8 @@
     "format:check": "prettier --check .",
     "install-hooks": "bun run scripts/install-hooks.sh",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:review-complexity": "bun --no-env-file scripts/check-review-complexity.mjs"
   },
   "dependencies": {
     "@actions/core": "^1.10.1",

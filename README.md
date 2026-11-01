@@ -6,6 +6,10 @@ This is an independent adaptation, not an official OpenAI or Anthropic release. 
 
 Automatic reviews keep GitHub’s native review layout: a walkthrough-led summary with grouped changes, an optional flow diagram and expandable review details, plus inline comments only for new defects confirmed with high confidence by a separate verification pass. PR history provides durable memory so open and resolved findings are not posted again. See [verification and memory](docs/review-verification.md). See [review presentation](docs/review-presentation.md) for the format and named-bot setup.
 
+Cross-PR repository learning is available through the [guided installer](docs/installer.md).
+It installs both workflows and automatically provisions an isolated memory branch
+per repository, with no additional storage credentials. [Design and limits](docs/repository-memory.md).
+
 ## Quickstart
 
 Use this repository as a GitHub Action in your workflow. No local installer is required.

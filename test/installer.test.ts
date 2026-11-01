@@ -19,6 +19,8 @@ import {
   REVIEW_DIFF_PATH,
   MANAGED_MARKER,
   WORKFLOW_PATH,
+  MEMORY_WORKFLOW_PATH,
+  renderMemoryWorkflow,
   renderWorkflow,
   validateActor,
   validateRepository,
@@ -80,8 +82,11 @@ function fakeClient(overrides: Record<string, any> = {}): {
     repository: repository(),
     secrets: [],
     workflow: null,
+    memoryWorkflow: null,
     pullRequests: [],
-    compare: { files: [{ filename: WORKFLOW_PATH }] },
+    compare: {
+      files: [{ filename: WORKFLOW_PATH }, { filename: MEMORY_WORKFLOW_PATH }],
+    },
     head: "0123456789abcdef0123456789abcdef01234567",
     pullRequestUrl: "https://github.com/octo/demo/pull/9",
     ...overrides,
@@ -95,7 +100,23 @@ function fakeClient(overrides: Record<string, any> = {}): {
       },
     ]),
   );
+  client.workflow = async (
+    repository: string,
+    ref: string,
+    path = WORKFLOW_PATH,
+  ) => {
+    calls.push([
+      "workflow",
+      repository,
+      ref,
+      ...(path === WORKFLOW_PATH ? [] : [path]),
+    ]);
+    return path === MEMORY_WORKFLOW_PATH
+      ? values.memoryWorkflow
+      : values.workflow;
+  };
   for (const name of [
+    "verifyActionRevision",
     "setSecret",
     "createBranch",
     "writeWorkflow",
@@ -601,6 +622,10 @@ describe("installation planning and application", () => {
     const workflow = renderWorkflow(defaultOptions);
     const { client, calls } = fakeClient({
       workflow: { sha: "workflow-sha", content: workflow },
+      memoryWorkflow: {
+        sha: "memory-sha",
+        content: renderMemoryWorkflow(defaultOptions),
+      },
       secrets: [{ name: "OPENAI_API_KEY" }],
     });
     const plan = await planInstallation(client, {
@@ -643,12 +668,15 @@ describe("installation planning and application", () => {
     expect(calls.map(([name]) => name)).toEqual([
       "repository",
       "workflow",
+      "workflow",
+      "verifyActionRevision",
       "secrets",
       "pullRequests",
       "head",
       "secrets",
       "setSecret",
       "createBranch",
+      "writeWorkflow",
       "writeWorkflow",
       "createPullRequest",
     ]);
@@ -684,9 +712,21 @@ describe("installation planning and application", () => {
       ],
       workflow: null,
     });
-    client.workflow = async (_repository: string, ref: string) => {
+    client.workflow = async (
+      _repository: string,
+      ref: string,
+      path = WORKFLOW_PATH,
+    ) => {
       calls.push(["workflow", _repository, ref]);
-      return ref === "main" ? null : { sha: "pending-sha", content: workflow };
+      return ref === "main"
+        ? null
+        : {
+            sha: "pending-sha",
+            content:
+              path === MEMORY_WORKFLOW_PATH
+                ? renderMemoryWorkflow(defaultOptions)
+                : workflow,
+          };
     };
     const plan = await planInstallation(client, {
       ...defaultOptions,
@@ -728,8 +768,20 @@ describe("installation planning and application", () => {
         compare: { files },
         workflow: null,
       });
-      result.client.workflow = async (_repository: string, ref: string) =>
-        ref === "main" ? null : { sha: "pending", content };
+      result.client.workflow = async (
+        _repository: string,
+        ref: string,
+        path = WORKFLOW_PATH,
+      ) =>
+        ref === "main"
+          ? null
+          : {
+              sha: "pending",
+              content:
+                path === MEMORY_WORKFLOW_PATH
+                  ? renderMemoryWorkflow(defaultOptions)
+                  : content,
+            };
       return result.client;
     };
     await expect(
@@ -1093,6 +1145,7 @@ if (args[0] === 'api' && args[1] === 'user') return json({ login: 'alice' });
 if (args[0] === 'repo' && args[1] === 'view') return json({ nameWithOwner: 'octo/demo', defaultBranchRef: { name: 'main' }, viewerPermission: 'ADMIN', isArchived: false, url: 'https://github.com/octo/demo' });
 if (args[0] === 'secret' && args[1] === 'list') return json([]);
 if (args[0] === 'pr' && args[1] === 'list') return json([]);
+if (args[0] === 'api' && args[1].includes('/contents/review-memory/action.yml')) { process.stdout.write(JSON.stringify({type:'file'})); process.exit(0); }
 if (args[0] === 'api' && args[1].includes('/contents/') && !args.includes('PUT')) { process.stderr.write('HTTP 404 Not Found'); process.exit(1); }
 if (args[0] === 'api' && args[1].includes('/git/ref/heads/')) return json({ object: { sha: '0123456789abcdef0123456789abcdef01234567' } });
 if (args[0] === 'api' && args.includes('--method') && args.includes('POST')) {

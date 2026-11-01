@@ -22,6 +22,7 @@ environment.BUN_RUNTIME_TRANSPILER_CACHE_PATH = join(
   "runtime-cache",
 );
 
+/** Run isolated package checks without inheriting developer credentials. */
 function run(args, cwd) {
   const result = spawnSync(bun, args, {
     cwd,
@@ -101,6 +102,14 @@ if (result.conclusion !== "success" || report.at(-1)?.result !== "package-smoke-
   throw new Error("Unexpected agent result");
 }
 console.log("Production package SDK run passed");
+${
+  !base
+    ? `const { maintainRepositoryMemory } = await import("./src/entrypoints/publish-review-memory");
+const maintenance = await maintainRepositoryMemory({}, "fixture/repository", "workflow_dispatch", {}, ["trusted-user"]);
+if (maintenance !== "Skipped unsupported memory maintenance event") throw new Error("Unexpected memory maintenance result");
+console.log("Production memory maintenance entrypoint passed");`
+    : ""
+}
 `,
     );
     run(["--no-env-file", "--config=./bunfig.toml", "run", "smoke.ts"], target);
