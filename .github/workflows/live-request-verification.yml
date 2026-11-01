@@ -154,6 +154,8 @@ jobs:
           trigger_phrase: /verify-codex
           codex_model: gpt-6.1-terra
           codex_effort: max
+          codex_sandbox: workspace-write
+          allowed_tools: "Write(test/fixtures/live-request/**),Edit(test/fixtures/live-request/**)"
           claude_args: --permission-mode auto --no-session-persistence
           max_turns: "30"
           append_system_prompt: |
@@ -181,6 +183,8 @@ jobs:
           base_branch: codex/requested-change-workflows
           codex_model: gpt-6.1-terra
           codex_effort: max
+          codex_sandbox: workspace-write
+          allowed_tools: "Write(test/fixtures/live-request/**),Edit(test/fixtures/live-request/**)"
           claude_args: --permission-mode auto --no-session-persistence
           max_turns: "30"
           append_system_prompt: |
