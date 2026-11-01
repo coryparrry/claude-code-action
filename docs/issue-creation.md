@@ -27,4 +27,13 @@ policy. The GitHub live workflow requires the `test-issue-creation` label, the
 trusted actor and the isolated `codex/issue-creation` branch. It checks actual issue
 creation through the command action, a repeated tool call returning the same URL,
 tracking-comment delivery, an unchanged PR head and rejection by a read-only token.
-Fixture issues are closed after verification. Hosted results are pending.
+Fixture issues are closed after verification.
+
+GitHub qualification passed on 1 November 2026:
+
+- [Full CI](https://github.com/coryparrry/claude-code-action/actions/runs/41358060261): 1,575 tests passed, zero failures, 5,884 assertions across 117 files; root/base typechecks, formatting, production-package checks and composite boundaries passed.
+- [Live command action and permission check](https://github.com/coryparrry/claude-code-action/actions/runs/41358060324): two identical tool calls produced one actual [fixture issue #20](https://github.com/coryparrry/claude-code-action/issues/20), the same confirmed URL reached the tracking comment, and the PR head was unchanged. Cleanup closed the issue.
+- A real `issues: read` token was rejected and created no issue. Regression fixtures also covered disabled Issues, invalid payloads, repository scope, concurrent calls and uncertain API failures.
+- New named-symbol documentation coverage was **10/11 (90.9%)**, above the 85% requirement. No tests ran locally.
+
+The tested implementation is `8124d92dee8a03455fb16b024b430bc9f9135c63`; the installer, managed workflows and quickstart pin that revision. The live harness's subsequent MCP-envelope parser correction did not change production code. Separate workflow runs have separate deduplication scope.
