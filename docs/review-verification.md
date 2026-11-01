@@ -40,6 +40,7 @@ finding text.
 
 ## Limits and evidence
 
+The installed native-review workflow allows 60 total turns; command jobs retain 30.
 `max_turns` and `max_budget_usd` apply across both phases. The reviewer receives two
 thirds of configured turns/cost, reserving the rest for verification. Unused
 allowance remains available to the verifier. Native reviews require at least two

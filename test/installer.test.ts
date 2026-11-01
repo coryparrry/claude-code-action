@@ -321,6 +321,7 @@ describe("guided GitHub Action workflow", () => {
       );
       expect(step.with.codex_model).toBe("gpt-6.1-terra");
       expect(step.with.codex_effort).toBe("max");
+      expect(step.with.max_turns).toBe(name === "codex_review" ? "60" : "30");
     }
   });
 

@@ -108,7 +108,7 @@ jobs:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           codex_model: "gpt-6.1-terra"
           codex_effort: max
-          max_turns: "30"
+          max_turns: "60"
           review_mode: "true"
           codex_sandbox: read-only
           prompt: |
