@@ -1,0 +1,112 @@
+name: Issue creation qualification
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - src/**
+      - base-action/src/agent-permissions.ts
+      - scripts/qualify-issue-creation.ts
+      - .github/workflows/issue-creation-qualification.yml
+
+permissions:
+  contents: read
+
+env:
+  ISSUE_TEST_TITLE: "Release test: issue creation ${{ github.run_id }}"
+  ISSUE_TEST_BODY: "Automated issue creation release qualification. Nonce: ${{ github.run_id }}-${{ github.run_attempt }}."
+
+jobs:
+  create:
+    if: >-
+      github.repository == 'coryparrry/claude-code-action' &&
+      github.actor == 'coryparrry' &&
+      github.head_ref == 'codex/issue-creation' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'test-issue-creation')
+    runs-on: ubuntu-24.04-firewall
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Create an issue through the actual command action
+        id: creator
+        uses: ./
+        with:
+          github_token: ${{ github.token }}
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          codex_model: gpt-6-luna
+          codex_effort: low
+          trigger_phrase: /qualify-issue
+          track_progress: "true"
+          max_turns: "8"
+          max_budget_usd: "1.00"
+          claude_args: --permission-mode auto
+          prompt: |
+            Use mcp__github_issues__create_issue to open exactly one issue in this repository.
+            Its exact title must be: ${{ env.ISSUE_TEST_TITLE }}
+            Its exact body must be: ${{ env.ISSUE_TEST_BODY }}
+            Call that tool twice with identical title/body inputs to verify it reuses its confirmed result.
+            Do not change any files, commit, push, run repository code or use other issue-creation mechanisms.
+            Put the actual returned issue URL in your final tracking comment.
+      - name: Verify API state, duplicate protection and user-visible delivery
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTION_CONCLUSION: ${{ steps.creator.outputs.conclusion }}
+          EXECUTION_REPORT: ${{ steps.creator.outputs.execution_file }}
+          TRACKING_COMMENT_ID: ${{ steps.creator.outputs.comment_id }}
+          QUALIFICATION_PR: ${{ github.event.pull_request.number }}
+          QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: bun --no-env-file scripts/qualify-issue-creation.ts verify
+      - name: Close only this run's fixture issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bun --no-env-file scripts/qualify-issue-creation.ts cleanup
+      - name: Save execution evidence
+        if: ${{ always() && steps.creator.outputs.execution_file != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue-creation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.creator.outputs.execution_file }}
+            ${{ runner.temp }}/issue-creation-evidence.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  denied:
+    if: >-
+      github.repository == 'coryparrry/claude-code-action' &&
+      github.actor == 'coryparrry' &&
+      github.head_ref == 'codex/issue-creation' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'test-issue-creation')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+    env:
+      ISSUE_TEST_TITLE: "Denied release test: issue creation ${{ github.run_id }}"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun --no-env-file install --frozen-lockfile
+      - name: Verify real GitHub permission denial
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bun --no-env-file scripts/qualify-issue-creation.ts denied

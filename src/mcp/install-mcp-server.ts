@@ -126,6 +126,31 @@ export async function prepareMcpConfig(
       mcpServers: {},
     };
 
+    const issueCreationRequested =
+      !isAgentMode ||
+      allowedToolsList.some(
+        (tool) =>
+          tool === "mcp__github_issues" ||
+          tool === "mcp__github_issues__create_issue",
+      );
+    if (
+      issueCreationRequested &&
+      !planning &&
+      process.env.CODEX_SANDBOX !== "read-only" &&
+      !context?.inputs.allowedNonWriteUsers
+    ) {
+      baseMcpConfig.mcpServers.github_issues = {
+        command: process.execPath,
+        args: bunServerArgs("src/mcp/github-issues-server.ts"),
+        env: {
+          GITHUB_TOKEN: githubToken,
+          REPO_OWNER: owner,
+          REPO_NAME: repo,
+          GITHUB_API_URL,
+        },
+      };
+    }
+
     if (params.images?.length) {
       baseMcpConfig.mcpServers.github_context = {
         command: process.execPath,
