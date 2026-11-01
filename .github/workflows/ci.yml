@@ -23,8 +23,18 @@ jobs:
       - name: Check review and installer complexity
         run: bun --no-env-file run check:review-complexity
 
-      - name: Run tests
+      - name: Check release qualification documentation
+        run: bun --no-env-file scripts/audit-qualification-documentation.mjs
+
+      - name: Run tests (includes expected probe warnings)
         run: bun --no-env-file test
+
+      - name: Explain expected test diagnostics
+        if: always()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'MARKDOWN'
+          The suite deliberately exercises rejection paths. Probe-comment warnings come from tests that verify those comments are blocked. A successful test job means its assertions passed; these expected fixture warnings are not production incidents.
+          MARKDOWN
 
   prettier:
     runs-on: ubuntu-latest
@@ -72,11 +82,19 @@ jobs:
         run: bun --no-env-file scripts/verify-action-package.mjs
 
   action-boundaries:
+    name: action boundary - ${{ matrix.scenario }} (expected ${{ matrix.expected }})
     runs-on: ubuntu-24.04-firewall
     strategy:
       fail-fast: false
       matrix:
         scenario: [recovery, repeat-tool, empty-failure]
+        include:
+          - scenario: recovery
+            expected: success
+          - scenario: repeat-tool
+            expected: failure
+          - scenario: empty-failure
+            expected: failure
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
@@ -95,7 +113,7 @@ jobs:
           done
           test -s "$RUNNER_TEMP/boundary-endpoint.txt"
           echo "OPENAI_BASE_URL=$(cat "$RUNNER_TEMP/boundary-endpoint.txt")" >> "$GITHUB_ENV"
-      - name: Exercise the actual composite action
+      - name: Exercise composite action (expected ${{ matrix.expected }})
         id: runtime
         continue-on-error: true
         uses: ./base-action
@@ -108,6 +126,12 @@ jobs:
           codex_sandbox: workspace-write
           claude_args: --permission-mode auto --no-session-persistence
           max_turns: "5"
+      - name: Explain the expected action result
+        if: always()
+        env:
+          EXPECTED_RESULT: ${{ matrix.expected }}
+        run: |
+          echo "Expected action result: **$EXPECTED_RESULT**. The following assertions must pass. Failure-case action steps intentionally emit red annotations; an unexpected success or failure fails verification." >> "$GITHUB_STEP_SUMMARY"
       - name: Verify outcomes, reports and side effects
         env:
           BOUNDARY_CASE: ${{ matrix.scenario }}

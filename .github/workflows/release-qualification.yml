@@ -1,0 +1,99 @@
+name: Release qualification
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - scripts/release-qualification/**
+      - .github/workflows/release-qualification.yml
+
+permissions:
+  contents: read
+
+jobs:
+  live-runtime:
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'live-qualification') &&
+      github.actor == 'coryparrry' &&
+      github.head_ref == 'codex/release-hosted-qualification-20261101' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        scenario: [tools, sessions, mcp, components, hooks]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun --no-env-file install --frozen-lockfile
+      - name: Check qualification harness types
+        run: bun --no-env-file x tsc --noEmit -p scripts/release-qualification/tsconfig.json
+      - name: Exercise live inference and verify real side effects
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          QUALIFICATION_EVIDENCE: ${{ runner.temp }}/qualification-${{ matrix.scenario }}
+        run: bun --no-env-file scripts/release-qualification/live-runtime.ts '${{ matrix.scenario }}'
+      - name: Retain execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qualification-${{ matrix.scenario }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qualification-${{ matrix.scenario }}
+          if-no-files-found: warn
+          retention-days: 7
+
+  live-composite:
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'live-qualification') &&
+      github.actor == 'coryparrry' &&
+      github.head_ref == 'codex/release-hosted-qualification-20261101' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Run the exact installed base action with live structured output
+        id: runtime
+        uses: coryparrry/claude-code-action/base-action@633c206996a8849aedeb77687369e1e7a31e3a37
+        with:
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          codex_model: gpt-6-luna
+          codex_effort: low
+          max_turns: "3"
+          max_budget_usd: "0.50"
+          codex_sandbox: read-only
+          prompt: Return status as qualified and count as 7. Do not use tools.
+          codex_args: >-
+            --tools "" --no-session-persistence
+            --json-schema '{"type":"object","additionalProperties":false,"required":["status","count"],"properties":{"status":{"type":"string"},"count":{"type":"integer"}}}'
+      - name: Assert actual Actions outputs and inference report
+        env:
+          CONCLUSION: ${{ steps.runtime.outputs.conclusion }}
+          STRUCTURED: ${{ steps.runtime.outputs.structured_output }}
+          REPORT: ${{ steps.runtime.outputs.execution_file }}
+          SESSION: ${{ steps.runtime.outputs.session_id }}
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          assert.equal(process.env.CONCLUSION, 'success');
+          assert.deepEqual(JSON.parse(process.env.STRUCTURED), { status: 'qualified', count: 7 });
+          assert.ok(process.env.SESSION);
+          const report = JSON.parse(readFileSync(process.env.REPORT, 'utf8'));
+          assert.equal(report.at(-1).is_error, false);
+          assert.ok(report.at(-1).usage.output_tokens > 0);
+          JS
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && steps.runtime.outputs.execution_file != '' }}
+        with:
+          name: qualification-live-composite-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.runtime.outputs.execution_file }}
+          retention-days: 7
