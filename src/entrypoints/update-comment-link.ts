@@ -19,6 +19,7 @@ import { updateClaudeComment } from "../github/operations/comments/update-claude
 import { encodeBranchNameForUrl } from "../github/operations/comments/common";
 
 export type UpdateCommentLinkParams = {
+  commentType?: "issue" | "review";
   commentId: number;
   githubToken: string;
   claudeBranch?: string;
@@ -40,6 +41,7 @@ export type UpdateCommentLinkParams = {
   restoredConfigPaths?: string[];
 };
 
+/** Finalize tracking feedback in its actual namespace and preserve verified delivery metadata. */
 export async function updateCommentLink(
   params: UpdateCommentLinkParams,
 ): Promise<void> {
@@ -65,7 +67,11 @@ export async function updateCommentLink(
   try {
     // GitHub has separate ID namespaces for review comments and issue comments
     // We need to use the correct API based on the event type
-    if (isPullRequestReviewCommentEvent(context)) {
+    if (
+      params.commentType
+        ? params.commentType === "review"
+        : isPullRequestReviewCommentEvent(context)
+    ) {
       // For PR review comments, use the pulls API
       console.log(`Fetching PR review comment ${commentId}`);
       try {

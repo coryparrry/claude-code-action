@@ -105,6 +105,9 @@ describe("downloadJobLog", () => {
     const tail = await downloadJobLog(client, params, runnerTemp, 30_000, {
       maxBytes: 256,
     });
+    const stored = await Bun.file(tail.path).text();
+    expect(stored).not.toContain(secret);
+    expect(tail.size_bytes).toBe(Buffer.byteLength(stored));
     expect(tail.excerpt).toContain("ERROR: fixture failure");
     expect(tail.excerpt).not.toContain(secret);
     expect(Buffer.byteLength(tail.excerpt)).toBeLessThanOrEqual(256);

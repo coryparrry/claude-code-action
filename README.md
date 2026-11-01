@@ -10,7 +10,7 @@ Automatic reviews keep GitHub’s native review layout: a walkthrough-led summar
 
 Use this repository as a GitHub Action in your workflow. No local installer is required.
 
-The examples pin source commit `39cf9a682e1fc1fd562672af07a8bc8866643d2b`, which includes native reviews, requested-change refinements and CI diagnosis. No release tag is required. Existing installations must update their workflow to this revision and enable `review_mode` for automatic reviews.
+The examples pin source commit `06567dcbc813b4c6e5ff1595bd4a804bae23d5ad`, which includes native reviews, requested-change refinements and CI diagnosis. No release tag is required. Existing installations must update their workflow to this revision and enable `review_mode` for automatic reviews.
 
 Add your existing OpenAI key as the repository Actions secret `OPENAI_API_KEY`. Save this workflow as `.github/workflows/codex.yml` in the repository where you want the action to operate. Replace `your-github-username` with the trusted user's login. The workflow must be on the default branch for `issue_comment` events.
 
@@ -56,7 +56,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: agent
-        uses: coryparrry/claude-code-action@39cf9a682e1fc1fd562672af07a8bc8866643d2b
+        uses: coryparrry/claude-code-action@06567dcbc813b4c6e5ff1595bd4a804bae23d5ad
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -102,7 +102,7 @@ jobs:
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
       - id: agent
-        uses: coryparrry/claude-code-action@39cf9a682e1fc1fd562672af07a8bc8866643d2b
+        uses: coryparrry/claude-code-action@06567dcbc813b4c6e5ff1595bd4a804bae23d5ad
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -157,7 +157,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
-      - uses: coryparrry/claude-code-action@39cf9a682e1fc1fd562672af07a8bc8866643d2b
+      - uses: coryparrry/claude-code-action@06567dcbc813b4c6e5ff1595bd4a804bae23d5ad
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           codex_sandbox: read-only

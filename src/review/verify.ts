@@ -1,3 +1,4 @@
+import type { ReviewSourceContext } from "./source-evidence";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -50,8 +51,20 @@ export async function verifyReviewCandidates(
   head: string,
   memory: RememberedFinding[],
   runner: typeof runCodex = runCodex,
+  sourceContext: ReviewSourceContext = {},
 ) {
   const review = reviewSchema.parse(candidate.structuredOutput);
+  if (!review.findings.length) {
+    return {
+      review: {
+        ...review,
+        summary: "No new candidate defects proposed.",
+        reasoning: `${review.reasoning}\nNo candidate findings required independent verification; no verifier model call was made. Prior review threads are preserved.`,
+      },
+      audit: { head, candidates: 0, published: 0, remembered: 0, withheld: 0 },
+      executionFile: undefined,
+    };
+  }
   const total = await limits(options);
   let maxTurns: number | undefined;
   let maxBudgetUsd: number | undefined;
@@ -81,9 +94,13 @@ export async function verifyReviewCandidates(
     process.env.RUNNER_TEMP || tmpdir(),
     `codex-review-verifier-${crypto.randomUUID()}.txt`,
   );
-  await writeFile(prompt, verificationPrompt(review, head, memory), {
-    mode: 0o600,
-  });
+  await writeFile(
+    prompt,
+    verificationPrompt(review, head, memory, sourceContext),
+    {
+      mode: 0o600,
+    },
+  );
   const verified = await runner(prompt, {
     ...(await nativeReviewOptions("", options, verificationJsonSchema)),
     mcpConfig: '{"mcpServers":{}}',
@@ -102,6 +119,7 @@ export async function verifyReviewCandidates(
       head,
       memory,
       verified.readEvidence ?? [],
+      sourceContext,
     ),
     executionFile: verified.executionFile,
   };

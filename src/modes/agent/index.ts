@@ -140,7 +140,7 @@ export async function prepareAgentMode({
     commentId: undefined,
     branchInfo: {
       baseBranch: baseBranch,
-      currentBranch: baseBranch, // Use base branch as current when creating new branch
+      currentBranch: currentBranch,
       claudeBranch: claudeBranch,
     },
     mcpConfig: ourMcpConfig,

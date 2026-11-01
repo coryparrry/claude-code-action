@@ -1,3 +1,9 @@
+import {
+  sourceWasRead,
+  snapshotGuidance,
+  reviewSourcePath,
+  type ReviewSourceContext,
+} from "./source-evidence";
 import type { ReadEvidence } from "../../base-action/src/read-evidence";
 import { z } from "zod";
 import { findingId, reviewSchema, type Review } from "./schema";
@@ -57,19 +63,22 @@ export function applyVerification(
   head: string,
   memory: RememberedFinding[],
   inspected: ReadEvidence[],
+  sourceContext: ReviewSourceContext = {},
 ): VerifiedReview {
   const review = reviewSchema.parse(input);
   const verification = verificationSchema.parse(verdicts);
   if (verification.head_sha !== head)
     throw new Error("Verifier reviewed a different commit");
-  if (!inspected.some((read) => read.path === ".git/codex-review.diff"))
+  if (
+    !inspected.some(
+      (read) =>
+        reviewSourcePath(read.path, sourceContext) === ".git/codex-review.diff",
+    )
+  )
     throw new Error("Verifier did not read the prepared patch");
   /** Bind source citations to successful tool reads, rather than model assertions. */
   const wasRead = (path: string, line: number) =>
-    inspected.some(
-      (read) =>
-        read.path === path && read.startLine <= line && read.endLine >= line,
-    );
+    sourceWasRead(path, line, inspected, sourceContext);
   const known = new Set(memory.map((finding) => finding.id));
   const decisions = new Map(
     verification.decisions.map((decision) => [decision.candidate_id, decision]),
@@ -145,9 +154,11 @@ export function verificationPrompt(
   review: Review,
   head: string,
   memory: RememberedFinding[],
+  sourceContext: ReviewSourceContext = {},
 ): string {
   return `Independently verify candidate PR findings against commit ${head}. Read .git/codex-review.diff and inspect the relevant code with read/search tools. You cannot run tests.
 Try to DISPROVE each claim: inspect callers, guards, contracts, existing tests, supported configuration and patch ancestry. Confirm only a concrete reachable defect with material user impact and a causal link to this patch. Style preferences, optional hardening, unsupported hypothetical configurations and pre-existing problems do not qualify as new patch defects.
+${snapshotGuidance(sourceContext)}
 Read the prepared patch with Read, and read the current source at every candidate line you intend to confirm. Supply source_checks as real path/line citations that you actually read; successful tool reads are checked mechanically. For removed files, inspect relevant current callers and cite those reads.
 Return one decision per candidate ID. High confidence requires a concrete trigger, source evidence and a checked plausible counterargument. If reachability or impact is uncertain, use uncertain and medium/low confidence. Evidence must distinguish source inspection from execution; never claim tests ran. Confidence is qualitative and uncalibrated, never a percentage.
 Use the PR's remembered findings as durable history, including resolved threads. Match equivalent claims by trigger and cause even if their wording or line changed. Set previous_finding_id to the existing ID for a repeated claim. Do not reopen or repeat prior resolved findings. Return null only when the claim is genuinely distinct.

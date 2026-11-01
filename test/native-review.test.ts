@@ -1026,7 +1026,7 @@ test.each([
     mock.module(root + "/src/github/token.ts", () => ({ setupGitHubToken: async () => "offline-fixture-token", hasMintedGitHubAppToken: () => false }));
     mock.module(root + "/src/github/validation/permissions.ts", () => ({ checkWritePermissions: async () => true }));
     mock.module(root + "/src/codex-install.ts", () => ({ validateCodexInputs: () => {} }));
-    mock.module(root + "/src/github/operations/restore-config.ts", () => ({ restoreConfigFromBase: () => [] }));
+    mock.module(root + "/src/github/operations/restore-config.ts", () => ({ restoreConfigFromBase: () => [], getReviewSourceMappings: () => ({}) }));
     mock.module(root + "/src/modes/agent/index.ts", () => ({ prepareAgentMode: async ({ context }) => {
       if (!context.inputs.prompt.includes("native pull request review")) throw new Error("Missing review instructions");
       await mkdir(process.env.RUNNER_TEMP + "/codex-prompts", { recursive: true });

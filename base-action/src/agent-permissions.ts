@@ -133,6 +133,7 @@ function shellWords(command: string): string[] | undefined {
   return words;
 }
 
+/** Enforce tool, path and read-only restrictions across local and MCP capabilities. */
 export class AgentPermissions {
   private allowed?: ReturnType<typeof ruleParts>[];
   private denied: ReturnType<typeof ruleParts>[] = [];
@@ -286,6 +287,7 @@ export class AgentPermissions {
     );
   }
 
+  /** Apply hard denies and mode restrictions before any approval or explicit allow. */
   assertDenied(name: string, target?: string): void {
     name = canonicalToolName(name);
     for (const rules of this.toolScopes) {
@@ -309,7 +311,20 @@ export class AgentPermissions {
         "Edit",
         "MultiEdit",
         "NotebookEdit",
+        "mcp__github_git__commit_files",
+        "mcp__github_git__delete_files",
+        "mcp__github_git__push",
+        "mcp__github_file_ops__commit_files",
+        "mcp__github_file_ops__delete_files",
       ].includes(name)
+    )
+      throw new Error(`${name} is unavailable in read-only/plan mode`);
+    if (
+      this.readOnly &&
+      name.startsWith("mcp__github__") &&
+      !/^mcp__github__(?:(?:get|list|search)_|(?:pull_request_read|issue_read)$|actions_(?:get|list)_)/.test(
+        name,
+      )
     )
       throw new Error(`${name} is unavailable in read-only/plan mode`);
     // A composed command must never bypass a scoped deny rule by hiding the denied

@@ -133,3 +133,26 @@ test("reuses a tracking comment beyond the first page", async () => {
   expect(list.mock.calls.map(([params]) => params.page)).toEqual([1, 2]);
   expect(create).not.toHaveBeenCalled();
 });
+
+test("tracking replies retain their actual API namespace when review creation falls back", async () => {
+  const current = createMockContext({
+    eventName: "pull_request_review_comment",
+    isPR: true,
+  });
+  const create = mock(async () => ({ data: { id: 42 } }));
+  const api = {
+    rest: {
+      pulls: {
+        createReplyForReviewComment: async () => {
+          throw Object.assign(new Error("thread gone"), { status: 404 });
+        },
+      },
+      issues: { createComment: create },
+    },
+  } as unknown as Octokit;
+  expect(await createInitialComment(api, current)).toMatchObject({
+    id: 42,
+    commentType: "issue",
+  });
+  expect(create).toHaveBeenCalledTimes(1);
+});

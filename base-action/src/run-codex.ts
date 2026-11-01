@@ -1,3 +1,4 @@
+import { promptCacheSettings } from "./prompt-cache";
 import * as core from "@actions/core";
 import {
   Usage,
@@ -134,6 +135,7 @@ async function readPrompt(
   }
   return { context };
 }
+/** Report cache hits and writes separately so reuse can be measured rather than assumed. */
 function usageReport(usage: Usage) {
   const cached = usage.inputTokensDetails.reduce(
     (sum, item) => sum + (item.cached_tokens ?? item.cachedTokens ?? 0),
@@ -143,6 +145,12 @@ function usageReport(usage: Usage) {
     input_tokens: Math.max(0, usage.inputTokens - cached),
     output_tokens: usage.outputTokens,
     cache_read_input_tokens: cached,
+    cache_write_input_tokens: usage.inputTokensDetails.reduce(
+      (sum, item) =>
+        sum +
+        (item.cache_write_tokens ?? item.cache_creation_input_tokens ?? 0),
+      0,
+    ),
   };
 }
 
@@ -456,6 +464,10 @@ export async function runCodex(
     )
       throw new Error("Unsupported Codex reasoning effort");
     const modelSettings: ModelSettings = {
+      ...promptCacheSettings(
+        process.env.GITHUB_REPOSITORY || workspace,
+        options.executionFileName || "codex-execution-output.json",
+      ),
       ...nativeModelSettings(configuration.settings),
       ...(effort
         ? {

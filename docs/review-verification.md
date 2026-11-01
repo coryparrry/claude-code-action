@@ -50,3 +50,27 @@ The USD guard remains an estimate checked after responses, not an account billin
 `execution_file` retains the reviewer report. `verification_file` retains the
 separate verifier report, including withheld candidates. Generated workflows upload
 both. A successful model pass is not a passing CI run or merge approval.
+
+## Cache and call reuse
+
+A review with no candidate findings skips the verifier and produces no verifier
+report. Its overview states that no independent verification was needed; this is
+not proof that the patch is defect-free. Existing findings stay in their original
+threads. Verified reviews on the same head are reused without another model run.
+
+SDK calls use a stable, hashed repository-and-phase cache key across commits and
+reruns. The runtime keeps provider-default retention for frequent tool loops rather than
+opting into more expensive 12-hour writes, and does not send model-specific
+retention settings to older fallback models.
+The provider still requires an identical prompt prefix; a cache key does not force
+a hit. Reviewer and verifier contexts remain independent. Reports expose cache
+read and write token counts, so reuse can be measured.
+
+Scoped Git keeps repository hooks disabled. It refuses to push newly introduced
+Git LFS pointers because it cannot safely run the repository's pre-push upload
+hook. A trusted LFS upload step is required for that unsupported delivery path.
+
+Plan/read-only mode blocks scoped Git, file-operation and standard GitHub MCP
+repository mutations even when explicitly allowed. The dedicated tracking-comment
+update tool remains available to report progress; read-only does not suppress
+that reporting channel.

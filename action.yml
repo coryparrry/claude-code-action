@@ -257,6 +257,9 @@ inputs:
     default: ""
 
 outputs:
+  comment_type:
+    description: "Tracking comment API namespace: issue or review"
+    value: ${{ steps.run.outputs.comment_type }}
   verification_file:
     description: "Independent review verification report, including withheld candidates"
     value: ${{ steps.run.outputs.verification_file }}

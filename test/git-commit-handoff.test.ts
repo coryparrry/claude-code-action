@@ -1,6 +1,12 @@
 import { afterEach, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
+import {
+  mkdtempSync,
+  writeFileSync,
+  rmSync,
+  symlinkSync,
+  existsSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TaskGit } from "../src/github/operations/task-git";
@@ -53,6 +59,7 @@ function fixture() {
     tool: new TaskGit({
       repoDir: cwd,
       branch: "codex/fix#1(test)",
+      receiptFile: join(cwd, "receipt.json"),
       baseBranch: "main",
     }),
   };
@@ -190,4 +197,76 @@ test("generated handoff uses structured Git without granting no-index or metadat
     expect(() => policy.authorize(tool, ".git/config")).toThrow();
     expect(() => policy.authorize(tool, ".git")).toThrow();
   }
+});
+
+test("batch deletion preflights missing files and rolls back commit failures", async () => {
+  const { cwd, tool } = fixture();
+  await expect(
+    tool.remove(["existing.txt", "missing.txt"], "fix: delete"),
+  ).rejects.toThrow();
+  expect(await Bun.file(join(cwd, "existing.txt")).text()).toBe("base\n");
+  writeFileSync(join(cwd, "other.txt"), "unrelated\n");
+  git(cwd, "add", "other.txt");
+  git(cwd, "config", "commit.gpgsign", "true");
+  git(cwd, "config", "gpg.program", "/nonexistent-fixture-gpg");
+  await expect(tool.remove(["existing.txt"], "fix: delete")).rejects.toThrow();
+  expect(await Bun.file(join(cwd, "existing.txt")).text()).toBe("base\n");
+  expect(git(cwd, "diff", "--cached", "--name-only")).toBe("other.txt");
+  expect(git(cwd, "diff", "--name-only")).toBe("");
+});
+
+test("up-to-date pushes do not create delivery receipts and new LFS pointers fail before push", async () => {
+  const { cwd, tool } = fixture();
+  const remote = join(cwd, "remote.git");
+  git(cwd, "init", "--bare", remote);
+  git(cwd, "remote", "add", "origin", remote);
+  git(cwd, "checkout", "-b", "codex/fix#1(test)");
+  git(cwd, "push", "origin", "HEAD");
+  expect(tool.push()).toMatchObject({ changed: false });
+  expect(existsSync(join(cwd, "receipt.json"))).toBe(false);
+  writeFileSync(
+    join(cwd, "large.bin"),
+    `version https://git-lfs.github.com/spec/v1\noid sha256:${"a".repeat(64)}\nsize 42\n`,
+  );
+  await tool.commit(["large.bin"], "test: add pointer");
+  expect(() => tool.push()).toThrow("LFS");
+  expect(
+    git(cwd, "ls-remote", "origin", "refs/heads/codex/fix#1(test)").split(
+      /\s/,
+    )[0],
+  ).not.toBe(git(cwd, "rev-parse", "HEAD"));
+});
+
+test("LFS preflight uses current remote ancestry without trusting missing or stale tracking refs", async () => {
+  const { cwd, tool } = fixture();
+  writeFileSync(
+    join(cwd, "old.bin"),
+    `version https://git-lfs.github.com/spec/v1\noid sha256:${"a".repeat(64)}\nsize 42\n`,
+  );
+  git(cwd, "add", "old.bin");
+  git(cwd, "commit", "-m", "existing remote pointer");
+  git(cwd, "checkout", "-b", "codex/fix#1(test)");
+  const remote = join(cwd, "remote.git");
+  git(cwd, "init", "--bare", remote);
+  git(cwd, "remote", "add", "origin", remote);
+  git(cwd, "push", "origin", "HEAD");
+  git(cwd, "update-ref", "-d", "refs/remotes/origin/codex/fix#1(test)");
+  writeFileSync(join(cwd, "existing.txt"), "ordinary fix\n");
+  await tool.commit(["existing.txt"], "fix: ordinary edit");
+  expect(tool.push()).toMatchObject({ changed: true });
+  writeFileSync(
+    join(cwd, "new.bin"),
+    `version https://git-lfs.github.com/spec/v1\noid sha256:${"b".repeat(64)}\nsize 43\n`,
+  );
+  await tool.commit(["new.bin"], "test: new pointer");
+  git(
+    cwd,
+    "update-ref",
+    "refs/remotes/origin/stale",
+    git(cwd, "rev-parse", "HEAD"),
+  );
+  expect(() => tool.push()).toThrow("LFS");
+  expect(
+    git(cwd, "for-each-ref", "--format=%(refname)", "refs/codex-delivery/"),
+  ).toBe("");
 });

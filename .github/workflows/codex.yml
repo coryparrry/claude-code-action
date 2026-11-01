@@ -25,6 +25,7 @@ jobs:
     outputs:
       head_sha: ${{ steps.agent.outputs.head_sha }}
       comment_id: ${{ steps.agent.outputs.comment_id }}
+      comment_type: ${{ steps.agent.outputs.comment_type }}
     if: >-
       github.repository == 'coryparrry/claude-code-action' &&
       (!github.event.pull_request ||
@@ -46,7 +47,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: agent
-        uses: coryparrry/claude-code-action@39cf9a682e1fc1fd562672af07a8bc8866643d2b
+        uses: coryparrry/claude-code-action@06567dcbc813b4c6e5ff1595bd4a804bae23d5ad
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -102,14 +103,17 @@ jobs:
           API_URL: ${{ github.api_url }}
           REPOSITORY: ${{ github.repository }}
           COMMENT_ID: ${{ needs.codex.outputs.comment_id }}
+          COMMENT_TYPE: ${{ needs.codex.outputs.comment_type }}
           HEAD_SHA: ${{ needs.codex.outputs.head_sha }}
           VALIDATION_RESULT: ${{ needs.validate_change.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
         run: |
           node --input-type=module <<'NODE'
-          const { API_URL, REPOSITORY, COMMENT_ID, HEAD_SHA, VALIDATION_RESULT, RUN_URL, GH_TOKEN } = process.env;
+          const { API_URL, REPOSITORY, COMMENT_ID, COMMENT_TYPE, HEAD_SHA, VALIDATION_RESULT, RUN_URL, GH_TOKEN } = process.env;
           if (!/^\d+$/.test(COMMENT_ID) || !/^[a-f0-9]{40}$/.test(HEAD_SHA)) throw new Error('Invalid delivery metadata');
-          const url = `${API_URL}/repos/${REPOSITORY}/issues/comments/${COMMENT_ID}`;
+          if (!['issue', 'review'].includes(COMMENT_TYPE)) throw new Error('Invalid tracking comment type');
+          const resource = COMMENT_TYPE === 'review' ? 'pulls/comments' : 'issues/comments';
+          const url = `${API_URL}/repos/${REPOSITORY}/${resource}/${COMMENT_ID}`;
           const headers = { Authorization: `Bearer ${GH_TOKEN}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' };
           const response = await fetch(url, { headers });
           if (!response.ok) throw new Error(`Comment read failed: ${response.status}`);
@@ -154,7 +158,7 @@ jobs:
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
       - id: agent
-        uses: coryparrry/claude-code-action@39cf9a682e1fc1fd562672af07a8bc8866643d2b
+        uses: coryparrry/claude-code-action@06567dcbc813b4c6e5ff1595bd4a804bae23d5ad
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}

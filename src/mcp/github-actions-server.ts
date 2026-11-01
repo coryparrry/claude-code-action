@@ -176,9 +176,10 @@ export async function downloadJobLog(
     await mkdir(logsDir, { recursive: true });
 
     const logPath = `${logsDir}/job-${params.job_id}.log`;
-    await writeFile(logPath, logsText, "utf-8");
+    const redactedLogs = redactSecrets(logsText);
+    await writeFile(logPath, redactedLogs, "utf-8");
 
-    const text = Buffer.from(redactSecrets(logsText));
+    const text = Buffer.from(redactedLogs);
     const maxBytes = Math.max(256, Math.min(chunk.maxBytes ?? 16_000, 24_000));
     let offset = Math.max(
       0,
@@ -199,7 +200,7 @@ export async function downloadJobLog(
       offset,
       total_text_bytes: text.length,
       next_offset: offset + consumed < text.length ? offset + consumed : null,
-      size_bytes: Buffer.byteLength(logsText, "utf-8"),
+      size_bytes: text.length,
     };
   } finally {
     clearTimeout(timeoutHandle);

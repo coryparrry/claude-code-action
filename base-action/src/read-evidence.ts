@@ -19,9 +19,16 @@ export function readEvidence(
     .split(sep)
     .join("/");
   if (!path || path === ".." || path.startsWith("../")) return undefined;
-  const lines = [...event.output.matchAll(/^(\d+)\t/gm)].map((match) =>
-    Number(match[1]),
-  );
+  const returned = event.output.endsWith("\n[output truncated]")
+    ? event.output
+        .slice(0, -"\n[output truncated]".length)
+        .split("\n")
+        .slice(0, -1)
+    : event.output.split("\n");
+  const lines = returned
+    .map((line) => /^(\d+)\t/.exec(line)?.[1])
+    .filter((line): line is string => line !== undefined)
+    .map(Number);
   if (!lines.length) return undefined;
   return { path, startLine: lines[0]!, endLine: lines.at(-1)! };
 }

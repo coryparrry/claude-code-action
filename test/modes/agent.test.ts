@@ -197,7 +197,7 @@ describe("Agent Mode", () => {
     const originalHeadRef = process.env.GITHUB_HEAD_REF;
     const originalRefName = process.env.GITHUB_REF_NAME;
     delete process.env.CODEX_BRANCH;
-    delete process.env.GITHUB_HEAD_REF;
+    process.env.GITHUB_HEAD_REF = "delivery-head";
     delete process.env.GITHUB_REF_NAME;
 
     const mockOctokit = {
@@ -224,7 +224,7 @@ describe("Agent Mode", () => {
     });
 
     expect(result.branchInfo.baseBranch).toBe("develop");
-    expect(result.branchInfo.currentBranch).toBe("develop");
+    expect(result.branchInfo.currentBranch).toBe("delivery-head");
 
     // Restore env vars
     if (originalClaudeBranch !== undefined)

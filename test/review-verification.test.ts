@@ -428,3 +428,57 @@ test("legacy grouped findings and native-review fallback bodies survive compact 
   ]);
   expect(memory[0]!.url).toContain("pullrequestreview-10");
 });
+
+test("source citations normalize paths but require actual head snapshots for restored files", () => {
+  const candidate = review();
+  const context = {
+    workspace: "/workspace",
+    restoredPaths: ["src"],
+    aliases: { ".claude-pr/src/normalize.ts": "src/normalize.ts" },
+  };
+  const reads = [
+    inspected[0]!,
+    { path: ".claude-pr/src/normalize.ts", startLine: 1, endLine: 9 },
+  ];
+  const decisions = verdict(candidate);
+  decisions.decisions[0]!.source_checks = [
+    { path: "/workspace/src/normalize.ts", line: 3 },
+  ];
+  candidate.findings[0]!.path = "./src/normalize.ts";
+  expect(
+    applyVerification(candidate, decisions, head, [], reads, context).audit
+      .published,
+  ).toBe(1);
+  expect(() =>
+    applyVerification(candidate, decisions, head, [], inspected, context),
+  ).toThrow("recorded relevant source");
+  expect(() =>
+    applyVerification(candidate, decisions, head, [], reads, {
+      ...context,
+      aliases: {},
+    }),
+  ).toThrow("recorded relevant source");
+  decisions.decisions[0]!.source_checks = [
+    { path: "../src/normalize.ts", line: 3 },
+  ];
+  expect(() =>
+    applyVerification(candidate, decisions, head, [], reads, context),
+  ).toThrow("recorded relevant source");
+});
+
+test("empty candidate reviews do not make a paid verifier call", async () => {
+  let called = false;
+  const runner = (async () => {
+    called = true;
+    throw new Error("must not run");
+  }) as typeof runCodex;
+  const candidate = {
+    conclusion: "success",
+    structuredOutput: review([]),
+  } as Awaited<ReturnType<typeof runCodex>>;
+  const result = await verifyReviewCandidates(candidate, {}, head, [], runner);
+  expect(called).toBe(false);
+  expect(result.audit.published).toBe(0);
+  expect(result.executionFile).toBeUndefined();
+  expect(result.review.reasoning).toContain("no verifier model call was made");
+});
