@@ -1,3 +1,4 @@
+import { recoverRepositoryLearning } from "../src/github/data/review-memory-candidate";
 import { afterEach, describe, expect, test } from "bun:test";
 import { Octokit } from "@octokit/rest";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -29,6 +30,7 @@ const target: ReviewTarget = {
   pull_number: 12,
   head,
   base: "b".repeat(40),
+  baseRef: "main",
   author: "github-actions[bot]",
 };
 const finding: Finding = {
@@ -1215,4 +1217,32 @@ test("retired overview bodies are not rewritten on every later head", async () =
   expect(
     api.reviews.filter((item) => !item.body.startsWith("Superseded by")),
   ).toHaveLength(1);
+});
+
+test("native review publication atomically retains learning for a same-head retry", async () => {
+  const api = fixture();
+  const learning = {
+    paths: ["src/account.ts"],
+    note: "Cache keys include the account ID.",
+  };
+  await publishReview(
+    api.client,
+    target,
+    { ...review, findings: [] },
+    true,
+    learning,
+  );
+  const history = await loadReviewHistory(api.client, target, true);
+  expect(
+    recoverRepositoryLearning(history.review!.body, {
+      pr: target.pull_number,
+      head: target.head,
+      baseRef: target.baseRef,
+    }),
+  ).toEqual(learning);
+  expect(await publishReview(api.client, target, review, true, learning)).toBe(
+    history.review!.html_url,
+  );
+  expect(api.reviews).toHaveLength(1);
+  expect(history.context).not.toContain("codex-action:learning:");
 });

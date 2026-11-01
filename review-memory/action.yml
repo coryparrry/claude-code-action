@@ -1,0 +1,29 @@
+name: Codex repository memory
+description: Validate review learnings and maintain a repository-local memory branch without a model call.
+inputs:
+  github_token:
+    description: Token for this repository's memory branch and review artifacts
+    required: true
+  trusted_actors:
+    description: Comma-separated GitHub users allowed to produce review learnings
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+      with:
+        node-version: 22.x
+        package-manager-cache: false
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      with:
+        bun-version: 1.4.2
+        no-cache: true
+    - name: Maintain repository memory
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        CODEX_TRUSTED_ACTORS: ${{ inputs.trusted_actors }}
+      run: |
+        cd "$GITHUB_ACTION_PATH/.."
+        bun --no-env-file install --production --frozen-lockfile
+        bun --no-env-file --config="$GITHUB_ACTION_PATH/../bunfig.toml" run "$GITHUB_ACTION_PATH/../src/entrypoints/publish-review-memory.ts"

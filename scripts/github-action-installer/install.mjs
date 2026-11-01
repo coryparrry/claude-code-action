@@ -2,19 +2,17 @@ import { randomBytes } from "node:crypto";
 import {
   MANAGED_MARKER,
   WORKFLOW_PATH,
+  MEMORY_WORKFLOW_PATH,
+  renderMemoryWorkflow,
   renderWorkflow,
   validateRepository,
 } from "./workflow.mjs";
 
-/** Resolve canonical repository identity and plan a safe, repeatable workflow installation. */
-export async function planInstallation(
-  client,
-  { repository, actors, runner, model, replaceSecret = false },
-) {
+/** Validate and resolve canonical repository identity before rendering bound workflows. */
+async function installationRepository(client, repository) {
   validateRepository(repository);
   const metadata = await client.repository(repository);
   repository = validateRepository(metadata.nameWithOwner ?? repository);
-  const workflow = renderWorkflow({ repository, actors, runner, model });
   if (metadata.isArchived)
     throw new Error("Archived repositories cannot be configured.");
   if (!["ADMIN", "MAINTAIN", "WRITE"].includes(metadata.viewerPermission))
@@ -24,11 +22,81 @@ export async function planInstallation(
     throw new Error(
       "Create the repository's default branch before installing.",
     );
-  const existing = await client.workflow(repository, defaultBranch);
-  if (existing && !existing.content.startsWith(MANAGED_MARKER))
-    throw new Error(
-      `An existing ${WORKFLOW_PATH} is not managed by this installer. It will not be overwritten.`,
+  return { repository, defaultBranch };
+}
+
+/** Reuse only matching installer PRs containing the two managed workflow paths. */
+async function pendingInstallation(client, plan) {
+  const { repository, defaultBranch, workflow, memoryWorkflow } = plan;
+  for (const pull of await client.pullRequests(repository, defaultBranch)) {
+    if (pull.isCrossRepository !== false) continue;
+    if (!pull.headRefName.startsWith("codex/install-github-action-")) continue;
+    const pending = await client.workflow(repository, pull.headRefName);
+    if (!pending?.content.startsWith(MANAGED_MARKER)) continue;
+    const comparison = await client.compare(
+      repository,
+      defaultBranch,
+      pull.headRefName,
     );
+    if (
+      !comparison.files?.length ||
+      comparison.files.length > 2 ||
+      comparison.files.some(
+        (file) =>
+          ![WORKFLOW_PATH, MEMORY_WORKFLOW_PATH].includes(file.filename),
+      )
+    )
+      throw new Error(
+        "A pending installer PR contains other changes. Review it before installing again.",
+      );
+    const pendingMemory = await client.workflow(
+      repository,
+      pull.headRefName,
+      MEMORY_WORKFLOW_PATH,
+    );
+    if (
+      pending.content !== workflow ||
+      pendingMemory?.content !== memoryWorkflow
+    )
+      throw new Error(
+        "An installer PR with different settings is already open. Merge or close it before changing settings.",
+      );
+    return { ...plan, status: "pending", pullRequestUrl: pull.url };
+  }
+  return undefined;
+}
+
+/** Plan both managed workflows without overwriting user-owned files. */
+export async function planInstallation(
+  client,
+  { repository, actors, runner, model, replaceSecret = false },
+) {
+  const resolved = await installationRepository(client, repository);
+  repository = resolved.repository;
+  const defaultBranch = resolved.defaultBranch;
+  const workflow = renderWorkflow({ repository, actors, runner, model });
+  const memoryWorkflow = renderMemoryWorkflow({ repository, actors });
+  const existing = await client.workflow(repository, defaultBranch);
+  const memoryExisting = await client.workflow(
+    repository,
+    defaultBranch,
+    MEMORY_WORKFLOW_PATH,
+  );
+  const installed = [
+    { path: WORKFLOW_PATH, current: existing, content: workflow },
+    {
+      path: MEMORY_WORKFLOW_PATH,
+      current: memoryExisting,
+      content: memoryWorkflow,
+    },
+  ];
+  for (const { path, current } of installed) {
+    if (current && !current.content.startsWith(MANAGED_MARKER))
+      throw new Error(
+        `An existing ${path} is not managed by this installer. It will not be overwritten.`,
+      );
+  }
+  await client.verifyActionRevision();
   const secrets = await client.secrets(repository);
   const needsSecret =
     replaceSecret ||
@@ -41,47 +109,29 @@ export async function planInstallation(
     model,
     workflow,
     workflowSha: existing?.sha,
+    memoryWorkflow,
+    memoryWorkflowSha: memoryExisting?.sha,
     needsSecret,
     replaceSecret,
-    status:
-      existing?.content === workflow
-        ? "configured"
-        : existing
-          ? "update"
-          : "new",
+    status: installed.every(
+      ({ current, content }) => current?.content === content,
+    )
+      ? "configured"
+      : installed.some(({ current }) => current)
+        ? "update"
+        : "new",
   };
   if (plan.status === "configured") return plan;
 
-  for (const pull of await client.pullRequests(repository, defaultBranch)) {
-    if (pull.isCrossRepository !== false) continue;
-    if (!pull.headRefName.startsWith("codex/install-github-action-")) continue;
-    const pending = await client.workflow(repository, pull.headRefName);
-    if (!pending?.content.startsWith(MANAGED_MARKER)) continue;
-    const comparison = await client.compare(
-      repository,
-      defaultBranch,
-      pull.headRefName,
-    );
-    if (
-      comparison.files?.length !== 1 ||
-      comparison.files[0].filename !== WORKFLOW_PATH
-    )
-      throw new Error(
-        "A pending installer PR contains other changes. Review it before installing again.",
-      );
-    if (pending.content !== workflow)
-      throw new Error(
-        "An installer PR with different settings is already open. Merge or close it before changing settings.",
-      );
-    return { ...plan, status: "pending", pullRequestUrl: pull.url };
-  }
+  const pending = await pendingInstallation(client, plan);
+  if (pending) return pending;
   const baseSha = await client.head(repository, defaultBranch);
   if (!/^[a-f0-9]{40}$/i.test(baseSha))
     throw new Error("GitHub did not return a valid default-branch commit.");
   return { ...plan, baseSha };
 }
 
-/** Apply a reviewed installation plan while preserving existing secrets and pending setup PRs. */
+/** Apply the reviewed workflow pair and existing API-key setup in each repository. */
 export async function applyInstallation(
   client,
   plan,
@@ -123,6 +173,14 @@ export async function applyInstallation(
       branch,
       plan.workflow,
       plan.workflowSha,
+    );
+    step = "writing the memory maintenance workflow";
+    await client.writeWorkflow(
+      plan.repository,
+      branch,
+      plan.memoryWorkflow,
+      plan.memoryWorkflowSha,
+      MEMORY_WORKFLOW_PATH,
     );
     step = "opening the setup PR";
     const pullRequestUrl = await client.createPullRequest(

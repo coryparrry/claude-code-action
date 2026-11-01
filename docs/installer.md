@@ -1,7 +1,7 @@
 # Install the Codex GitHub Action
 
 The guided installer handles repository selection, the API-key secret and the
-workflow PR. It runs locally using Node.js and GitHub CLI, without Bun or extra
+workflow-pair PR. It runs locally using Node.js and GitHub CLI, without Bun or extra
 Node dependencies. The generated workflow uses Terra 6.1 (`gpt-6.1-terra`) at Max effort, the reviewed
 action commit and the repository's built-in workflow token. A custom `--model`
 selection leaves reasoning effort unset so the provider can use a compatible default.
@@ -28,13 +28,19 @@ or lets you enter a key with masked input. It does not create an OpenAI key or
 make paid model requests. Secrets go to GitHub through stdin and never appear in
 command arguments, workflow files or installer output.
 
-The installer opens draft setup PRs. Review and merge them onto each repository's
+The installer verifies its pinned publisher action, then opens draft setup PRs containing both the review and memory-maintenance workflows. Review and merge them onto each repository's
 default branch. The generated workflow then automatically reviews same-repository,
 non-draft PRs opened, updated, reopened or marked ready by a selected trusted user.
 Each reviewed head gets one native GitHub review summary with a separate coloured inline comment for each finding at its actual diff location. Each issue has its own discussion and expandable evidence; there is no combined findings comment. Same-head reruns reuse the submitted review. They run with read/search tools and do not produce a task-completion tracking comment. The action publishes only validated output against the reviewed head; invalid output, a changed PR or rejected delivery fails the action. See [review presentation](./review-presentation.md) for details and named-bot authentication.
 A preparation step saves the PR's base-to-head patch inside `.git/` so reviews
 can inspect additions and deleted lines without granting the agent shell access.
 A newer review run cancels an older review for the same PR.
+
+Repository learning is provisioned automatically in each installed repository on
+`codex/review-memory`. No memory issue, repository variable, branch creation or
+storage secret is required. The review agent remains read-only; a separate trusted
+workflow validates candidates and publishes exact merged revisions without a model
+call. See [repository memory](./repository-memory.md) for limits and verification.
 
 Ask questions or request implementations with `/codex` in issue titles/bodies,
 issue or PR comments, inline review comments, or submitted review text. These

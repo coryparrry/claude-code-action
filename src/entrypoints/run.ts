@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { recoverRepositoryLearning } from "../github/data/review-memory-candidate";
 import { snapshotGuidance } from "../review/source-evidence";
 
 import { usesApiCommitSigning } from "../github/operations/commit-signing";
@@ -44,6 +45,12 @@ import {
 import { loadReviewMemory, type RememberedFinding } from "../review/memory";
 import { candidateLimits, verifyReviewCandidates } from "../review/verify";
 import { nativeReviewOptions, reviewPrompt } from "../review/runtime";
+import {
+  learningReviewJsonSchema,
+  repositoryLearningPrompt,
+  separateRepositoryLearning,
+  stageRepositoryLearning,
+} from "../review/repository-learning";
 import { detectMode } from "../modes/detector";
 import { prepareTagMode } from "../modes/tag";
 import { prepareAgentMode } from "../modes/agent";
@@ -98,7 +105,7 @@ async function writeStepSummary(executionFile: string): Promise<void> {
   }
 }
 
-/** Prepare, execute and finalize one action invocation, including verified delivery metadata. */
+/** Execute tasks with verified delivery, keeping review publication and learning outside the agent. */
 async function run() {
   const nativeReview = process.env.REVIEW_MODE === "true";
   let deliveryError: string | undefined;
@@ -210,13 +217,31 @@ async function run() {
             pull_number: context.payload.pull_request.number,
             head: context.payload.pull_request.head.sha,
             base: context.payload.pull_request.base.sha,
+            baseRef: context.payload.pull_request.base.ref,
             author: context.inputs.botName,
           }
         : undefined;
+    const repositoryLearningEnabled = Boolean(
+      reviewTarget && process.env.CODEX_REVIEW_REPOSITORY_MEMORY === "true",
+    );
     let reviewMemory: RememberedFinding[] = [];
     if (reviewTarget) {
       const history = await loadReviewHistory(octokit.rest, reviewTarget, true);
       if (history.reviewedHeads.has(reviewTarget.head)) {
+        if (repositoryLearningEnabled) {
+          const saved = history.summaries?.findLast(
+            (review) => review.head === reviewTarget.head,
+          );
+          await stageRepositoryLearning(
+            reviewTarget,
+            { pr: reviewTarget.pull_number, head: reviewTarget.head },
+            recoverRepositoryLearning(saved?.body ?? "", {
+              pr: reviewTarget.pull_number,
+              head: reviewTarget.head,
+              baseRef: reviewTarget.baseRef,
+            }),
+          );
+        }
         if (history.review) {
           await retireReviewSummaries(
             octokit.rest,
@@ -242,6 +267,13 @@ async function run() {
         history.context,
         reviewMemory,
       );
+      if (repositoryLearningEnabled && isPullRequestEvent(context))
+        context.inputs.prompt += await repositoryLearningPrompt(
+          octokit.rest,
+          { owner: reviewTarget.owner, repo: reviewTarget.repo },
+          reviewTarget.pull_number,
+          context.payload.pull_request.base.ref,
+        );
     }
 
     // Run prepare
@@ -308,6 +340,7 @@ async function run() {
       ? await nativeReviewOptions(
           prepareResult.claudeArgs,
           actionRuntimeOptions(process.env),
+          repositoryLearningEnabled ? learningReviewJsonSchema : undefined,
         )
       : undefined;
     const reviewLimits = reviewOptions
@@ -345,6 +378,12 @@ async function run() {
       core.setOutput("session_id", result.sessionId);
     }
     if (reviewTarget && result.conclusion === "success") {
+      let learning = null;
+      if (repositoryLearningEnabled) {
+        const separated = separateRepositoryLearning(result.structuredOutput);
+        learning = separated.learning;
+        result.structuredOutput = separated.review;
+      }
       let verified;
       try {
         verified = await verifyReviewCandidates(
@@ -369,8 +408,15 @@ async function run() {
         reviewTarget,
         result.structuredOutput,
         true,
+        learning,
       );
       if (url) {
+        if (repositoryLearningEnabled)
+          await stageRepositoryLearning(
+            reviewTarget,
+            { pr: reviewTarget.pull_number, head: reviewTarget.head },
+            learning,
+          );
         core.setOutput("review_url", url);
         core.info(`Review published: ${url}`);
       }
