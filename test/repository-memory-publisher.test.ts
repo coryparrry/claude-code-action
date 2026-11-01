@@ -3,10 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  publishReviewRun,
-  readCandidateArchive,
-} from "../src/github/operations/publish-review-memory";
+import { readCandidateArchive } from "../src/github/operations/publish-review-memory";
 import {
   loadRepositoryMemory,
   readMemorySnapshot,
@@ -14,6 +11,7 @@ import {
   storeRepositoryMemory,
 } from "../src/github/data/repository-memory-store";
 import {
+  publishFixtureRun as publishReviewRun,
   memoryFixture,
   memoryHead,
   memoryOptions,
@@ -153,7 +151,7 @@ test.each([
   expect(fixture.branch()).toBeUndefined();
 });
 
-test("superseded heads and closed-unmerged PRs are discarded, while merge-ref reviews are accepted", async () => {
+test("superseded heads are discarded, while closed pending and merge-ref reviews are retained", async () => {
   const fixture = memoryFixture();
   fixture.pulls.get(1).head.sha = "b".repeat(40);
   expect(
@@ -175,7 +173,7 @@ test("superseded heads and closed-unmerged PRs are discarded, while merge-ref re
       ["trusted-user"],
       async () => candidate(),
     ),
-  ).toContain("closed unmerged");
+  ).toContain("Stored");
   fixture.pulls.get(1).merged_at = "2026-11-01";
   fixture.runs.get(42).head_sha = "d".repeat(40);
   await publishReviewRun(

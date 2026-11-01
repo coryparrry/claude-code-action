@@ -1,3 +1,4 @@
+import { verifyReviewProof } from "../data/review-memory-proof";
 import { retryGitHubRead } from "../api/retry";
 import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -8,6 +9,7 @@ import type { Octokit } from "@octokit/rest";
 import { parseReviewCandidate } from "../data/review-memory-candidate";
 import {
   changedFileInventory,
+  repositoryIdentity,
   storeRepositoryMemory,
   reconcilePullMemory,
   type RepositoryMemoryOptions,
@@ -27,7 +29,7 @@ export async function readCandidateArchive(
     await writeFile(path, archive, { mode: 0o600 });
     const { stdout } = await execute("unzip", ["-p", path, "candidate.json"], {
       encoding: "utf8",
-      maxBuffer: 8000,
+      maxBuffer: 16384,
       timeout: 5000,
     });
     return stdout;
@@ -66,6 +68,7 @@ async function reviewRunCandidate(
   run: ReviewRun,
   repository: string,
   decodeArchive: typeof readCandidateArchive,
+  verifyProof: typeof verifyReviewProof,
 ) {
   const runId = run.id;
   const artifacts = await retryGitHubRead(() =>
@@ -90,14 +93,21 @@ async function reviewRunCandidate(
       archive_format: "zip",
     }),
   );
-  const candidate = parseReviewCandidate(
-    await decodeArchive(new Uint8Array(archive.data as ArrayBuffer)),
-  );
+  const body = await decodeArchive(new Uint8Array(archive.data as ArrayBuffer));
+  const candidate = parseReviewCandidate(body);
   if (
     candidate.repository.toLowerCase() !== repository ||
     candidate.runId !== run.id
   )
     throw new Error("Memory candidate does not belong to the source run");
+  const identity = await repositoryIdentity(client, options);
+  const workflowSha = await verifyProof(JSON.parse(body), run, identity.id);
+  await validateReviewProducer(
+    client,
+    options,
+    identity.default_branch,
+    workflowSha,
+  );
   return candidate;
 }
 
@@ -116,6 +126,36 @@ async function validateReviewedHead(
     throw new Error("Memory candidate does not match the reviewed commit");
 }
 
+/** Authenticate the exact executed workflow from GitHub's signed job identity. */
+async function validateReviewProducer(
+  client: Octokit,
+  options: RepositoryMemoryOptions,
+  defaultBranch: string,
+  workflowSha: string,
+): Promise<void> {
+  /** Read a workflow blob without executing consumer repository code. */
+  const readWorkflow = (ref: string) =>
+    retryGitHubRead(() =>
+      client.rest.repos.getContent({
+        ...options,
+        path: ".github/workflows/codex.yml",
+        ref,
+      }),
+    );
+  const trusted = (await readWorkflow(defaultBranch)).data;
+  const source = (await readWorkflow(workflowSha)).data;
+  if (
+    Array.isArray(trusted) ||
+    Array.isArray(source) ||
+    trusted.type !== "file" ||
+    source.type !== "file" ||
+    source.sha !== trusted.sha
+  )
+    throw new Error(
+      "Review producer workflow differs from the trusted default branch",
+    );
+}
+
 /** Accept only the configured review workflow, trusted actor and exact reviewed commit. */
 export async function publishReviewRun(
   client: Octokit,
@@ -123,6 +163,7 @@ export async function publishReviewRun(
   runId: number,
   trustedActors: string[],
   decodeArchive = readCandidateArchive,
+  verifyProof = verifyReviewProof,
 ): Promise<string> {
   if (!Number.isSafeInteger(runId) || runId < 1)
     throw new Error("Invalid source workflow run");
@@ -140,6 +181,7 @@ export async function publishReviewRun(
     run,
     repository,
     decodeArchive,
+    verifyProof,
   );
   if (!candidate) return "Review supplied no learning candidate";
   const record = candidate.record;
@@ -154,8 +196,6 @@ export async function publishReviewRun(
     pull.head.repo?.full_name.toLowerCase() !== repository
   )
     return "Discarded candidate for a superseded or foreign PR revision";
-  if (pull.state === "closed" && !pull.merged_at)
-    return "Discarded candidate from a closed unmerged PR";
   const files = await changedFileInventory(client, options, record.sourcePr);
   if (
     !record.paths.every((path) =>

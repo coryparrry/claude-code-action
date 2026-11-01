@@ -1,3 +1,8 @@
+import {
+  renderRepositoryLearning,
+  stripRepositoryLearning,
+} from "../github/data/review-memory-candidate";
+import type { RepositoryLearning } from "../github/data/repository-memory";
 import type { Octokit } from "@octokit/rest";
 import { retryWithBackoff } from "../utils/retry";
 import {
@@ -85,7 +90,7 @@ export async function loadReviewHistory(
   );
   const context = latest
     ? [
-        latest.body,
+        stripRepositoryLearning(latest.body || ""),
         ...currentComments.map(
           (comment) =>
             `Finding discussion in ${comment.path}:\n${comment.body}`,
@@ -201,6 +206,7 @@ export async function publishReview(
   target: ReviewTarget,
   output: unknown,
   verified = false,
+  learning?: RepositoryLearning | null,
 ): Promise<string | undefined> {
   const parsed = reviewSchema.parse(output);
   const history = await loadReviewHistory(client, target, verified);
@@ -244,7 +250,12 @@ export async function publishReview(
       ? `${review.findings.length} new defects confirmed by independent inspection.`
       : "No new confirmed defects; prior findings remain in their existing threads.";
   }
-  const summary = bounded(renderReview(review, target.head, target, verified));
+  const summary = bounded(
+    renderRepositoryLearning(learning, {
+      pr: target.pull_number,
+      head: target.head,
+    }) + renderReview(review, target.head, target, verified),
+  );
   let files: ChangedReviewFile[] = [];
   if (review.findings.length) {
     await requireCurrentHead();

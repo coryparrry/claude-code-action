@@ -62,6 +62,7 @@ export async function stageRepositoryLearning(
   options: RepositoryMemoryOptions,
   source: { pr: number; head: string },
   learning: RepositoryLearning | null,
+  getProof: (audience: string) => Promise<string> = core.getIDToken,
 ): Promise<void> {
   if (!learning) return;
   const directory = join(
@@ -78,6 +79,7 @@ export async function stageRepositoryLearning(
         ...source,
       },
       learning,
+      getProof,
     );
   } catch {
     core.warning(

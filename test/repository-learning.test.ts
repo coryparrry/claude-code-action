@@ -62,6 +62,7 @@ test("the existing native review can supply one optional learning without anothe
       memoryOptions,
       { pr: 1, head: memoryRecord.head },
       split.learning,
+      async () => "fixture-proof",
     );
     const body = await readFile(
       join(directory, "codex-review-memory/42-2/candidate.json"),

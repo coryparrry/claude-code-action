@@ -27,6 +27,7 @@
     "@smithy/hash-node": "4.3.0",
     "@smithy/signature-v4": "5.4.0",
     "ajv": "^8.0.0",
+    "jose": "6.2.12",
     "node-fetch": "^3.3.2",
     "openai": "7.25.0",
     "shell-quote": "^1.8.4",

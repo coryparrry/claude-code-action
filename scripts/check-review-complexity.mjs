@@ -5,6 +5,7 @@ const files = [
   "src/github/data/repository-memory.ts",
   "src/github/data/repository-memory-store.ts",
   "src/github/data/review-memory-candidate.ts",
+  "src/github/data/review-memory-proof.ts",
   "src/github/operations/publish-review-memory.ts",
   "src/entrypoints/publish-review-memory.ts",
   "src/review/repository-learning.ts",

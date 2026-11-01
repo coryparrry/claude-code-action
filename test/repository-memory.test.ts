@@ -182,6 +182,7 @@ describe("automatic branch-backed repository memory", () => {
           content: JSON.stringify({
             version: 1,
             repository: "owner/repo",
+            repositoryId: 123,
             entries,
           }),
         },

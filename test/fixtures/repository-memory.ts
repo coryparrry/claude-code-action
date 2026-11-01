@@ -1,3 +1,27 @@
+import { generateKeyPair, exportJWK, createLocalJWKSet, SignJWT } from "jose";
+import { publishReviewRun, readCandidateArchive } from "../../src/github/operations/publish-review-memory";
+import { reviewProofAudience, verifyReviewProof } from "../../src/github/data/review-memory-proof";
+
+const proofKeys = await generateKeyPair("RS256");
+const proofPublicKey = { ...await exportJWK(proofKeys.publicKey), kid: "fixture", alg: "RS256" };
+const localProofKeys = createLocalJWKSet({ keys: [proofPublicKey] });
+const proofTime = Date.parse("2026-11-01T12:00:00Z") / 1000;
+
+/** Use real JWT signatures and local keys; no test can contact the GitHub issuer. */
+export async function signFixtureCandidate(value: any, claims: Record<string, unknown> = {}) {
+  const proof = await new SignJWT({ repository_id: "123", run_id: "42", run_attempt: "1", event_name: "pull_request", ref: "refs/pull/1/merge", workflow_sha: "a".repeat(40), ...claims })
+    .setProtectedHeader({ alg: "RS256", kid: "fixture" })
+    .setIssuer("https://token.actions.githubusercontent.com")
+    .setAudience(reviewProofAudience(value)).setIssuedAt(proofTime - 1).setNotBefore(proofTime - 1).setExpirationTime(proofTime + 300).sign(proofKeys.privateKey);
+  return JSON.stringify({ ...value, proof });
+}
+
+/** Exercise production claim validation against fixture signing keys only. */
+export const verifyFixtureProof: typeof verifyReviewProof = (candidate, run, id) => verifyReviewProof(candidate, run, id, localProofKeys);
+
+/** Feed signed fixture artifacts through the real publisher and verifier. */
+export const publishFixtureRun: typeof publishReviewRun = (client, options, runId, actors, decode, verify = verifyFixtureProof) => publishReviewRun(client, options, runId, actors, async archive => signFixtureCandidate(JSON.parse(await (decode ?? readCandidateArchive)(archive))), verify);
+
 import type { Octokit } from "@octokit/rest";
 import { REPOSITORY_MEMORY_BRANCH, type RepositoryMemoryRecord } from "../../src/github/data/repository-memory";
 
@@ -7,13 +31,15 @@ export const memoryRecord: RepositoryMemoryRecord = { version: 1, sourcePr: 1, h
 
 /** In-memory Git data API with real fast-forward conflict semantics and immutable trees. */
 export function memoryFixture() {
+  const repository = { id: 123, default_branch: "main", full_name: "owner/repo" };
+  const workflows = new Map<string, string>();
   let sequence = 100;
   let branch: string | undefined;
   const commits = new Map<string, { tree: string; parents: string[] }>();
   const trees = new Map<string, Map<string, string>>();
   const calls: { name: string; input: any }[] = [];
-  const pulls = new Map<number, any>([[1, { number: 1, head: { sha: memoryHead, repo: { full_name: "owner/repo" } }, base: { ref: "main" }, merged_at: null, state: "open" }], [2, { number: 2, head: { sha: "b".repeat(40), repo: { full_name: "owner/repo" } }, base: { ref: "main" }, merged_at: null, state: "open" }]]);
-  const runs = new Map<number, any>([[42, { id: 42, run_attempt: 1, event: "pull_request", status: "completed", conclusion: "success", path: ".github/workflows/codex.yml", repository: { full_name: "owner/repo" }, head_repository: { full_name: "owner/repo" }, actor: { login: "trusted-user" }, head_sha: memoryHead, updated_at: "2026-11-01T12:00:00Z", pull_requests: [{ number: 1 }] }]]);
+  const pulls = new Map<number, any>([[1, { number: 1, head: { sha: memoryHead, repo: { full_name: "owner/repo" } }, base: { ref: "main", sha: "f".repeat(40) }, merged_at: null, state: "open" }], [2, { number: 2, head: { sha: "b".repeat(40), repo: { full_name: "owner/repo" } }, base: { ref: "main", sha: "f".repeat(40) }, merged_at: null, state: "open" }]]);
+  const runs = new Map<number, any>([[42, { id: 42, run_attempt: 1, created_at: "2026-11-01T11:59:00Z", event: "pull_request", status: "completed", conclusion: "success", path: ".github/workflows/codex.yml", repository: { full_name: "owner/repo" }, head_repository: { full_name: "owner/repo" }, actor: { login: "trusted-user" }, head_sha: memoryHead, updated_at: "2026-11-01T12:00:00Z", pull_requests: [{ number: 1, base: { sha: "f".repeat(40) } }] }]]);
   const artifacts: any[] = [{ id: 99, name: "codex-review-memory-42-1", size_in_bytes: 100, expired: false }];
   let beforeRef: (() => Promise<void>) | undefined;
   const sha = () => (++sequence).toString(16).padStart(40, "0");
@@ -28,7 +54,8 @@ export function memoryFixture() {
       updateRef: async (input: any) => { calls.push({ name: "updateRef", input }); if (beforeRef) { const hook = beforeRef; beforeRef = undefined; await hook(); } if (input.force || !commits.get(input.sha)?.parents.includes(branch!)) fail(409); branch = input.sha; return { data: {} }; },
     },
     repos: {
-      getContent: async (input: any) => { calls.push({ name: "getContent", input }); const commit = commits.get(input.ref === REPOSITORY_MEMORY_BRANCH ? branch! : input.ref); const content = commit && trees.get(commit.tree)?.get(input.path); if (content === undefined) fail(404); return { data: { type: "file", encoding: "base64", size: Buffer.byteLength(content!), content: Buffer.from(content!).toString("base64") } }; },
+      get: async () => ({ data: structuredClone(repository) }),
+      getContent: async (input: any) => { calls.push({ name: "getContent", input }); if (input.path === ".github/workflows/codex.yml") return { data: { type: "file", sha: workflows.get(input.ref) ?? "trusted-workflow" } }; const commit = commits.get(input.ref === REPOSITORY_MEMORY_BRANCH ? branch! : input.ref); const content = commit && trees.get(commit.tree)?.get(input.path); if (content === undefined) fail(404); return { data: { type: "file", encoding: "base64", size: Buffer.byteLength(content!), content: Buffer.from(content!).toString("base64") } }; },
       getCommit: async () => ({ data: { parents: [{ sha: "f".repeat(40) }, { sha: memoryHead }] } }),
     },
     pulls: {
@@ -41,7 +68,7 @@ export function memoryFixture() {
       downloadArtifact: async () => ({ data: new Uint8Array([0]).buffer }),
     },
   };
-  return { client: { rest: api } as Octokit, api, calls, pulls, runs, artifacts,
+  return { client: { rest: api } as Octokit, api, calls, pulls, runs, artifacts, repository, workflows,
     beforeRef: (hook: () => Promise<void>) => { beforeRef = hook; },
     files: () => trees.get(commits.get(branch!)!.tree)!,
     branch: () => branch,

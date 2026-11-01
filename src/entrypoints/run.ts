@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { recoverRepositoryLearning } from "../github/data/review-memory-candidate";
 import { snapshotGuidance } from "../review/source-evidence";
 
 import { usesApiCommitSigning } from "../github/operations/commit-signing";
@@ -226,6 +227,19 @@ async function run() {
     if (reviewTarget) {
       const history = await loadReviewHistory(octokit.rest, reviewTarget, true);
       if (history.reviewedHeads.has(reviewTarget.head)) {
+        if (repositoryLearningEnabled) {
+          const saved = history.summaries?.findLast(
+            (review) => review.head === reviewTarget.head,
+          );
+          await stageRepositoryLearning(
+            reviewTarget,
+            { pr: reviewTarget.pull_number, head: reviewTarget.head },
+            recoverRepositoryLearning(saved?.body ?? "", {
+              pr: reviewTarget.pull_number,
+              head: reviewTarget.head,
+            }),
+          );
+        }
         if (history.review) {
           await retireReviewSummaries(
             octokit.rest,
@@ -392,6 +406,7 @@ async function run() {
         reviewTarget,
         result.structuredOutput,
         true,
+        learning,
       );
       if (url) {
         if (repositoryLearningEnabled)

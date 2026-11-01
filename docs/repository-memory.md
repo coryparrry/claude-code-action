@@ -15,12 +15,16 @@ implementation. Current-PR findings remain in their existing review threads.
 
 The read-only review job writes a small candidate artifact. A separate workflow runs
 only pinned action code, never consumer PR code. It checks the successful source run,
-trusted actor, repository, exact reviewed head and changed paths before storing a note.
+trusted actor, authenticated producer workflow, repository, exact reviewed head and changed paths before storing a note. The producer workflow blobs must match the trusted default branch; workflow-changing PRs can still be reviewed, but their learning is rejected. A GitHub-signed job identity binds the exact proposal, source PR, repository ID, run and attempt. The executed workflow revision comes from the signed claim, so empty REST associations cannot misattribute learning. Signature checks authenticate issuance within the source run, allowing delayed uploads and publishers without accepting proof from outside that execution window. The installer grants id-token-write automatically; no extra key or service is needed.
 Unmerged notes stay pending. PR closure publishes only the exact merged head and
 retires superseded pending notes only once the merged head is immutable. Other pending notes remain hidden and age out under the bounded retention limit. Fresh reconciliation handles a merge
 that races with review completion.
 
-The store is one schema-validated `index.json` file. Git provides atomic snapshots,
+A sanitized proposal is saved atomically in hidden native-review metadata. Recovery metadata is omitted from model prompts. Same-head retries recover it without another model call, so a failed artifact upload does not discard the learning. Pending notes are retained when a PR closes unmerged and can publish if it later reopens and merges.
+
+Read-only retrieval confirms up to eight distinct pending PR merge states, recovering missed close events such as GitHub-token merges. Duplicate facts are removed before filling the prompt budget.
+
+The store uses stable numeric repository identity, so renames and transfers preserve memory while copied indexes from other repositories are rejected. It is one schema-validated `index.json` file. Git provides atomic snapshots,
 history and fast-forward-only updates with three bounded conflict attempts. No
 separate record files, content IDs or dual-write synchronization are needed.
 Repository names come from GitHub event context, keeping installations isolated.

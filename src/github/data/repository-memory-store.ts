@@ -20,6 +20,7 @@ const MAX_INDEX_BYTES = 256 * 1024;
 const memoryIndexSchema = z.strictObject({
   version: z.literal(1),
   repository: z.string().min(1),
+  repositoryId: z.number().int().positive(),
   entries: z
     .array(
       repositoryRecordSchema
@@ -59,6 +60,7 @@ async function readMemoryIndex(
   client: Octokit,
   options: RepositoryMemoryOptions,
   ref: string,
+  repositoryId: number,
 ): Promise<MemoryIndex> {
   const { data } = await retryGitHubRead(() =>
     client.rest.repos.getContent({
@@ -78,11 +80,7 @@ async function readMemoryIndex(
   if (Buffer.byteLength(body) > MAX_INDEX_BYTES)
     throw new Error("Repository memory file exceeds its size budget");
   const parsed = memoryIndexSchema.safeParse(JSON.parse(body));
-  if (
-    !parsed.success ||
-    parsed.data.repository.toLowerCase() !==
-      `${options.owner}/${options.repo}`.toLowerCase()
-  )
+  if (!parsed.success || parsed.data.repositoryId !== repositoryId)
     throw new Error("Invalid repository memory index");
   return parsed.data;
 }
@@ -92,6 +90,7 @@ export async function readMemorySnapshot(
   client: Octokit,
   options: RepositoryMemoryOptions,
 ): Promise<{ sha?: string; index: MemoryIndex }> {
+  const repository = await repositoryIdentity(client, options);
   let sha: string;
   try {
     sha = (
@@ -108,12 +107,49 @@ export async function readMemorySnapshot(
       index: {
         version: 1,
         repository: `${options.owner}/${options.repo}`,
+        repositoryId: repository.id,
         entries: [],
       },
     };
   }
-  const index = await readMemoryIndex(client, options, sha);
+  const index = await readMemoryIndex(client, options, sha, repository.id);
   return { sha, index };
+}
+
+/** Resolve immutable repository identity independently of names and transfers. */
+export async function repositoryIdentity(
+  client: Octokit,
+  options: RepositoryMemoryOptions,
+) {
+  return (await retryGitHubRead(() => client.rest.repos.get(options))).data;
+}
+
+type MemoryPull = Awaited<ReturnType<Octokit["rest"]["pulls"]["get"]>>["data"];
+
+/** Confirm missed close events read-only, with at most eight distinct pending PR lookups. */
+async function mergedMemoryEntry(
+  client: Octokit,
+  options: RepositoryMemoryOptions,
+  entry: MemoryEntry,
+  baseRef: string,
+  pulls: Map<number, MemoryPull>,
+): Promise<boolean> {
+  if (entry.merged) return entry.baseRef === baseRef;
+  if (!pulls.has(entry.sourcePr)) {
+    if (pulls.size >= 8) return false;
+    pulls.set(
+      entry.sourcePr,
+      (
+        await retryGitHubRead(() =>
+          client.rest.pulls.get({ ...options, pull_number: entry.sourcePr }),
+        )
+      ).data,
+    );
+  }
+  const pull = pulls.get(entry.sourcePr)!;
+  return Boolean(
+    pull.merged_at && pull.head.sha === entry.head && pull.base.ref === baseRef,
+  );
 }
 
 /** Retrieve only published path matches, with no sliding comment-history window. */
@@ -141,9 +177,8 @@ export async function loadRepositoryMemory(
   const entries = snapshot.index.entries
     .filter(
       (entry) =>
-        entry.merged &&
         entry.sourcePr !== current.pr &&
-        entry.baseRef === current.baseRef &&
+        (!entry.merged || entry.baseRef === current.baseRef) &&
         memoryRelevance(entry, inventory.paths) > 0,
     )
     .sort(
@@ -151,20 +186,21 @@ export async function loadRepositoryMemory(
         memoryRelevance(b, inventory.paths) -
           memoryRelevance(a, inventory.paths) ||
         b.updatedAt.localeCompare(a.updatedAt),
-    )
-    .slice(0, 8);
-  const records: RepositoryMemoryRecord[] = [];
+    );
+  let records: RepositoryMemoryRecord[] = [];
+  const seen = new Set<string>();
+  const pulls = new Map<number, MemoryPull>();
   for (const entry of entries) {
-    const record = learningRecord(entry);
     if (
-      !records.some(
-        (prior) =>
-          prior.note === record.note &&
-          JSON.stringify(prior.paths) === JSON.stringify(record.paths),
-      )
+      !(await mergedMemoryEntry(client, options, entry, current.baseRef, pulls))
     )
-      records.push(record);
-    if (boundRepositoryMemory(records).length === 3) break;
+      continue;
+    const record = learningRecord(entry);
+    const identity = JSON.stringify([record.note, record.paths]);
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    records = boundRepositoryMemory([...records, record]);
+    if (records.length === 3) break;
   }
   return {
     records: boundRepositoryMemory(records),

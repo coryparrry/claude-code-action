@@ -119,6 +119,7 @@ ${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_t
       github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
+      id-token: write
       issues: write
       pull-requests: write
     concurrency:
