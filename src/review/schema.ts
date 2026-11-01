@@ -113,6 +113,7 @@ const clean = (value: string) =>
 export function renderFinding(
   finding: Finding,
   location?: ReviewLocation,
+  confidence?: "high",
 ): string {
   const marker = { bug: "🔴", suggestion: "🟡", pre_existing: "🟣" }[
     finding.severity
@@ -133,7 +134,7 @@ export function renderFinding(
   const code = link
     ? `[View code](${link})`
     : `\`${position}\` (${finding.side})`;
-  return `${marker} **${escapeHtml(clean(finding.title))}**\n\n${clean(finding.body)}\n\n${code}\n\n${renderDetails("Why this was flagged", `${clean(finding.explanation)}\n\n**Verification:** ${clean(finding.verification)}`)}\n\n<sub>Finding ID: \`f-${findingId(finding)}\`</sub>\n\n<!-- codex-action:finding:${findingId(finding)} -->`;
+  return `${marker} **${escapeHtml(clean(finding.title))}**\n\n${clean(finding.body)}${confidence ? "\n\n<sub>Confidence: high · independent static inspection</sub>" : ""}\n\n${code}\n\n${renderDetails("Why this was flagged", `${clean(finding.explanation)}\n\n**Verification:** ${clean(finding.verification)}`)}\n\n<sub>Finding ID: \`f-${findingId(finding)}\`</sub>\n\n<!-- codex-action:finding:${findingId(finding)} -->`;
 }
 
 /** Only publisher-owned footer metadata determines whether a head was reviewed. */
@@ -166,6 +167,7 @@ export function renderReview(
   review: Review,
   head: string,
   location?: ReviewLocation,
+  verified = false,
 ): string {
   const html = (value: string) =>
     escapeHtml(clean(value)).replace(/\r?\n/g, "<br>");
@@ -204,5 +206,5 @@ export function renderReview(
     ? `<a href="${escapeHtml(`${GITHUB_SERVER_URL}/${location.owner}/${location.repo}/commit/${head}`)}"><code>${escapeHtml(head.slice(0, 7))}</code></a>`
     : `<code>${escapeHtml(head.slice(0, 7))}</code>`;
   const footer = `<p><sub>Reviewed commit ${revision}</sub></p>`;
-  return `${[walkthrough, changeSummary, flow, risk, details, footer].filter(Boolean).join("\n\n")}\n\n<!-- codex-action:review:${head} -->\n${INLINE_REVIEW_MARKER}`;
+  return `${[walkthrough, changeSummary, flow, risk, details, footer].filter(Boolean).join("\n\n")}${verified ? "\n\n<!-- codex-action:verified-review:v1 -->" : ""}\n\n<!-- codex-action:review:${head} -->\n${INLINE_REVIEW_MARKER}`;
 }

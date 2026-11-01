@@ -65,6 +65,26 @@ const review: Review = {
     "Inspected the changed cache path and its caller. Runtime behavior was not tested.",
   findings: [finding],
 };
+const verifierOutput = {
+  head_sha: head,
+  risk: review.risk,
+  reasoning:
+    "Independently inspected the causal path and checked guards; tests not run.",
+  decisions: [
+    {
+      candidate_id: "candidate-1",
+      verdict: "confirmed",
+      confidence: "high",
+      introduced_by_patch: true,
+      previous_finding_id: null,
+      source_checks: [{ path: finding.path, line: finding.line }],
+      trigger: "The cached entry expires.",
+      evidence: "The changed return path drops the expiry guard.",
+      counterevidence: "The caller has no equivalent guard.",
+      rationale: "A reachable regression is introduced by this patch.",
+    },
+  ],
+};
 const directories: string[] = [];
 const servers: ReturnType<typeof Bun.serve>[] = [];
 afterEach(async () => {
@@ -89,6 +109,7 @@ function fixture(
     ambiguousCreate?: boolean;
     headAfterFiles?: string;
     failUpdateOnce?: boolean;
+    memoryUnavailable?: boolean;
   } = {},
 ) {
   const requests: { method: string; path: string; body?: any }[] = [];
@@ -107,6 +128,38 @@ function fixture(
         path,
       };
       requests.push(record);
+      if (request.method === "POST" && path === "/graphql") {
+        if (options.memoryUnavailable)
+          return Response.json({ message: "Forbidden" }, { status: 403 });
+        const nodes = comments.map((comment) => ({
+          isResolved: true,
+          comments: {
+            nodes: [
+              {
+                body: comment.body,
+                path: comment.path,
+                url: "https://github.com/owner/repo/pull/12#discussion_r1",
+                author: {
+                  login: comment.user?.login ?? target.author,
+                  __typename: "Bot",
+                },
+              },
+            ],
+          },
+        }));
+        return Response.json({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewThreads: {
+                  nodes,
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+            },
+          },
+        });
+      }
       if (request.method === "GET" && path.endsWith("/reviews")) {
         if (options.page && !url.searchParams.has("page")) {
           url.searchParams.set("page", "2");
@@ -837,6 +890,13 @@ test("real Agents SDK emits the review schema without starting inherited tools o
     prompt,
     "Review this patch and return the required structured review.",
   );
+  await mkdir(join(directory, ".git"), { recursive: true });
+  await mkdir(join(directory, "src"), { recursive: true });
+  await writeFile(
+    join(directory, ".git/codex-review.diff"),
+    "diff --git a/src/cache.ts b/src/cache.ts\n@@ -1,3 +1,3 @@\n one\n two\n-old\n+new\n",
+  );
+  await writeFile(join(directory, finding.path), "one\ntwo\nnew\n");
   const maliciousArgs = `--mcp-config '${JSON.stringify({ mcpServers: { unexpected: { command: process.execPath, args: ["-e", `Bun.write(${JSON.stringify(sentinel)}, 'started')`] } } })}'`;
   await writeFile(
     script,
@@ -845,17 +905,23 @@ test("real Agents SDK emits the review schema without starting inherited tools o
     import { runCodex } from ${JSON.stringify(join(root, "base-action/src/run-codex.ts"))};
     import { nativeReviewOptions } from ${JSON.stringify(join(root, "src/review/runtime.ts"))};
     import { existsSync } from "node:fs";
+    import { verifyReviewCandidates } from ${JSON.stringify(join(root, "src/review/verify.ts"))};
     let calls = 0;
     const output = ${JSON.stringify(review)};
+    const verifierOutput = ${JSON.stringify(verifierOutput)};
     const model = { async getResponse(request) {
       calls++;
       const names = request.tools.map((tool) => tool.name).sort();
       if (names.join(',') !== 'Glob,Grep,Read') throw new Error('Unexpected review tools: ' + names.join(','));
-      return { output: [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: JSON.stringify(output) }] }], usage: new Usage({ requests: 1, inputTokens: 10, outputTokens: 10 }) };
+      if (calls === 2) return { output: [{ type: 'function_call', name: 'Read', callId: 'read-patch', arguments: JSON.stringify({ file_path: '.git/codex-review.diff' }), status: 'completed' }, { type: 'function_call', name: 'Read', callId: 'read-source', arguments: JSON.stringify({ file_path: ${JSON.stringify(finding.path)} }), status: 'completed' }], usage: new Usage({ requests: 1, inputTokens: 10, outputTokens: 10 }) };
+      return { output: [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: JSON.stringify(calls === 1 ? output : verifierOutput) }] }], usage: new Usage({ requests: 1, inputTokens: 10, outputTokens: 10 }) };
     }, async *getStreamedResponse() { throw new Error('Nonstreaming fixture'); } };
     const options = await nativeReviewOptions(${JSON.stringify(maliciousArgs)}, { model });
     const result = await runCodex(${JSON.stringify(prompt)}, { ...options, mcpConfig: options.mcpConfig, configurationHome: ${JSON.stringify(directory)}, workspace: ${JSON.stringify(directory)}, timeoutMs: 10000 });
     if (result.conclusion !== 'success' || JSON.stringify(result.structuredOutput) !== JSON.stringify(output) || calls !== 1) throw new Error('Structured review did not complete');
+    const gated = await verifyReviewCandidates(result, { ...options, maxTurns: 10 }, ${JSON.stringify(head)}, []);
+    if (gated.review.findings.length !== 1 || calls !== 3) throw new Error('Independent verification did not complete');
+    if (!gated.executionFile || gated.executionFile === result.executionFile) throw new Error('Verifier report overwrote reviewer evidence');
     if (existsSync(${JSON.stringify(sentinel)})) throw new Error('Inherited MCP server was started');
     console.log('OFFLINE_REVIEW_SDK_OK');
   `,
@@ -890,7 +956,17 @@ test("real Agents SDK emits the review schema without starting inherited tools o
   }
 }, 20000);
 
-test.each(["success", "rejected", "stale", "invalid-output"])(
+test.each([
+  "success",
+  "rejected",
+  "stale",
+  "invalid-output",
+  "verifier-failure",
+  "verifier-invalid",
+  "all-rejected",
+  "remembered",
+  "memory-unavailable",
+])(
   "root action native review %s agrees with GitHub delivery",
   async (scenario) => {
     const directory = await mkdtemp(join(tmpdir(), "native-review-root-"));
@@ -898,6 +974,17 @@ test.each(["success", "rejected", "stale", "invalid-output"])(
     const api = fixture({
       status: scenario === "rejected" ? 422 : undefined,
       currentHead: scenario === "stale" ? "b".repeat(40) : undefined,
+      memoryUnavailable: scenario === "memory-unavailable",
+      comments:
+        scenario === "remembered"
+          ? [
+              {
+                body: renderFinding(finding, target),
+                path: finding.path,
+                user: { login: target.author },
+              },
+            ]
+          : undefined,
     });
     const event = join(directory, "event.json");
     const output = join(directory, "output.txt");
@@ -927,6 +1014,10 @@ test.each(["success", "rejected", "stale", "invalid-output"])(
     );
     await writeFile(output, "");
     await writeFile(
+      join(directory, "codex-review-verifier-output.json"),
+      "stale earlier invocation",
+    );
+    await writeFile(
       preload,
       `
     import { mock } from "bun:test";
@@ -944,9 +1035,13 @@ test.each(["success", "rejected", "stale", "invalid-output"])(
     } }));
     mock.module(root + "/base-action/src/run-codex.ts", () => ({ runCodex: async (_prompt, options) => {
       if (options.sandbox !== "read-only" || options.githubEnvironment || options.tools.join(",") !== "Read,Glob,Grep") throw new Error("Invalid review boundary");
-      const executionFile = process.env.RUNNER_TEMP + "/codex-execution-output.json";
+      const verification = options.executionFileName === "codex-review-verifier-output.json";
+      const executionFile = process.env.RUNNER_TEMP + "/" + (options.executionFileName || "codex-execution-output.json");
       await writeFile(executionFile, "[]");
-      return { conclusion: "success", executionFile, structuredOutput: ${JSON.stringify(scenario === "invalid-output" ? {} : review)} };
+      if (verification && ${JSON.stringify(scenario)} === "verifier-failure") throw new Error("Verifier unavailable");
+      const verifiedOutput = ${JSON.stringify(verifierOutput)};
+      if (${JSON.stringify(scenario)} === "all-rejected") verifiedOutput.decisions[0].verdict = "rejected";
+      return { conclusion: "success", executionFile, numTurns: 1, readEvidence: [{ path: ".git/codex-review.diff", startLine: 1, endLine: 99 }, { path: ${JSON.stringify(finding.path)}, startLine: 1, endLine: 99 }], structuredOutput: verification ? (${JSON.stringify(scenario)} === "verifier-invalid" ? {} : verifiedOutput) : ${JSON.stringify(scenario === "invalid-output" ? {} : review)} };
     } }));
   `,
     );
@@ -986,7 +1081,9 @@ test.each(["success", "rejected", "stale", "invalid-output"])(
         new Response(child.stdout).text(),
         new Response(child.stderr).text(),
       ]);
-      const succeeded = scenario === "success";
+      const succeeded = ["success", "all-rejected", "remembered"].includes(
+        scenario,
+      );
       expect({
         code,
         diagnostics: code === (succeeded ? 0 : 1) ? "" : stdout + stderr,
@@ -996,9 +1093,32 @@ test.each(["success", "rejected", "stale", "invalid-output"])(
         [...actionOutput.matchAll(/conclusion<<[^\n]+\n([^\n]+)/g)].at(-1)?.[1],
       ).toBe(succeeded ? "success" : "failure");
       expect(actionOutput.includes("review_url<<")).toBe(succeeded);
+      if (["invalid-output", "memory-unavailable"].includes(scenario)) {
+        expect(actionOutput).not.toContain("verification_file<<");
+        expect(
+          await readFile(
+            join(directory, "codex-review-verifier-output.json"),
+            "utf8",
+          ).catch(() => undefined),
+        ).toBeUndefined();
+      }
+
       expect(
-        api.requests.filter((request) => request.method === "POST"),
-      ).toHaveLength(["success", "rejected"].includes(scenario) ? 1 : 0);
+        api.requests.filter(
+          (request) =>
+            request.method === "POST" && request.path.endsWith("/reviews"),
+        ),
+      ).toHaveLength(
+        ["success", "rejected", "all-rejected", "remembered"].includes(scenario)
+          ? 1
+          : 0,
+      );
+      if (["all-rejected", "remembered"].includes(scenario))
+        expect(api.reviews[0].body).toContain("No new defects confirmed");
+      if (scenario === "all-rejected") expect(api.comments).toHaveLength(0);
+      if (scenario === "remembered") expect(api.comments).toHaveLength(1);
+      if (scenario === "success")
+        expect(api.comments[0].body).toContain("Confidence: high");
       expect(
         api.requests.some(
           (request) =>
@@ -1011,3 +1131,71 @@ test.each(["success", "rejected", "stale", "invalid-output"])(
   },
   15000,
 );
+
+test("verified follow-up reviews remember prior findings instead of posting new inline copies", async () => {
+  const api = fixture();
+  await publishReview(api.client, target, review, true);
+  expect(api.comments).toHaveLength(1);
+  expect(api.comments[0].body).toContain("Confidence: high");
+  expect(api.reviews[0].body).toContain("codex-action:verified-review:v1");
+  const next = "f".repeat(40);
+  api.setHead(next);
+  await publishReview(api.client, { ...target, head: next }, review, true);
+  expect(api.reviews).toHaveLength(2);
+  expect(api.comments).toHaveLength(1);
+  expect(api.reviews[1].body).toContain(
+    "prior findings remain in their existing threads",
+  );
+  expect(api.reviews[0].body).toContain("Superseded by");
+});
+
+test("old unverified same-head reviews are upgraded once without reflagging their findings", async () => {
+  const api = fixture();
+  await publishReview(api.client, target, review);
+  expect(
+    (await loadReviewHistory(api.client, target, true)).reviewedHeads.has(head),
+  ).toBe(false);
+  await publishReview(api.client, target, review, true);
+  expect(api.reviews).toHaveLength(2);
+  expect(api.comments).toHaveLength(1);
+  expect(
+    (await loadReviewHistory(api.client, target, true)).reviewedHeads.has(head),
+  ).toBe(true);
+  await publishReview(api.client, target, review, true);
+  expect(api.reviews).toHaveLength(2);
+  expect(api.comments).toHaveLength(1);
+});
+
+test("legacy review-body findings remain remembered after their overview is retired", async () => {
+  const oldHead = "c".repeat(40);
+  const body = `<details>Existing claim\n<!-- codex-action:finding:${findingId(finding)} --></details>\n<!-- codex-action:review:${oldHead} -->\n<!-- codex-action:grouped-review -->`;
+  const api = fixture({
+    prior: [
+      {
+        id: 10,
+        user: { login: target.author },
+        state: "COMMENTED",
+        commit_id: oldHead,
+        body,
+        html_url: "https://github.com/owner/repo/pull/12#pullrequestreview-10",
+      },
+    ],
+  });
+  await publishReview(api.client, target, review, true);
+  expect(api.comments).toHaveLength(0);
+  expect(api.reviews[0].body).toContain("codex-action:memory:v1:");
+  expect(
+    (await loadReviewHistory(api.client, target, true)).knownFindings?.has(
+      findingId(finding),
+    ),
+  ).toBe(true);
+  const next = "d".repeat(40);
+  api.setHead(next);
+  await publishReview(api.client, { ...target, head: next }, review, true);
+  expect(api.comments).toHaveLength(0);
+  expect(
+    (
+      await loadReviewHistory(api.client, { ...target, head: next }, true)
+    ).knownFindings?.has(findingId(finding)),
+  ).toBe(true);
+});

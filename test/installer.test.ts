@@ -228,7 +228,7 @@ describe("guided GitHub Action workflow", () => {
         const report = steps[reportIndex];
         expect(report.with).toEqual({
           name: `codex-${label}-\${{ github.run_id }}-\${{ github.run_attempt }}`,
-          path: "${{ steps.agent.outputs.execution_file }}",
+          path: "${{ steps.agent.outputs.execution_file }}\n${{ steps.agent.outputs.verification_file }}\n",
           "if-no-files-found": "error",
           "retention-days": 7,
         });

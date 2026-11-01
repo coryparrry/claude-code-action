@@ -77,6 +77,7 @@ export type AgentRuntimeOptions = {
   redact(text: string): string;
   removeSecretAliases(): void;
   emit(event: OpenAIAgentEvent): void;
+  onToolResult?(event: AgentToolEvent): void;
   sessionStoragePath?: string;
 };
 
@@ -404,6 +405,7 @@ async function buildContext(
       );
       const context = applyHook(hook);
       if (context) pending.push(context);
+      options.onToolResult?.(event);
       return { updatedMCPToolOutput: hook.updatedMCPToolOutput };
     },
   };

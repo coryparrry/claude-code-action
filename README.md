@@ -4,7 +4,7 @@ A fork of [Anthropic's Claude Code Action](https://github.com/anthropics/claude-
 
 This is an independent adaptation, not an official OpenAI or Anthropic release. The upstream MIT copyright and license notices are retained in [LICENSE](LICENSE).
 
-Automatic reviews keep GitHub’s native review layout: a walkthrough-led summary with grouped changes, an optional flow diagram and expandable review details, plus a separate coloured inline comment for each issue. See [review presentation](docs/review-presentation.md) for the format and named-bot setup.
+Automatic reviews keep GitHub’s native review layout: a walkthrough-led summary with grouped changes, an optional flow diagram and expandable review details, plus inline comments only for new defects confirmed with high confidence by a separate verification pass. PR history provides durable memory so open and resolved findings are not posted again. See [verification and memory](docs/review-verification.md). See [review presentation](docs/review-presentation.md) for the format and named-bot setup.
 
 ## Quickstart
 
@@ -69,7 +69,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: codex-command-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ steps.agent.outputs.execution_file }}
+          path: |
+            ${{ steps.agent.outputs.execution_file }}
+            ${{ steps.agent.outputs.verification_file }}
           if-no-files-found: error
           retention-days: 7
 
@@ -121,7 +123,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: codex-review-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ steps.agent.outputs.execution_file }}
+          path: |
+            ${{ steps.agent.outputs.execution_file }}
+            ${{ steps.agent.outputs.verification_file }}
           if-no-files-found: error
           retention-days: 7
 ```

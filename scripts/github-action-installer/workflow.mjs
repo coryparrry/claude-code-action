@@ -103,7 +103,9 @@ ${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_t
         uses: actions/upload-artifact@v4
         with:
           name: codex-command-\${{ github.run_id }}-\${{ github.run_attempt }}
-          path: \${{ steps.agent.outputs.execution_file }}
+          path: |
+            \${{ steps.agent.outputs.execution_file }}
+            \${{ steps.agent.outputs.verification_file }}
           if-no-files-found: error
           retention-days: 7
 
@@ -150,7 +152,9 @@ ${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_t
         uses: actions/upload-artifact@v4
         with:
           name: codex-review-\${{ github.run_id }}-\${{ github.run_attempt }}
-          path: \${{ steps.agent.outputs.execution_file }}
+          path: |
+            \${{ steps.agent.outputs.execution_file }}
+            \${{ steps.agent.outputs.verification_file }}
           if-no-files-found: error
           retention-days: 7
 `;
