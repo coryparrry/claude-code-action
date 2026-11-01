@@ -1,0 +1,71 @@
+{
+  "source_sha": "4a40cc19a351f218b80dcd2357c1513617a71475",
+  "installed_action_sha": "633c206996a8849aedeb77687369e1e7a31e3a37",
+  "production_runtime_and_lockfiles_identical_between_source_and_installed_pin": true,
+  "execution_environment": "GitHub Actions",
+  "baseline": {
+    "run": 41351441397,
+    "passed": 1559,
+    "failed": 0,
+    "assertions": 5831,
+    "files": 116
+  },
+  "live_runtime_runs": [41353172403, 41354638733],
+  "native_review_run": 41352827775,
+  "inline_delivery_run": 41353167303,
+  "inline_delivered_sha": "ec65ab36602dc2f72634767adcc33eaf822a658d",
+  "issue_delivery_run": 41352989671,
+  "issue_delivered_sha": "4ad90aaea0492560c570b9b0d49c994a1ef5fe39",
+  "memory": {
+    "producer_retry_run": 41352295152,
+    "retry_attempt": 2,
+    "merge_publisher_run": 41353234968,
+    "rename_retrieval_run": 41353399115,
+    "rename_attempt": 1,
+    "retarget_rejection_run": 41353917395,
+    "alternate_base_exclusion_run": 41354255451,
+    "published_head": "60bfa98f3b3e09133c51f43da61d56657bf92f49",
+    "stale_pending_retired": true
+  },
+  "diagnosis": {
+    "run": 41353710140,
+    "head_unchanged": true,
+    "limitations": [
+      "Current-head inventory only",
+      "GitHub supplied no jobs or exact reason for action_required"
+    ]
+  },
+  "documentation": {
+    "documented_named_symbols": 8,
+    "total_named_symbols": 8,
+    "coverage": 1.0,
+    "minimum": 0.85,
+    "repository_wide_coverage": "not audited"
+  },
+  "live_auth_unverified": [
+    "AWS Bedrock",
+    "Azure/Foundry",
+    "OpenAI workload identity",
+    "Custom GitHub App"
+  ],
+  "cleanup": {
+    "closed_fixture_prs": [13, 16, 17],
+    "merged_fixture_pr": 12,
+    "closed_issue": 15,
+    "deleted_fixture_branches": [
+      "codex/release-memory-producer-20261101",
+      "codex/release-requested-edit-20261101",
+      "codex/release-memory-retrieval-20261101",
+      "codex/release-base-isolation-20261101",
+      "codex/issue-15-20261101-2137",
+      "codex/release-alternate-base-20261101",
+      "codex/release-fixture-base-20261101"
+    ],
+    "fixture_memory_records_removed": 3,
+    "remaining_memory_entries": 0,
+    "empty_memory_store_retained": true,
+    "issues_restored": false,
+    "main_unchanged": true,
+    "qualification_pr_retained": 14
+  }
+}

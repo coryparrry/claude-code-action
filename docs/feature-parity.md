@@ -7,10 +7,10 @@ installer tooling and exact Claude/Codex CLI command parity are outside this
 audit.
 
 The action preserves the main GitHub workflows while replacing the Claude
-runtime with an OpenAI Agents SDK loop. **Full parity and live end-to-end
-qualification are not established.** “Implemented” below describes source
-behavior covered by offline tests, not successful execution against every
-provider or a consumer repository.
+runtime with an OpenAI Agents SDK loop. **Full vendor and provider parity are not established.** The
+[release qualification report](./release-qualification-2026-11-01.md) separates
+GitHub-hosted fixtures from live OpenAI review, delivery and runtime results.
+“Implemented” does not establish successful execution against every provider account.
 
 ## GitHub Action features
 
@@ -19,8 +19,8 @@ provider or a consumer repository.
 | Mode detection and automated prompts | Selects interactive or agent execution from the event and `prompt`; progress-enabled PR reviews use tracking comments.               | Implemented                                |
 | Mentions, labels, and assignees      | Supports `/codex` requests, configurable trigger text, label and assignee triggers.                                                  | Implemented                                |
 | Issue and PR context                 | Reads issue/PR bodies, comments, inline review comments, and submitted reviews.                                                      | Implemented                                |
-| Code review                          | Reviews changes and can post inline comments and a summary; supports buffering and classifying inline feedback.                      | Implemented; live task unverified          |
-| Code implementation                  | Can edit files, use branch handling, commit, and push within granted permissions; supports commit signing.                           | Implemented; live task unverified          |
+| Code review                          | Reviews changes and can post inline comments and a summary; supports buffering and classifying inline feedback.                      | Implemented; live OpenAI fixture passed    |
+| Code implementation                  | Can edit files, use branch handling, commit, and push within granted permissions; supports commit signing.                           | Implemented; live OpenAI fixture passed    |
 | Progress and sticky comments         | Tracking comments, task checkboxes, sticky replies, execution reports, and cleanup.                                                  | Implemented                                |
 | Structured outputs                   | Validates a supplied JSON schema and exposes `structured_output`; also exposes conclusion, execution-file, and session outputs.      | Implemented                                |
 | Runner execution                     | Runs on the calling GitHub runner and uses provider APIs for inference.                                                              | Implemented                                |
@@ -68,14 +68,15 @@ provider parity.
 
 ## Delivery and verification
 
-The maintained examples and generated workflow pin source commit
-`07d0a94badb76002d5e143806b32f96e0a9d2c6d`. This revision submits one native review summary with a separate coloured inline comment per finding; see
+The generated workflow pins source commit
+`633c206996a8849aedeb77687369e1e7a31e3a37`. This revision submits one native review summary with a separate coloured inline comment per finding; see
 [review presentation](./review-presentation.md). This adds the managed Claude
 bot's presentation, not parity with its hosted review engine. Existing consumers
-need to update their workflow revision and enable `review_mode`. No release tag
-or consumer-repository installation is claimed.
+need to update their workflow revision and enable `review_mode`. The live qualification report records exact source and installed-action revisions.
+No release tag or marketplace publication is claimed.
 
-Offline regression and transport fixtures establish local behavior, including
-failure paths. They do not verify live model access, cloud account policy,
-billing, deployment availability, or a complete model-driven GitHub task.
-Recorded verification belongs in the [port worklog](./CODEX_PORT_WORKLOG.md).
+GitHub-hosted regression and transport fixtures establish the exercised contracts,
+including failure paths. Live OpenAI review, issue implementation, inline delivery,
+validation, memory and runtime cases are recorded in the qualification report.
+Cloud account policy, provider billing and unconfigured deployments remain outside
+that live evidence. Historical verification remains in the [port worklog](./CODEX_PORT_WORKLOG.md).
