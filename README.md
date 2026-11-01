@@ -14,7 +14,7 @@ per repository, with no additional storage credentials. [Design and limits](docs
 
 Use this repository as a GitHub Action in your workflow. No local installer is required.
 
-The examples pin source commit `8124d92dee8a03455fb16b024b430bc9f9135c63`, which includes verified native reviews, requested-change delivery and bounded repository learning. Existing installations can run the guided installer to update both workflows and enable automatic cross-PR memory. The manual examples below run reviews without the separate memory publisher.
+The examples pin source commit `de4c0f60e11be2f29a794dc5dab489786e9a6868`, which includes verified native reviews, requested-change delivery and bounded repository learning. Existing installations can run the guided installer to update both workflows and enable automatic cross-PR memory. The manual examples below run reviews without the separate memory publisher.
 
 Add your existing OpenAI key as the repository Actions secret `OPENAI_API_KEY`. Save this workflow as `.github/workflows/codex.yml` in the repository where you want the action to operate. Replace `your-github-username` with the trusted user's login. The workflow must be on the default branch for `issue_comment` events.
 
@@ -60,7 +60,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: agent
-        uses: coryparrry/claude-code-action@8124d92dee8a03455fb16b024b430bc9f9135c63
+        uses: coryparrry/claude-code-action@de4c0f60e11be2f29a794dc5dab489786e9a6868
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -106,7 +106,7 @@ jobs:
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
       - id: agent
-        uses: coryparrry/claude-code-action@8124d92dee8a03455fb16b024b430bc9f9135c63
+        uses: coryparrry/claude-code-action@de4c0f60e11be2f29a794dc5dab489786e9a6868
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -161,7 +161,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
-      - uses: coryparrry/claude-code-action@8124d92dee8a03455fb16b024b430bc9f9135c63
+      - uses: coryparrry/claude-code-action@de4c0f60e11be2f29a794dc5dab489786e9a6868
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           codex_sandbox: read-only
