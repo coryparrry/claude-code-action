@@ -1,25 +1,36 @@
 {
-  "implementation_pin": "8124d92dee8a03455fb16b024b430bc9f9135c63",
-  "live_source": "36f62fa9ab4a17a836e89091c294cbb7e5a10ad2",
-  "ci_run": 41358060261,
-  "tests": 1575,
+  "implementation_pin": "62daf7d83c5282e2344579369f72d496eb6fd923",
+  "driver_source": "cd929f2b54ca63bafc655ceb387ec340bd1b0151",
+  "qualified_source_ci": 41362349119,
+  "consumer_pin_ci": 41363172107,
+  "qualified_tests": 1580,
   "failures": 0,
-  "assertions": 5884,
+  "assertions": 5898,
   "test_files": 117,
   "documentation": {
-    "documented": 10,
-    "named_symbols": 11,
+    "documented_named_symbols": 16,
+    "total": 17,
     "minimum": 0.85
   },
-  "live_runs": [41358059827, 41358060324],
-  "verified_issue": "https://github.com/coryparrry/claude-code-action/issues/20",
-  "tool_calls": 2,
-  "actual_issues": 1,
-  "tracking_contains_actual_url": true,
-  "head_unchanged": true,
+  "exact_pin_live_run": 41363173970,
+  "success": {
+    "issue": "https://github.com/coryparrry/claude-code-action/issues/26",
+    "tool_calls": 2,
+    "actual_issues": 1,
+    "head_unchanged": true,
+    "closed": true
+  },
+  "agent_failure": {
+    "issue": "https://github.com/coryparrry/claude-code-action/issues/27",
+    "expected_failure": true,
+    "confirmed_url_output": true,
+    "confirmed_url_tracking": true,
+    "head_unchanged": true,
+    "closed": true
+  },
   "read_only_token_denied": true,
-  "fixture_closed": true,
+  "initial_native_review_findings_fixed": 6,
   "issues_setting_preserved": true,
   "local_tests_run": false,
-  "status": "initial evidence superseded by review fixes; requalification pending"
+  "current_pr_checks": "https://github.com/coryparrry/claude-code-action/pull/18/checks"
 }
