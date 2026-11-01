@@ -17,3 +17,11 @@ test("normalizes empty and whitespace-only labels", () => {
 test("preserves labels that do not need trimming", () => {
   expect(normalizeLabel("hello")).toBe("hello");
 });
+
+test("preserves the literal null label", () => {
+  expect(normalizeLabel("  null  ")).toBe("null");
+});
+
+test("trims Unicode whitespace without changing internal whitespace", () => {
+  expect(normalizeLabel("\u00a0a\u2003b\u00a0")).toBe("a\u2003b");
+});
