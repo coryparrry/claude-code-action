@@ -142,7 +142,7 @@ ${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_t
           trigger_phrase: ${JSON.stringify(DEFAULT_TRIGGER_PHRASE)}
           openai_api_key: \${{ secrets.OPENAI_API_KEY }}
           codex_model: ${JSON.stringify(model)}
-${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_turns: "30"
+${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_turns: "60"
           review_mode: "true"
           codex_sandbox: read-only
           prompt: |
