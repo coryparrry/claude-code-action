@@ -18,7 +18,7 @@ const pin = "39cf9a682e1fc1fd562672af07a8bc8866643d2b";
 /** Read only the disposable fixture's GitHub objects without printing credentials. */
 function api(path, args = []) {
   return JSON.parse(
-    execFileSync("gh", ["api", `${root}/${path}`, ...args], {
+    execFileSync("gh", ["api", path ? `${root}/${path}` : root, ...args], {
       encoding: "utf8",
     }),
   );
