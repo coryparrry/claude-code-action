@@ -445,13 +445,41 @@ describe("AgentPermissions", () => {
       { permissionMode: "readonly" },
       { sandboxMode: "read-only" },
     ]) {
-      const permissions = new AgentPermissions({ cwd, ...options });
-      for (const name of ["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit"])
+      const permissions = new AgentPermissions({
+        cwd,
+        ...options,
+        allowedTools: [
+          "mcp__github_git__*",
+          "mcp__github_file_ops__*",
+          "mcp__github__*",
+          "mcp__github_comment__*",
+        ],
+      });
+      for (const name of [
+        "Bash",
+        "Write",
+        "Edit",
+        "MultiEdit",
+        "NotebookEdit",
+        "mcp__github_git__commit_files",
+        "mcp__github_git__delete_files",
+        "mcp__github_git__push",
+        "mcp__github_file_ops__commit_files",
+        "mcp__github_file_ops__delete_files",
+        "mcp__github__push_files",
+        "mcp__github__create_pull_request",
+      ])
         expect(() =>
           permissions.assertTool(name, name === "Bash" ? "cat a" : "a"),
         ).toThrow("read-only/plan");
       expect(() => permissions.assertTool("Read", "a")).not.toThrow();
       expect(() => permissions.assertTool("TodoWrite")).not.toThrow();
+      expect(() =>
+        permissions.assertTool("mcp__github__get_file_contents"),
+      ).not.toThrow();
+      expect(() =>
+        permissions.assertTool("mcp__github_comment__update_codex_comment"),
+      ).not.toThrow();
     }
   });
 
@@ -521,4 +549,24 @@ describe("AgentPermissions", () => {
       ),
     ).toThrow("not allowed");
   });
+});
+
+test("trusted source snapshot aliases retain original-path Read and Grep denials", () => {
+  for (const deny of ["Read(secret-link)", "Grep(secret-link)"]) {
+    const permission = new AgentPermissions({
+      cwd: "/workspace",
+      allowedTools: ["Read", "Grep"],
+      disallowedTools: [deny],
+      readAliases: { ".claude-pr/symlink-targets/abc.txt": "secret-link" },
+    });
+    expect(() =>
+      permission.assertDenied(
+        "Read",
+        "/workspace/.claude-pr/symlink-targets/abc.txt",
+      ),
+    ).toThrow("denied");
+    expect(() =>
+      permission.assertDenied("Grep", ".claude-pr/symlink-targets/abc.txt"),
+    ).toThrow("denied");
+  }
 });

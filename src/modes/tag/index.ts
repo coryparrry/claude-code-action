@@ -18,7 +18,10 @@ import { createPrompt, buildDisallowedToolsString } from "../../create-prompt";
 import { isEntityContext } from "../../github/context";
 import type { GitHubContext } from "../../github/context";
 import type { Octokits } from "../../github/api/client";
+import { GIT_READ_TOOLS, GIT_WRITE_TOOLS } from "../../create-prompt/git-tools";
 import { parseAllowedTools } from "../agent/parse-tools";
+import { fetchReviewRequest } from "../../github/data/review-request";
+import { enrichContextImages } from "../../github/data/context-images";
 
 /**
  * Prepares the tag mode execution context.
@@ -63,6 +66,8 @@ export async function prepareTagMode({
     includeCommentsByActor: context.inputs.includeCommentsByActor,
     excludeCommentsByActor: context.inputs.excludeCommentsByActor,
   });
+  githubData.reviewRequest = await fetchReviewRequest(context, octokit);
+  await enrichContextImages(githubData, context, octokit);
 
   // Setup branch
   const branchInfo = await setupBranch(octokit, githubData, context);
@@ -131,8 +136,6 @@ export async function prepareTagMode({
     (tool) => tool === "mcp__github" || tool.startsWith("mcp__github_"),
   );
 
-  const gitPushWrapper = `${process.env.GITHUB_ACTION_PATH}/scripts/git-push.sh`;
-
   // Build claude_args for tag mode with required tools.
   // Edit/MultiEdit/Write are intentionally omitted: acceptEdits permission mode (set below)
   // auto-allows file edits inside $GITHUB_WORKSPACE and denies writes outside (e.g. ~/.bashrc).
@@ -142,6 +145,8 @@ export async function prepareTagMode({
     "Grep",
     "LS",
     "Read",
+    ...GIT_READ_TOOLS,
+    "mcp__github_context__view_image",
     "mcp__github_comment__update_codex_comment",
     "mcp__github_ci__get_ci_status",
     "mcp__github_ci__get_workflow_run_details",
@@ -152,12 +157,7 @@ export async function prepareTagMode({
   // Add git commands when using git CLI (no API commit signing, or SSH signing)
   // SSH signing still uses git CLI, just with signing enabled
   if (!useApiCommitSigning) {
-    tagModeTools.push(
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      `Bash(${gitPushWrapper}:*)`,
-      "Bash(git rm:*)",
-    );
+    tagModeTools.push(...GIT_WRITE_TOOLS);
   } else {
     // When using API commit signing, use MCP file ops tools
     tagModeTools.push(
@@ -173,7 +173,10 @@ export async function prepareTagMode({
     repo: context.repository.repo,
     branch: branchInfo.claudeBranch || branchInfo.currentBranch,
     baseBranch: branchInfo.baseBranch,
+    branchSourceSha: branchInfo.sourceSha,
+    images: githubData.contextImages,
     claudeCommentId: commentId.toString(),
+    commentType: commentData.commentType,
     allowedTools: Array.from(new Set(tagModeTools)),
     mode: "tag",
     context,
@@ -204,6 +207,7 @@ export async function prepareTagMode({
   }
 
   return {
+    commentType: commentData.commentType,
     commentId,
     branchInfo,
     mcpConfig: ourMcpConfig,

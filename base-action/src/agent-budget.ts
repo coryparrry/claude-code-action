@@ -58,6 +58,14 @@ export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
       cacheWrite: 0.25,
     },
   },
+  // Standard rates verified against https://developers.openai.com/api/docs/pricing
+  "gpt-6.1-terra": {
+    input: 1,
+    cachedInput: 0.05,
+    output: 5,
+    cacheWrite: 1.25,
+    longContext: { input: 2, cachedInput: 0.1, output: 7.5, cacheWrite: 2.5 },
+  },
   "gpt-6.1-sol": {
     input: 2,
     cachedInput: 0.1,

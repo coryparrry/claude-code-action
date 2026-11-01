@@ -56,3 +56,14 @@ test("budget includes hosted search calls and does not claim an unknown model co
   unknown.accept(usage, "unpriced-model");
   expect(unknown.costKnown).toBe(false);
 });
+
+test("Terra 6.1 has standard token rates and accepts an estimated budget", () => {
+  const budget = new AgentBudget(1);
+  expect(() => budget.assertModel("gpt-6.1-terra")).not.toThrow();
+  budget.accept(
+    new Usage({ inputTokens: 1000, outputTokens: 100 }),
+    "gpt-6.1-terra",
+  );
+  expect(budget.costKnown).toBe(true);
+  expect(budget.cost).toBeCloseTo(0.0015, 8);
+});

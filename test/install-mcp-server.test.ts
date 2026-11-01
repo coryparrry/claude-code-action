@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach, spyOn } from "bun:test";
 import { prepareMcpConfig } from "../src/mcp/install-mcp-server";
+import { createMockContext } from "./mockContext";
 import { parseAllowedTools } from "../src/modes/agent/parse-tools";
 import * as core from "@actions/core";
 import type { ParsedGitHubContext } from "../src/github/context";
@@ -90,6 +91,29 @@ describe("prepareMcpConfig", () => {
     setFailedSpy.mockRestore();
     processExitSpy.mockRestore();
     fetchSpy.mockRestore();
+  });
+
+  test("plan mode disables the scoped Git server even with an explicit write grant", async () => {
+    const old = process.env.CODEX_ARGS;
+    try {
+      process.env.CODEX_ARGS = "--permission-mode plan";
+      const config = JSON.parse(
+        await prepareMcpConfig({
+          githubToken: "test-token",
+          owner: "o",
+          repo: "r",
+          branch: "head",
+          baseBranch: "main",
+          allowedTools: ["mcp__github_git__push"],
+          mode: "agent",
+          context: mockPRContext,
+        }),
+      );
+      expect(config.mcpServers.github_git.env.GIT_READ_ONLY).toBe("true");
+    } finally {
+      if (old === undefined) delete process.env.CODEX_ARGS;
+      else process.env.CODEX_ARGS = old;
+    }
   });
 
   test("legacy classify=false posts immediately even with default buffering enabled", async () => {
@@ -507,4 +531,26 @@ describe("prepareMcpConfig", () => {
     expect(parsed.mcpServers.github).not.toBeDefined();
     expect(parsed.mcpServers.github_inline_comment).not.toBeDefined();
   });
+});
+
+test("forwards prepared closed-PR ancestry to the signing server", async () => {
+  const config = JSON.parse(
+    await prepareMcpConfig({
+      githubToken: "test-token",
+      owner: "test-owner",
+      repo: "test-repo",
+      branch: "replacement",
+      baseBranch: "main",
+      branchSourceSha: "a".repeat(40),
+      allowedTools: ["mcp__github_file_ops__commit_files"],
+      mode: "agent",
+      context: createMockContext({
+        isPR: true,
+        inputs: { useCommitSigning: true },
+      }),
+    }),
+  );
+  expect(config.mcpServers.github_file_ops.env.BRANCH_SOURCE_SHA).toBe(
+    "a".repeat(40),
+  );
 });

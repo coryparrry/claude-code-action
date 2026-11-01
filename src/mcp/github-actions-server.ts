@@ -5,11 +5,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { GITHUB_API_URL } from "../github/api/config";
 import { mkdir, writeFile } from "fs/promises";
+import { redactSecrets } from "../github/utils/sanitizer";
 import { Octokit } from "@octokit/rest";
-import {
-  listWorkflowJobs,
-  listWorkflowRuns,
-} from "./github-actions-pagination";
+import { getCIStatus, getWorkflowRunDetails } from "./github-actions-context";
 
 const REPO_OWNER = process.env.REPO_OWNER;
 const REPO_NAME = process.env.REPO_NAME;
@@ -40,7 +38,7 @@ console.error("[GitHub CI Server] MCP Server instance created");
 
 server.tool(
   "get_ci_status",
-  "Get CI status summary for this PR",
+  "Get current PR head SHA and independent workflow runs; duplicate attempts of the same run are collapsed",
   {
     status: z
       .enum([
@@ -69,55 +67,15 @@ server.tool(
         baseUrl: GITHUB_API_URL,
       });
 
-      // Get the PR to find the head SHA
-      const { data: prData } = await client.pulls.get({
-        owner: REPO_OWNER!,
-        repo: REPO_NAME!,
-        pull_number: parseInt(PR_NUMBER!, 10),
-      });
-      const headSha = prData.head.sha;
-
-      const runs = await listWorkflowRuns(client, {
-        owner: REPO_OWNER!,
-        repo: REPO_NAME!,
-        head_sha: headSha,
-        ...(status && { status }),
-      });
-
-      // Process runs to create summary
-      const summary = {
-        total_runs: runs.length,
-        failed: 0,
-        passed: 0,
-        pending: 0,
-      };
-
-      const processedRuns = runs.map((run: any) => {
-        // Update summary counts
-        if (run.status === "completed") {
-          if (run.conclusion === "success") {
-            summary.passed++;
-          } else if (run.conclusion === "failure") {
-            summary.failed++;
-          }
-        } else {
-          summary.pending++;
-        }
-
-        return {
-          id: run.id,
-          name: run.name,
-          status: run.status,
-          conclusion: run.conclusion,
-          html_url: run.html_url,
-          created_at: run.created_at,
-        };
-      });
-
-      const result = {
-        summary,
-        runs: processedRuns,
-      };
+      const result = await getCIStatus(
+        client,
+        {
+          owner: REPO_OWNER!,
+          repo: REPO_NAME!,
+          pull_number: parseInt(PR_NUMBER!, 10),
+        },
+        status,
+      );
 
       return {
         content: [
@@ -146,7 +104,7 @@ server.tool(
 
 server.tool(
   "get_workflow_run_details",
-  "Get job and step details for a workflow run",
+  "Get workflow jobs and steps, including head SHA and whether this run matches the current PR revision",
   {
     run_id: z.number().describe("The workflow run ID"),
   },
@@ -157,34 +115,12 @@ server.tool(
         baseUrl: GITHUB_API_URL,
       });
 
-      // Get jobs for this workflow run
-      const jobs = await listWorkflowJobs(client, {
+      const result = await getWorkflowRunDetails(client, {
         owner: REPO_OWNER!,
         repo: REPO_NAME!,
+        pull_number: parseInt(PR_NUMBER!, 10),
         run_id,
       });
-
-      const processedJobs = jobs.map((job: any) => {
-        // Extract failed steps
-        const failedSteps = (job.steps || [])
-          .filter((step: any) => step.conclusion === "failure")
-          .map((step: any) => ({
-            name: step.name,
-            number: step.number,
-          }));
-
-        return {
-          id: job.id,
-          name: job.name,
-          conclusion: job.conclusion,
-          html_url: job.html_url,
-          failed_steps: failedSteps,
-        };
-      });
-
-      const result = {
-        jobs: processedJobs,
-      };
 
       return {
         content: [
@@ -212,12 +148,14 @@ server.tool(
   },
 );
 
+/** Download a bounded-time log and return paginated, redacted UTF-8 evidence directly. */
 export async function downloadJobLog(
   client: Octokit,
   params: { owner: string; repo: string; job_id: number },
   runnerTemp: string,
   timeoutMs: number = DOWNLOAD_JOB_LOG_TIMEOUT_MS,
-): Promise<{ path: string; size_bytes: number }> {
+  chunk: { offset?: number; maxBytes?: number } = {},
+) {
   const controller = new AbortController();
   const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -229,17 +167,40 @@ export async function downloadJobLog(
       request: { signal: controller.signal },
     });
 
-    const logsText = response.data as unknown as string;
+    const logsText =
+      typeof response.data === "string"
+        ? response.data
+        : Buffer.from(response.data as unknown as ArrayBuffer).toString("utf8");
 
     const logsDir = `${runnerTemp}/github-ci-logs`;
     await mkdir(logsDir, { recursive: true });
 
     const logPath = `${logsDir}/job-${params.job_id}.log`;
-    await writeFile(logPath, logsText, "utf-8");
+    const redactedLogs = redactSecrets(logsText);
+    await writeFile(logPath, redactedLogs, "utf-8");
 
+    const text = Buffer.from(redactedLogs);
+    const maxBytes = Math.max(256, Math.min(chunk.maxBytes ?? 16_000, 24_000));
+    let offset = Math.max(
+      0,
+      Math.min(
+        chunk.offset ?? Math.max(0, text.length - maxBytes),
+        text.length,
+      ),
+    );
+    while (offset < text.length && (text[offset]! & 0xc0) === 0x80) offset++;
+    const end = Math.min(text.length, offset + maxBytes);
+    const excerpt = new TextDecoder().decode(text.subarray(offset, end), {
+      stream: end < text.length,
+    });
+    const consumed = Buffer.byteLength(excerpt);
     return {
       path: logPath,
-      size_bytes: Buffer.byteLength(logsText, "utf-8"),
+      excerpt,
+      offset,
+      total_text_bytes: text.length,
+      next_offset: offset + consumed < text.length ? offset + consumed : null,
+      size_bytes: text.length,
     };
   } finally {
     clearTimeout(timeoutHandle);
@@ -248,11 +209,20 @@ export async function downloadJobLog(
 
 server.tool(
   "download_job_log",
-  "Download job logs to disk",
+  "Download a job log and return a bounded readable excerpt. The artifact path need not be read with file tools; use offset to inspect another chunk.",
   {
-    job_id: z.number().describe("The job ID"),
+    job_id: z.number().int().positive().describe("The job ID"),
+    offset: z
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .describe(
+        "Byte offset in the redacted text; omitted starts near the end",
+      ),
+    max_bytes: z.number().int().min(256).max(24000).optional(),
   },
-  async ({ job_id }) => {
+  async ({ job_id, offset, max_bytes }) => {
     try {
       const client = new Octokit({
         auth: GITHUB_TOKEN,
@@ -263,6 +233,8 @@ server.tool(
         client,
         { owner: REPO_OWNER!, repo: REPO_NAME!, job_id },
         RUNNER_TEMP,
+        DOWNLOAD_JOB_LOG_TIMEOUT_MS,
+        { offset, maxBytes: max_bytes },
       );
 
       return {

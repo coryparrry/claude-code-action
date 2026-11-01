@@ -1,3 +1,4 @@
+import { resolveCompatibility } from "../../base-action/src/codex-compat";
 import { usesApiCommitSigning } from "../github/operations/commit-signing";
 import * as core from "@actions/core";
 import { GITHUB_API_URL, GITHUB_SERVER_URL } from "../github/api/config";
@@ -5,6 +6,7 @@ import type { GitHubContext } from "../github/context";
 import { isEntityContext } from "../github/context";
 import { Octokit } from "@octokit/rest";
 import type { AutoDetectedMode } from "../modes/detector";
+import type { ContextImage } from "../github/data/context-images";
 
 type PrepareConfigParams = {
   githubToken: string;
@@ -12,7 +14,10 @@ type PrepareConfigParams = {
   repo: string;
   branch: string;
   baseBranch: string;
+  branchSourceSha?: string;
+  images?: ContextImage[];
   claudeCommentId?: string;
+  commentType?: "issue" | "review";
   allowedTools: string[];
   mode: AutoDetectedMode;
   context: GitHubContext;
@@ -64,6 +69,7 @@ async function checkActionsReadPermission(
   }
 }
 
+/** Configure scoped GitHub MCP servers and preserve ancestry for signed replacement work. */
 export async function prepareMcpConfig(
   params: PrepareConfigParams,
 ): Promise<string> {
@@ -73,6 +79,7 @@ export async function prepareMcpConfig(
     repo,
     branch,
     baseBranch,
+    branchSourceSha,
     claudeCommentId,
     allowedTools,
     context,
@@ -80,6 +87,16 @@ export async function prepareMcpConfig(
   } = params;
   try {
     const allowedToolsList = allowedTools || [];
+    const permission = await resolveCompatibility(
+      process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "",
+      "",
+      '{"mcpServers":{}}',
+      [],
+      { permissionMode: process.env.PERMISSION_MODE || undefined },
+    );
+    const planning = ["plan", "readonly", "read-only"].includes(
+      permission.permissionMode || "",
+    );
 
     // Detect if we're in agent mode (explicit prompt provided)
     const isAgentMode = mode === "agent";
@@ -109,6 +126,18 @@ export async function prepareMcpConfig(
       mcpServers: {},
     };
 
+    if (params.images?.length) {
+      baseMcpConfig.mcpServers.github_context = {
+        command: process.execPath,
+        args: bunServerArgs("src/mcp/github-context-server.ts"),
+        env: {
+          GITHUB_IMAGE_PATHS: JSON.stringify(
+            Object.fromEntries(params.images.map(({ id, path }) => [id, path])),
+          ),
+        },
+      };
+    }
+
     // Include comment server:
     // - Always in tag mode (for updating Codex comments)
     // - Only with explicit tools in agent mode
@@ -123,8 +152,34 @@ export async function prepareMcpConfig(
           REPO_OWNER: owner,
           REPO_NAME: repo,
           ...(claudeCommentId && { CODEX_COMMENT_ID: claudeCommentId }),
+          ...(params.commentType && { CODEX_COMMENT_TYPE: params.commentType }),
           GITHUB_EVENT_NAME: process.env.GITHUB_EVENT_NAME || "",
           GITHUB_API_URL: GITHUB_API_URL,
+        },
+      };
+    }
+
+    const hasGitTools = allowedToolsList.some(
+      (tool) =>
+        tool === "mcp__github_git" || tool.startsWith("mcp__github_git__"),
+    );
+    if (!isAgentMode || hasGitTools) {
+      baseMcpConfig.mcpServers.github_git = {
+        command: process.execPath,
+        args: bunServerArgs("src/mcp/github-git-server.ts"),
+        env: {
+          REPO_DIR: process.env.GITHUB_WORKSPACE || process.cwd(),
+          BRANCH_NAME: branch,
+          ...(process.env.CODEX_GIT_DELIVERY_RECEIPT && {
+            CODEX_GIT_DELIVERY_RECEIPT: process.env.CODEX_GIT_DELIVERY_RECEIPT,
+          }),
+          BASE_BRANCH: baseBranch,
+          GIT_READ_ONLY: String(
+            process.env.CODEX_SANDBOX === "read-only" ||
+              planning ||
+              usesApiCommitSigning(context.inputs) ||
+              !!context.inputs.allowedNonWriteUsers,
+          ),
         },
       };
     }
@@ -139,7 +194,11 @@ export async function prepareMcpConfig(
           REPO_OWNER: owner,
           REPO_NAME: repo,
           BRANCH_NAME: branch,
+          ...(process.env.CODEX_GIT_DELIVERY_RECEIPT && {
+            CODEX_GIT_DELIVERY_RECEIPT: process.env.CODEX_GIT_DELIVERY_RECEIPT,
+          }),
           BASE_BRANCH: baseBranch,
+          ...(branchSourceSha && { BRANCH_SOURCE_SHA: branchSourceSha }),
           REPO_DIR: process.env.GITHUB_WORKSPACE || process.cwd(),
           GITHUB_EVENT_NAME: process.env.GITHUB_EVENT_NAME || "",
           IS_PR: process.env.IS_PR || "false",

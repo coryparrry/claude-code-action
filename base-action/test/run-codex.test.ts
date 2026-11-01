@@ -375,6 +375,32 @@ describe("Codex Agents SDK integration", () => {
     expect(model.requests).toHaveLength(1);
   });
 
+  test("SDK requests reuse a stable cache key and report provider cache writes", async () => {
+    const response = message();
+    response.usage = new Usage({
+      requests: 1,
+      inputTokens: 100,
+      outputTokens: 3,
+      inputTokensDetails: [{ cached_tokens: 60, cache_write_tokens: 20 }],
+    });
+    const model = new ScriptedModel([response, response]);
+    const configured = options(model, {
+      model: "gpt-6.1-terra",
+      modelProvider: { getModel: () => model },
+    });
+    await runCodex(prompt, configured);
+    const first = model.requests[0]!.modelSettings;
+    expect(first.promptCacheOptions).toBeUndefined();
+    expect((await artifact()).at(-1)?.usage).toMatchObject({
+      cache_read_input_tokens: 60,
+      cache_write_input_tokens: 20,
+    });
+    await runCodex(prompt, configured);
+    expect(
+      model.requests[1]!.modelSettings.providerData?.prompt_cache_key,
+    ).toBe(first.providerData?.prompt_cache_key);
+  });
+
   test("fallback uses named provider models without repeating completed tools", async () => {
     const primary = new ScriptedModel([
       async () => {

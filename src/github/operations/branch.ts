@@ -152,8 +152,10 @@ export type BranchInfo = {
   baseBranch: string;
   claudeBranch?: string;
   currentBranch: string;
+  sourceSha?: string;
 };
 
+/** Prepare the task branch while retaining closed-PR changes and their comparison base. */
 export async function setupBranch(
   octokits: Octokits,
   githubData: FetchDataResult,
@@ -164,6 +166,8 @@ export async function setupBranch(
   const { baseBranch, branchPrefix, branchNameTemplate } = context.inputs;
   const isPR = context.isPR;
 
+  let closedPR: GitHubPullRequest | undefined;
+  let completedPR: GitHubPullRequest | undefined;
   if (isPR) {
     const prData = githubData.contextData as GitHubPullRequest;
     const prState = prData.state;
@@ -173,7 +177,9 @@ export async function setupBranch(
       console.log(
         `PR #${entityNumber} is ${prState}, creating new branch from source...`,
       );
-      // Fall through to create a new branch like we do for issues
+      completedPR = prData;
+      if (prState === "CLOSED") closedPR = prData;
+      // Closed PRs preserve their head; merged PRs start from the current base.
     } else {
       // Handle open PR: Checkout the PR branch
       console.log("This is an open PR, checking out PR branch...");
@@ -236,6 +242,8 @@ export async function setupBranch(
   if (baseBranch) {
     // Use provided base branch for source
     sourceBranch = baseBranch;
+  } else if (completedPR) {
+    sourceBranch = completedPR.baseRefName;
   } else {
     // No base branch provided, fetch the default branch to use as source
     const repoResponse = await octokits.rest.repos.get({
@@ -252,14 +260,18 @@ export async function setupBranch(
   let sourceSHA: string | undefined;
 
   try {
-    // Get the SHA of the source branch to verify it exists
-    const sourceBranchRef = await octokits.rest.git.getRef({
-      owner,
-      repo,
-      ref: `heads/${sourceBranch}`,
-    });
-
-    sourceSHA = sourceBranchRef.data.object.sha;
+    if (closedPR) {
+      sourceSHA = closedPR.headRefOid;
+      if (!/^[a-f0-9]{40}$/i.test(sourceSHA))
+        throw new Error("Invalid closed PR head SHA");
+    } else {
+      const sourceBranchRef = await octokits.rest.git.getRef({
+        owner,
+        repo,
+        ref: `heads/${sourceBranch}`,
+      });
+      sourceSHA = sourceBranchRef.data.object.sha;
+    }
     console.log(`Source branch SHA: ${sourceSHA}`);
 
     // Extract first label from GitHub data
@@ -305,6 +317,25 @@ export async function setupBranch(
     // template only surfaces as a 422 on the first commit.
     validateBranchName(newBranch);
 
+    /** Check out the verified source, including a closed PR whose original branch was deleted. */
+    const checkoutSource = () => {
+      validateBranchName(sourceBranch);
+      if (completedPR) {
+        const shallow = fetchDepthArgs(1).length > 0;
+        execGit([
+          "fetch",
+          "origin",
+          ...(shallow ? ["--unshallow"] : []),
+          `+refs/heads/${sourceBranch}:refs/remotes/origin/${sourceBranch}`,
+          ...(closedPR ? [`refs/pull/${entityNumber}/head`] : []),
+        ]);
+        execGit(["checkout", "--detach", sourceSHA!]);
+      } else {
+        execGit(["fetch", "origin", sourceBranch, ...fetchDepthArgs(1)]);
+        execGit(["checkout", sourceBranch, "--"]);
+      }
+    };
+
     // For commit signing, defer branch creation to the file ops server
     if (usesApiCommitSigning(context.inputs)) {
       console.log(
@@ -313,14 +344,13 @@ export async function setupBranch(
 
       // Ensure we're on the source branch
       console.log(`Fetching and checking out source branch: ${sourceBranch}`);
-      validateBranchName(sourceBranch);
-      execGit(["fetch", "origin", sourceBranch, ...fetchDepthArgs(1)]);
-      execGit(["checkout", sourceBranch, "--"]);
+      checkoutSource();
 
       return {
         baseBranch: sourceBranch,
         claudeBranch: newBranch,
-        currentBranch: sourceBranch, // Stay on source branch for now
+        currentBranch: closedPR ? "HEAD" : sourceBranch,
+        ...(closedPR && { sourceSha: sourceSHA }),
       };
     }
 
@@ -331,9 +361,7 @@ export async function setupBranch(
 
     // Fetch and checkout the source branch first to ensure we branch from the correct base
     console.log(`Fetching and checking out source branch: ${sourceBranch}`);
-    validateBranchName(sourceBranch);
-    execGit(["fetch", "origin", sourceBranch, ...fetchDepthArgs(1)]);
-    execGit(["checkout", sourceBranch, "--"]);
+    checkoutSource();
 
     // Create and checkout the new branch from the source branch
     execGit(["checkout", "-b", newBranch]);
@@ -346,6 +374,7 @@ export async function setupBranch(
       baseBranch: sourceBranch,
       claudeBranch: newBranch,
       currentBranch: newBranch,
+      ...(closedPR && { sourceSha: sourceSHA }),
     };
   } catch (error) {
     console.error("Error in branch setup:", error);

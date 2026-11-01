@@ -1,6 +1,11 @@
 #!/usr/bin/env bun
+import { snapshotGuidance } from "../review/source-evidence";
 
 import { usesApiCommitSigning } from "../github/operations/commit-signing";
+import {
+  deliveredHead,
+  initializeDeliveryReceipt,
+} from "../github/operations/delivery";
 
 /**
  * Unified entrypoint for the Codex GitHub Action.
@@ -33,14 +38,20 @@ import type { GitHubContext } from "../github/context";
 import {
   loadReviewHistory,
   publishReview,
+  retireReviewSummaries,
   type ReviewTarget,
 } from "../review/publisher";
+import { loadReviewMemory, type RememberedFinding } from "../review/memory";
+import { candidateLimits, verifyReviewCandidates } from "../review/verify";
 import { nativeReviewOptions, reviewPrompt } from "../review/runtime";
 import { detectMode } from "../modes/detector";
 import { prepareTagMode } from "../modes/tag";
 import { prepareAgentMode } from "../modes/agent";
 import { checkContainsTrigger } from "../github/validation/trigger";
-import { restoreConfigFromBase } from "../github/operations/restore-config";
+import {
+  getReviewSourceMappings,
+  restoreConfigFromBase,
+} from "../github/operations/restore-config";
 import { validateBranchName } from "../github/operations/branch";
 import { actionRuntimeOptions } from "./runtime-options";
 import { initializeInlineCommentBuffer } from "../mcp/inline-comment-buffer";
@@ -87,12 +98,15 @@ async function writeStepSummary(executionFile: string): Promise<void> {
   }
 }
 
+/** Prepare, execute and finalize one action invocation, including verified delivery metadata. */
 async function run() {
   const nativeReview = process.env.REVIEW_MODE === "true";
   let deliveryError: string | undefined;
   let githubToken: string | undefined;
   let commentId: number | undefined;
+  let trackingCommentType: "issue" | "review" | undefined;
   let claudeBranch: string | undefined;
+  let deliveryBranch: string | undefined;
   let baseBranch: string | undefined;
   let executionFile: string | undefined;
   let claudeSuccess = false;
@@ -107,11 +121,19 @@ async function run() {
   let prepareCompleted = false;
   try {
     core.exportVariable(
+      "CODEX_GIT_DELIVERY_RECEIPT",
+      initializeDeliveryReceipt(),
+    );
+    core.exportVariable(
       "CODEX_INLINE_COMMENTS_BUFFER",
       initializeInlineCommentBuffer(),
     );
     const previousExecutionFile = getExecutionFilePath();
     if (previousExecutionFile) await rm(previousExecutionFile, { force: true });
+    const previousVerifierFile = getExecutionFilePath(
+      "codex-review-verifier-output.json",
+    );
+    if (previousVerifierFile) await rm(previousVerifierFile, { force: true });
     if (process.env.OPENAI_API_KEY) core.setSecret(process.env.OPENAI_API_KEY);
     // Phase 1: Prepare
     const actionInputsPresent = collectActionInputsPresence();
@@ -191,20 +213,34 @@ async function run() {
             author: context.inputs.botName,
           }
         : undefined;
+    let reviewMemory: RememberedFinding[] = [];
     if (reviewTarget) {
-      const history = await loadReviewHistory(octokit.rest, reviewTarget);
+      const history = await loadReviewHistory(octokit.rest, reviewTarget, true);
       if (history.reviewedHeads.has(reviewTarget.head)) {
-        if (history.review)
+        if (history.review) {
+          await retireReviewSummaries(
+            octokit.rest,
+            reviewTarget,
+            history.review,
+            history,
+          );
           core.setOutput("review_url", history.review.html_url);
+        }
         core.setOutput("conclusion", "success");
         console.log(
           "This bot has already reviewed the current head; skipping duplicate review.",
         );
         return;
       }
+      reviewMemory = await loadReviewMemory(
+        octokit.graphql,
+        reviewTarget,
+        history.summaries,
+      );
       context.inputs.prompt = reviewPrompt(
         context.inputs.prompt,
         history.context,
+        reviewMemory,
       );
     }
 
@@ -218,7 +254,10 @@ async function run() {
         : await prepareAgentMode({ context, octokit, githubToken });
 
     commentId = prepareResult.commentId;
+    if ("commentType" in prepareResult)
+      trackingCommentType = prepareResult.commentType;
     claudeBranch = prepareResult.branchInfo.claudeBranch;
+    deliveryBranch = claudeBranch || prepareResult.branchInfo.currentBranch;
     baseBranch = prepareResult.branchInfo.baseBranch;
     prepareCompleted = true;
 
@@ -257,6 +296,23 @@ async function run() {
       promptFile,
     });
 
+    const sourceContext = {
+      workspace: process.env.GITHUB_WORKSPACE || process.cwd(),
+      aliases: getReviewSourceMappings(),
+      restoredPaths: restoredConfigPaths,
+    };
+    if (nativeReview)
+      await appendFile(promptConfig.path, snapshotGuidance(sourceContext));
+
+    const reviewOptions = nativeReview
+      ? await nativeReviewOptions(
+          prepareResult.claudeArgs,
+          actionRuntimeOptions(process.env),
+        )
+      : undefined;
+    const reviewLimits = reviewOptions
+      ? await candidateLimits(reviewOptions)
+      : {};
     const result: CodexRunResult = await runCodex(promptConfig.path, {
       mcpConfig: prepareResult.mcpConfig,
       ...actionRuntimeOptions(process.env),
@@ -273,12 +329,9 @@ async function run() {
             GITHUB_EVENT_PATH: process.env.GITHUB_EVENT_PATH || "",
             GITHUB_WORKSPACE: process.env.GITHUB_WORKSPACE || process.cwd(),
           },
-      ...(nativeReview
-        ? await nativeReviewOptions(
-            prepareResult.claudeArgs,
-            actionRuntimeOptions(process.env),
-          )
-        : {}),
+      ...reviewOptions,
+      ...reviewLimits,
+      readAliases: sourceContext.aliases,
     });
 
     claudeSuccess = result.conclusion === "success";
@@ -291,22 +344,42 @@ async function run() {
     if (result.sessionId) {
       core.setOutput("session_id", result.sessionId);
     }
-    if (result.structuredOutput !== undefined) {
-      core.setOutput(
-        "structured_output",
-        JSON.stringify(result.structuredOutput),
-      );
-    }
     if (reviewTarget && result.conclusion === "success") {
+      let verified;
+      try {
+        verified = await verifyReviewCandidates(
+          result,
+          reviewOptions!,
+          reviewTarget.head,
+          reviewMemory,
+          undefined,
+          sourceContext,
+        );
+      } finally {
+        const verificationFile = getExecutionFilePath(
+          "codex-review-verifier-output.json",
+        );
+        if (verificationFile && existsSync(verificationFile))
+          core.setOutput("verification_file", verificationFile);
+      }
+      result.structuredOutput = verified.review;
+      core.info(`Review verification: ${JSON.stringify(verified.audit)}`);
       const url = await publishReview(
         octokit.rest,
         reviewTarget,
         result.structuredOutput,
+        true,
       );
       if (url) {
         core.setOutput("review_url", url);
         core.info(`Review published: ${url}`);
       }
+    }
+    if (result.structuredOutput !== undefined) {
+      core.setOutput(
+        "structured_output",
+        JSON.stringify(result.structuredOutput),
+      );
     }
     core.setOutput("conclusion", result.conclusion);
   } catch (error) {
@@ -367,6 +440,7 @@ async function run() {
     ) {
       try {
         await updateCommentLink({
+          commentType: trackingCommentType,
           commentId,
           githubToken,
           claudeBranch,
@@ -397,7 +471,26 @@ async function run() {
     }
 
     // Set remaining action-level outputs
-    core.setOutput("branch_name", claudeBranch);
+    core.setOutput("branch_name", deliveryBranch);
+    core.setOutput("comment_id", commentId);
+    core.setOutput("comment_type", commentId ? trackingCommentType || "" : "");
+    if (!nativeReview && octokit && context && deliveryBranch) {
+      try {
+        core.setOutput(
+          "head_sha",
+          await deliveredHead(
+            octokit,
+            context.repository.owner,
+            context.repository.repo,
+            deliveryBranch,
+          ),
+        );
+      } catch {
+        core.warning(
+          "Unable to resolve the remote branch for downstream validation",
+        );
+      }
+    }
     core.setOutput("github_token", githubToken);
     core.setOutput(
       "github_app_token_created",

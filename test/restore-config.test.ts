@@ -12,7 +12,10 @@ import {
   writeFileSync,
 } from "fs";
 import { dirname, isAbsolute, join } from "path";
-import { restoreConfigFromBase } from "../src/github/operations/restore-config";
+import {
+  getReviewSourceMappings,
+  restoreConfigFromBase,
+} from "../src/github/operations/restore-config";
 
 const CLAUDE_PR_EXCLUDE_PATTERN = "/.claude-pr/";
 
@@ -56,6 +59,52 @@ describe("restoreConfigFromBase", () => {
     git(["commit", "-m", "pr config"]);
 
     process.chdir(repoDir);
+  });
+
+  test("records only real preserved head files as evidence mappings", () => {
+    writeRepoFile("AGENTS.md", "head instructions\n");
+    git(["add", "AGENTS.md"]);
+    git(["commit", "-m", "head instructions"]);
+    symlinkSync("../outside", join(repoDir, ".claude/unsafe"));
+    restoreConfigFromBase("main");
+    expect(getReviewSourceMappings()[".claude-pr/AGENTS.md.review.txt"]).toBe(
+      "AGENTS.md",
+    );
+    expect(getReviewSourceMappings()[".claude-pr/.claude/settings.json"]).toBe(
+      ".claude/settings.json",
+    );
+    expect(
+      getReviewSourceMappings()[".claude-pr/.claude/unsafe"],
+    ).toBeUndefined();
+    expect(readRepoFile(".claude-pr/AGENTS.md.review.txt")).toBe(
+      "head instructions\n",
+    );
+  });
+
+  test("modified and untracked sensitive files cannot masquerade as head evidence", () => {
+    writeRepoFile(".claude/settings.json", "modified after checkout\n");
+    writeRepoFile("AGENTS.override.md", "untracked instructions\n");
+    restoreConfigFromBase("main");
+    const mappings = getReviewSourceMappings();
+    expect(mappings[".claude-pr/.claude/settings.json"]).toBeUndefined();
+    expect(
+      mappings[".claude-pr/AGENTS.override.md.review.txt"],
+    ).toBeUndefined();
+    expect(mappings[".claude-pr/CLAUDE.md"]).toBe("CLAUDE.md");
+  });
+
+  test("symlink targets are inspectable HEAD text without following their destinations", () => {
+    symlinkSync("/outside/not-readable", join(repoDir, "link.txt"));
+    git(["add", "link.txt"]);
+    git(["commit", "-m", "head link"]);
+    restoreConfigFromBase("main");
+    const mapping = Object.entries(getReviewSourceMappings()).find(
+      ([, original]) => original === "link.txt",
+    );
+    expect(mapping).toBeDefined();
+    expect(readRepoFile(mapping![0])).toBe("/outside/not-readable");
+    expect(lstatRepoFile(mapping![0]).isSymbolicLink()).toBe(false);
+    expect(countClaudePrExcludeEntries()).toBe(1);
   });
 
   afterEach(() => {

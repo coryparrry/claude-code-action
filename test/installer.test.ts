@@ -228,7 +228,7 @@ describe("guided GitHub Action workflow", () => {
         const report = steps[reportIndex];
         expect(report.with).toEqual({
           name: `codex-${label}-\${{ github.run_id }}-\${{ github.run_attempt }}`,
-          path: "${{ steps.agent.outputs.execution_file }}",
+          path: "${{ steps.agent.outputs.execution_file }}\n${{ steps.agent.outputs.verification_file }}\n",
           "if-no-files-found": "error",
           "retention-days": 7,
         });
@@ -274,6 +274,7 @@ describe("guided GitHub Action workflow", () => {
     expect(actionMetadata.inputs.trigger_phrase.default).toBe("/codex");
     expect(actionMetadata.inputs.codex_args).toBeDefined();
     expect(workflow.permissions).toEqual({
+      actions: "read",
       contents: "write",
       issues: "write",
       "pull-requests": "write",
@@ -295,7 +296,7 @@ describe("guided GitHub Action workflow", () => {
       "${{ secrets.OPENAI_API_KEY }}",
     );
     expect(actionStep.with.codex_model).toBe(DEFAULT_MODEL);
-    expect(actionStep.with.codex_effort).toBe("low");
+    expect(actionStep.with.codex_effort).toBe("max");
     expect(actionStep.with.trigger_phrase).toBe("/codex");
     expect(Object.keys(actionStep.with)).toEqual(
       expect.arrayContaining([
@@ -307,6 +308,33 @@ describe("guided GitHub Action workflow", () => {
     );
     for (const input of Object.keys(actionStep.with)) {
       expect(actionMetadata.inputs[input]).toBeDefined();
+    }
+  });
+
+  test("uses Terra 6.1 Max in both generated jobs", () => {
+    expect(DEFAULT_MODEL).toBe("gpt-6.1-terra");
+    const workflow = parse(renderWorkflow(defaultOptions));
+    expect(workflow.permissions.actions).toBe("read");
+    for (const name of ["codex", "codex_review"]) {
+      const step = workflow.jobs[name].steps.find(
+        (step: any) => step.uses === DEFAULT_ACTION_REF,
+      );
+      expect(step.with.codex_model).toBe("gpt-6.1-terra");
+      expect(step.with.codex_effort).toBe("max");
+      expect(step.with.max_turns).toBe(name === "codex_review" ? "60" : "30");
+    }
+  });
+
+  test("lets a custom model choose its provider-supported default effort", () => {
+    const workflow = parse(
+      renderWorkflow({ ...defaultOptions, model: "gpt-5.4" }),
+    );
+    for (const name of ["codex", "codex_review"]) {
+      const step = workflow.jobs[name].steps.find(
+        (step: any) => step.uses === DEFAULT_ACTION_REF,
+      );
+      expect(step.with.codex_model).toBe("gpt-5.4");
+      expect(step.with.codex_effort).toBeUndefined();
     }
   });
 

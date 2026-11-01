@@ -1,14 +1,14 @@
 export const WORKFLOW_PATH = ".github/workflows/codex.yml";
 export const MANAGED_MARKER = "# Managed by the Codex GitHub Action installer.";
 export const DEFAULT_ACTION_REF =
-  "coryparrry/claude-code-action@07d0a94badb76002d5e143806b32f96e0a9d2c6d";
-export const DEFAULT_MODEL = "gpt-6-luna";
+  "coryparrry/claude-code-action@8982119b2aaec3fcbb4e15fef72c8bd5b61cec84";
+export const DEFAULT_MODEL = "gpt-6.1-terra";
 export const DEFAULT_TRIGGER_PHRASE = "/codex";
 export const REVIEW_DIFF_PATH = ".git/codex-review.diff";
 export const AUTOMATIC_REVIEW_PROMPT = `Review this pull request for code quality, bugs, security and performance issues.
 Read the prepared patch in ${REVIEW_DIFF_PATH} first; it includes removed lines as well as additions.
 Use the repository and PR context. Return actionable findings and a concise summary together.
-Return verified findings using the native review schema. The action submits one native review summary with a separate coloured inline comment for each finding at its own code location. Do not create severity-specific reviews or a combined findings comment.
+Propose candidate findings using the native review schema. A separate verifier checks them before publication. Only new, high-confidence patch defects receive inline comments; remembered findings stay in their existing threads. Do not create severity-specific reviews or a combined findings comment.
 Do not edit files, commit changes or implement fixes during this review.
 The author can request an implementation in a comment with ${DEFAULT_TRIGGER_PHRASE}.`;
 
@@ -29,7 +29,7 @@ export function validateActor(value) {
   return value;
 }
 
-/** Render repository-bound command and review jobs for the selected installation. */
+/** Render repository-bound jobs, using Max effort only for the default Terra model. */
 export function renderWorkflow({
   repository,
   actors,
@@ -66,6 +66,7 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  actions: read
 
 jobs:
   codex:
@@ -95,15 +96,16 @@ jobs:
           trigger_phrase: ${JSON.stringify(DEFAULT_TRIGGER_PHRASE)}
           openai_api_key: \${{ secrets.OPENAI_API_KEY }}
           codex_model: ${JSON.stringify(model)}
-          codex_effort: low
-          max_turns: "30"
+${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_turns: "30"
           track_progress: "true"
       - name: Save execution report
         if: \${{ always() && steps.agent.outputs.execution_file != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: codex-command-\${{ github.run_id }}-\${{ github.run_attempt }}
-          path: \${{ steps.agent.outputs.execution_file }}
+          path: |
+            \${{ steps.agent.outputs.execution_file }}
+            \${{ steps.agent.outputs.verification_file }}
           if-no-files-found: error
           retention-days: 7
 
@@ -140,8 +142,7 @@ jobs:
           trigger_phrase: ${JSON.stringify(DEFAULT_TRIGGER_PHRASE)}
           openai_api_key: \${{ secrets.OPENAI_API_KEY }}
           codex_model: ${JSON.stringify(model)}
-          codex_effort: low
-          max_turns: "30"
+${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_turns: "60"
           review_mode: "true"
           codex_sandbox: read-only
           prompt: |
@@ -151,7 +152,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: codex-review-\${{ github.run_id }}-\${{ github.run_attempt }}
-          path: \${{ steps.agent.outputs.execution_file }}
+          path: |
+            \${{ steps.agent.outputs.execution_file }}
+            \${{ steps.agent.outputs.verification_file }}
           if-no-files-found: error
           retention-days: 7
 `;

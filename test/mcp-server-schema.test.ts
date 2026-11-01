@@ -12,6 +12,8 @@ test.each([
   "github-inline-comment-server.ts",
   "github-file-ops-server.ts",
   "github-actions-server.ts",
+  "github-git-server.ts",
+  "github-context-server.ts",
 ])("%s exposes valid tool schemas over stdio", async (file) => {
   const directory = await mkdtemp(join(tmpdir(), "codex-github-mcp-"));
   const client = new Client({

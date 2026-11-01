@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { execFileSync } from "child_process";
 import {
   appendFileSync,
@@ -14,6 +15,13 @@ import {
 } from "fs";
 import { dirname, join, posix, relative, sep } from "path";
 import { fetchDepthArgs } from "./fetch-depth";
+
+const reviewSources = new Map<string, string>();
+
+/** Return only preserved regular PR files, never placeholders or restored base files. */
+export function getReviewSourceMappings(): Record<string, string> {
+  return Object.fromEntries(reviewSources);
+}
 
 // Paths that are both PR-controllable and read from cwd at CLI startup.
 //
@@ -36,6 +44,26 @@ export const SENSITIVE_PATHS = [
   "AGENTS.override.md",
   ".husky",
 ];
+
+/** Preserve symlink target text from HEAD as regular data, without reading or following its destination. */
+function snapshotSymlinkTargets(): void {
+  const entries = execFileSync("git", ["ls-tree", "-r", "-z", "HEAD"], {
+    encoding: "utf8",
+    maxBuffer: Infinity,
+  }).split("\0");
+  for (const entry of entries) {
+    const match = /^120000 blob ([a-f0-9]{40})\t([\s\S]+)$/.exec(entry);
+    if (!match) continue;
+    const path = match[2]!;
+    const snapshot = `.claude-pr/symlink-targets/${createHash("sha256").update(path).digest("hex")}.txt`;
+    mkdirSync(dirname(snapshot), { recursive: true });
+    writeFileSync(
+      snapshot,
+      execFileSync("git", ["cat-file", "blob", match[1]!]),
+    );
+    reviewSources.set(snapshot, path);
+  }
+}
 
 function addCodexInstructionPaths(paths: Set<string>, files: string[]): void {
   for (const file of files) {
@@ -186,10 +214,22 @@ function snapshotSensitivePath(
   tracked: TrackedPaths,
 ): void {
   const excluded: Array<{ src: string; dest: string }> = [];
+  /** Record evidence aliases only for unchanged tracked regular files. */
   const keepOrExclude =
     (keep: (entry: string) => boolean) =>
     (entrySrc: string, entryDest: string) => {
       if (keep(entrySrc)) {
+        if (
+          lstatSync(entrySrc).isFile() &&
+          tracked.files.has(
+            relative(process.cwd(), entrySrc).split(sep).join("/"),
+          )
+        ) {
+          reviewSources.set(
+            relative(process.cwd(), entryDest).split(sep).join("/"),
+            relative(process.cwd(), entrySrc).split(sep).join("/"),
+          );
+        }
         return true;
       }
       excluded.push({ src: entrySrc, dest: entryDest });
@@ -287,6 +327,7 @@ function ensureClaudePrExcludedFromGit(): void {
  *   will commit the revert back onto the PR author's branch.
  */
 export function restoreConfigFromBase(baseBranch: string): string[] {
+  reviewSources.clear();
   const sensitivePaths = new Set(SENSITIVE_PATHS);
   addCodexInstructionPaths(
     sensitivePaths,
@@ -317,6 +358,7 @@ export function restoreConfigFromBase(baseBranch: string): string[] {
       );
     }
   }
+  snapshotSymlinkTargets();
   if (existsSync(".claude-pr")) {
     console.log(
       "Preserved PR's sensitive paths -> .claude-pr/ for review agents (not executed)",

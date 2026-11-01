@@ -8,6 +8,8 @@ import {
   reviewHead,
   MAX_REVIEW_COMMENT_BYTES,
 } from "./schema";
+import { rememberedFromBody, renderReviewMemory } from "./memory";
+import { VERIFIED_REVIEW_MARKER } from "./verification";
 import { findReviewAnchor, type ChangedReviewFile } from "./anchor";
 
 export type ReviewTarget = {
@@ -21,10 +23,13 @@ export type ReviewTarget = {
 export type ReviewHistory = {
   findings: Set<string>;
   reviewedHeads: Set<string>;
+  knownFindings?: Set<string>;
   context: string;
+  summaries?: { id: number; head: string; body: string }[];
   review?: { id: number; html_url: string; body: string };
 };
 
+/** Retry idempotent review reads on transient GitHub failures. */
 const retryRead = <T>(operation: () => Promise<T>) =>
   retryWithBackoff(operation, {
     initialDelayMs: 250,
@@ -38,6 +43,7 @@ const retryRead = <T>(operation: () => Promise<T>) =>
 export async function loadReviewHistory(
   client: Octokit,
   target: ReviewTarget,
+  verifiedOnly = false,
 ): Promise<ReviewHistory> {
   const route = {
     owner: target.owner,
@@ -57,12 +63,20 @@ export async function loadReviewHistory(
     (review) =>
       own(review) &&
       review.state === "COMMENTED" &&
+      !!review.commit_id &&
       reviewHead(review.body) === review.commit_id,
   );
+  const active = owned.filter(
+    (review) =>
+      !/^Superseded by the \[(?:current|replacement) review\]\(/.test(
+        review.body || "",
+      ) &&
+      (!verifiedOnly || review.body.includes(VERIFIED_REVIEW_MARKER)),
+  );
   const reviewedHeads = new Set<string>();
-  for (const review of owned)
+  for (const review of active)
     if (review.commit_id) reviewedHeads.add(review.commit_id);
-  const existing = owned
+  const existing = active
     .filter((review) => review.commit_id === target.head)
     .at(-1);
   const latest = owned.at(-1);
@@ -83,9 +97,27 @@ export async function loadReviewHistory(
     /<!-- codex-action:finding:([a-f0-9]{12}) -->/g,
   ))
     findings.add(marker[1]!);
+  const knownFindings = new Set<string>();
+  for (const body of [
+    ...comments.filter(own).map((comment) => comment.body),
+    ...owned.map((review) => review.body || ""),
+  ]) {
+    for (const finding of rememberedFromBody(body, {
+      path: "",
+      url: "",
+      resolved: null,
+    }))
+      knownFindings.add(finding.id);
+  }
   return {
     findings,
+    knownFindings,
     reviewedHeads,
+    summaries: owned.map((review) => ({
+      id: review.id,
+      head: review.commit_id!,
+      body: review.body,
+    })),
     context,
     review: existing
       ? { id: existing.id, html_url: existing.html_url, body: existing.body }
@@ -93,15 +125,90 @@ export async function loadReviewHistory(
   };
 }
 
+/** Keep one full current overview while preserving historical reviews and their inline threads. */
+export async function retireReviewSummaries(
+  client: Octokit,
+  target: ReviewTarget,
+  current: { id: number; html_url: string },
+  history: ReviewHistory,
+): Promise<void> {
+  const currentPR = await retryRead(() =>
+    client.rest.pulls.get({
+      owner: target.owner,
+      repo: target.repo,
+      pull_number: target.pull_number,
+    }),
+  );
+  if (
+    currentPR.data.state !== "open" ||
+    currentPR.data.head.sha !== target.head
+  )
+    throw new Error(
+      "The pull request changed or closed before overview cleanup; rerun on its current head.",
+    );
+  for (const previous of history.summaries ?? []) {
+    if (
+      previous.id === current.id ||
+      /^Superseded by the \[(?:current|replacement) review\]\(/.test(
+        previous.body,
+      )
+    )
+      continue;
+    const memory = renderReviewMemory(
+      rememberedFromBody(previous.body, { path: "", url: "", resolved: null }),
+    );
+    const body = `Superseded by the [replacement review](${current.html_url}). Historical inline findings remain attached to this review.${memory}\n\n<!-- codex-action:review:${previous.head} -->\n<!-- codex-action:inline-review -->`;
+    if (previous.body === body) continue;
+    const currentPR = await retryRead(() =>
+      client.rest.pulls.get({
+        owner: target.owner,
+        repo: target.repo,
+        pull_number: target.pull_number,
+      }),
+    );
+    if (
+      currentPR.data.state !== "open" ||
+      currentPR.data.head.sha !== target.head
+    )
+      throw new Error(
+        "The pull request changed or closed before overview cleanup; rerun on its current head.",
+      );
+    // Updating a known review body is idempotent, unlike creating a new review.
+    await retryWithBackoff(
+      () =>
+        client.rest.pulls.updateReview({
+          owner: target.owner,
+          repo: target.repo,
+          pull_number: target.pull_number,
+          review_id: previous.id,
+          body,
+        }),
+      {
+        initialDelayMs: 250,
+        maxDelayMs: 1000,
+        shouldRetry: (error) => {
+          const status = (error as Error & { status?: number }).status;
+          return status === undefined || status === 429 || status >= 500;
+        },
+      },
+    );
+  }
+}
+
 /** Submit one native summary and one individually anchored comment per finding. */
 export async function publishReview(
   client: Octokit,
   target: ReviewTarget,
   output: unknown,
+  verified = false,
 ): Promise<string | undefined> {
   const parsed = reviewSchema.parse(output);
-  const history = await loadReviewHistory(client, target);
-  if (history.reviewedHeads.has(target.head)) return history.review?.html_url;
+  const history = await loadReviewHistory(client, target, verified);
+  if (history.reviewedHeads.has(target.head)) {
+    if (history.review)
+      await retireReviewSummaries(client, target, history.review, history);
+    return history.review?.html_url;
+  }
   const route = {
     owner: target.owner,
     repo: target.repo,
@@ -119,7 +226,8 @@ export async function publishReview(
     ...parsed,
     findings: parsed.findings.filter((finding) => {
       const id = findingId(finding);
-      if (seen.has(id)) return false;
+      if (seen.has(id) || (verified && history.knownFindings?.has(id)))
+        return false;
       seen.add(id);
       return true;
     }),
@@ -131,7 +239,12 @@ export async function publishReview(
       );
     return body;
   };
-  const summary = bounded(renderReview(review, target.head, target));
+  if (verified && review.findings.length !== parsed.findings.length) {
+    review.summary = review.findings.length
+      ? `${review.findings.length} new defects confirmed by independent inspection.`
+      : "No new confirmed defects; prior findings remain in their existing threads.";
+  }
+  const summary = bounded(renderReview(review, target.head, target, verified));
   let files: ChangedReviewFile[] = [];
   if (review.findings.length) {
     await requireCurrentHead();
@@ -152,7 +265,13 @@ export async function publishReview(
       );
     return {
       ...anchor,
-      body: bounded(renderFinding(finding, { ...target, renamedPaths })),
+      body: bounded(
+        renderFinding(
+          finding,
+          { ...target, renamedPaths },
+          verified ? "high" : undefined,
+        ),
+      ),
     };
   });
   await requireCurrentHead();
@@ -164,5 +283,6 @@ export async function publishReview(
     body: summary,
     comments,
   });
+  await retireReviewSummaries(client, target, result.data, history);
   return result.data.html_url;
 }

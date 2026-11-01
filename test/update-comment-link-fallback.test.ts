@@ -74,3 +74,11 @@ test("shows failed delivery using the existing tracking comment error format", a
   expect(body.body).toContain("GitHub rejected the line");
   expect(body.body).not.toContain("finished");
 });
+
+test("known issue fallback namespace never probes a colliding review comment ID", async () => {
+  const { params, getIssue, updateIssue, updateReview } = fixture(403);
+  await updateCommentLink({ ...params, commentType: "issue" });
+  expect(getIssue).toHaveBeenCalledTimes(1);
+  expect(updateIssue).toHaveBeenCalledTimes(1);
+  expect(updateReview).not.toHaveBeenCalled();
+});

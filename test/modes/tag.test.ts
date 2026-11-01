@@ -1,6 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach, spyOn } from "bun:test";
 import { prepareTagMode } from "../../src/modes/tag";
-import { mockIssueCommentContext } from "../mockContext";
+import {
+  mockIssueCommentContext,
+  mockPullRequestReviewCommentContext,
+} from "../mockContext";
+import * as reviewRequest from "../../src/github/data/review-request";
 import * as actor from "../../src/github/validation/actor";
 import * as createInitial from "../../src/github/operations/comments/create-initial";
 import * as fetcher from "../../src/github/data/fetcher";
@@ -75,7 +79,7 @@ describe("Tag Mode", () => {
             ]),
           }),
         );
-        expect(result.claudeArgs).toContain('--disallowedTools "WebSearch"');
+        expect(result.claudeArgs).toContain('--disallowedTools "WebSearch,');
         expect(result.claudeArgs).not.toContain(
           '--disallowedTools "WebSearch,WebFetch"',
         );
@@ -86,6 +90,41 @@ describe("Tag Mode", () => {
         if (original === undefined) delete process.env.ALLOWED_TOOLS;
         else process.env.ALLOWED_TOOLS = original;
       }
+    });
+
+    test("passes focused inline request context through preparation into the prompt", async () => {
+      const request = {
+        commentId: 1,
+        path: "src/example.ts",
+        line: 9,
+        originalLine: 9,
+        commitId: "old",
+        diffHunk: "@@ -1 +1 @@",
+        parentId: 17,
+        parentBody: "Handle empty input.",
+        parentUnavailable: false,
+      };
+      const requestSpy = spyOn(
+        reviewRequest,
+        "fetchReviewRequest",
+      ).mockResolvedValue(request);
+      spies.push(requestSpy);
+      await prepareTagMode({
+        context: mockPullRequestReviewCommentContext,
+        octokit: {} as any,
+        githubToken: "test-token",
+      });
+      expect(requestSpy).toHaveBeenCalledWith(
+        mockPullRequestReviewCommentContext,
+        {},
+      );
+      expect(createPrompt.createPrompt).toHaveBeenCalledWith(
+        42,
+        "main",
+        "claude/test",
+        expect.objectContaining({ reviewRequest: request }),
+        mockPullRequestReviewCommentContext,
+      );
     });
 
     test("uses full git auth on the non-signing path", async () => {

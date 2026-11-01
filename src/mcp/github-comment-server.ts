@@ -56,8 +56,9 @@ server.tool(
         baseUrl: GITHUB_API_URL,
       });
 
-      const isPullRequestReviewComment =
-        eventName === "pull_request_review_comment";
+      const isPullRequestReviewComment = process.env.CODEX_COMMENT_TYPE
+        ? process.env.CODEX_COMMENT_TYPE === "review"
+        : eventName === "pull_request_review_comment";
 
       const sanitizedBody = redactSecrets(sanitizeContent(body));
 

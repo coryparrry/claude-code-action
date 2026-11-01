@@ -13,13 +13,19 @@ on:
   pull_request_review:
     types: [submitted]
 
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
+permissions: {}
 
 jobs:
   codex:
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+    outputs:
+      head_sha: ${{ steps.agent.outputs.head_sha }}
+      comment_id: ${{ steps.agent.outputs.comment_id }}
+      comment_type: ${{ steps.agent.outputs.comment_type }}
     if: >-
       github.repository == 'coryparrry/claude-code-action' &&
       (!github.event.pull_request ||
@@ -41,22 +47,88 @@ jobs:
         with:
           fetch-depth: 0
       - id: agent
-        uses: coryparrry/claude-code-action@07d0a94badb76002d5e143806b32f96e0a9d2c6d
+        uses: coryparrry/claude-code-action@8982119b2aaec3fcbb4e15fef72c8bd5b61cec84
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
-          codex_model: "gpt-6-luna"
-          codex_effort: low
+          codex_model: "gpt-6.1-terra"
+          codex_effort: max
           max_turns: "30"
           track_progress: "true"
+          append_system_prompt: |
+            Implement the requested change, inspect the diff, commit and push using the scoped Git tools.
+            Do not execute repository code, package installation or tests in this write job.
+            A separate job validates the delivered commit with read-only permissions. Report validation as pending until that job completes.
       - name: Save execution report
         if: ${{ always() && steps.agent.outputs.execution_file != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: codex-command-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ steps.agent.outputs.execution_file }}
+          path: |
+            ${{ steps.agent.outputs.execution_file }}
+            ${{ steps.agent.outputs.verification_file }}
           if-no-files-found: error
           retention-days: 7
+
+  validate_change:
+    needs: codex
+    if: always() && needs.codex.outputs.head_sha != ''
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.codex.outputs.head_sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun --no-env-file install --frozen-lockfile
+      - run: bun --no-env-file test
+      - run: bun --no-env-file run typecheck
+
+  report_validation:
+    needs: [codex, validate_change]
+    if: always() && needs.codex.outputs.head_sha != '' && needs.codex.outputs.comment_id != ''
+    permissions:
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Append validation to the existing tracking comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+          COMMENT_ID: ${{ needs.codex.outputs.comment_id }}
+          COMMENT_TYPE: ${{ needs.codex.outputs.comment_type }}
+          HEAD_SHA: ${{ needs.codex.outputs.head_sha }}
+          VALIDATION_RESULT: ${{ needs.validate_change.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        run: |
+          node --input-type=module <<'NODE'
+          const { API_URL, REPOSITORY, COMMENT_ID, COMMENT_TYPE, HEAD_SHA, VALIDATION_RESULT, RUN_URL, GH_TOKEN } = process.env;
+          if (!/^\d+$/.test(COMMENT_ID) || !/^[a-f0-9]{40}$/.test(HEAD_SHA)) throw new Error('Invalid delivery metadata');
+          if (!['issue', 'review'].includes(COMMENT_TYPE)) throw new Error('Invalid tracking comment type');
+          const resource = COMMENT_TYPE === 'review' ? 'pulls/comments' : 'issues/comments';
+          const url = `${API_URL}/repos/${REPOSITORY}/${resource}/${COMMENT_ID}`;
+          const headers = { Authorization: `Bearer ${GH_TOKEN}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' };
+          const response = await fetch(url, { headers });
+          if (!response.ok) throw new Error(`Comment read failed: ${response.status}`);
+          const comment = await response.json();
+          const marker = `<!-- codex-validation:${HEAD_SHA} -->`;
+          const endMarker = '<!-- /codex-validation -->';
+          const section = `${marker}\nValidation for \`${HEAD_SHA}\`: **${VALIDATION_RESULT}**. [View checks](${RUN_URL}).\n${endMarker}`;
+          const start = comment.body.indexOf(marker);
+          const end = start < 0 ? -1 : comment.body.indexOf(endMarker, start);
+          const body = start >= 0 && end >= 0 ? comment.body.slice(0, start) + section + comment.body.slice(end + endMarker.length) : `${comment.body}\n\n${section}`;
+          if (body !== comment.body) {
+            const update = await fetch(url, { method: 'PATCH', headers, body: JSON.stringify({ body }) });
+            if (!update.ok) throw new Error(`Comment update failed: ${update.status}`);
+          }
+          NODE
 
   codex_review:
     if: >-
@@ -86,20 +158,20 @@ jobs:
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
       - id: agent
-        uses: coryparrry/claude-code-action@07d0a94badb76002d5e143806b32f96e0a9d2c6d
+        uses: coryparrry/claude-code-action@8982119b2aaec3fcbb4e15fef72c8bd5b61cec84
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
-          codex_model: "gpt-6-luna"
-          codex_effort: low
-          max_turns: "30"
+          codex_model: "gpt-6.1-terra"
+          codex_effort: max
+          max_turns: "60"
           review_mode: "true"
           codex_sandbox: read-only
           prompt: |
             Review this pull request for code quality, bugs, security and performance issues.
             Read the prepared patch in .git/codex-review.diff first; it includes removed lines as well as additions.
             Use the repository and PR context. Return actionable findings and a concise summary together.
-            Return verified findings using the native review schema. The action submits one native review summary with a separate coloured inline comment for each finding at its own code location. Do not create severity-specific reviews or a combined findings comment.
+            Propose candidate findings using the native review schema. A separate verifier checks them before publication. Only new, high-confidence patch defects receive inline comments; remembered findings stay in their existing threads. Do not create severity-specific reviews or a combined findings comment.
             Do not edit files, commit changes or implement fixes during this review.
             The author can request an implementation in a comment with /codex.
       - name: Save execution report
@@ -107,6 +179,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: codex-review-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ steps.agent.outputs.execution_file }}
+          path: |
+            ${{ steps.agent.outputs.execution_file }}
+            ${{ steps.agent.outputs.verification_file }}
           if-no-files-found: error
           retention-days: 7
