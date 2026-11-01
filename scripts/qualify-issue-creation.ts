@@ -39,10 +39,29 @@ async function issues(cleanup = false) {
     process.env.CREATED_ISSUE_URLS,
     process.env.FAILED_CREATED_ISSUE_URLS,
   ].flatMap((value) => (value ? (JSON.parse(value) as string[]) : []));
-  const all = await api(
-    "issues?state=all&sort=created&direction=desc&per_page=100",
+  const records = new Map<number, any>();
+  for (const url of urls) {
+    const prefix = `https://github.com/${repository}/issues/`;
+    assert.ok(typeof url === "string" && url.startsWith(prefix));
+    const number = Number(url.slice(prefix.length));
+    assert.ok(Number.isSafeInteger(number) && number > 0);
+    const issue = await api(`issues/${number}`);
+    assert.equal(issue.html_url, url);
+    records.set(issue.number, issue);
+  }
+  if (cleanup || !urls.length) {
+    for (const issue of await api(
+      "issues?state=all&sort=created&direction=desc&per_page=100",
+    ))
+      records.set(issue.number, issue);
+  }
+  return selectQualificationIssues(
+    [...records.values()],
+    title,
+    body,
+    urls,
+    cleanup,
   );
-  return selectQualificationIssues(all, title, body, urls, cleanup);
 }
 
 /** Select verified fixtures; cleanup also accepts receipt-owned URLs or the exact run title. */
