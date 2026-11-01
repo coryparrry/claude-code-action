@@ -6,6 +6,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "@babel/parser";
+import { parse as parseYaml } from "yaml";
+import { resolveCompatibility } from "../base-action/src/codex-compat";
 import {
   createRepositoryIssue,
   issueCreationError,
@@ -387,4 +389,47 @@ test("configuration installs wildcard issue grants but not an implicit automatic
     }),
   );
   expect(explicit.mcpServers.github_issues).toBeDefined();
+});
+
+test("issue-only qualification cannot expose or authorize Git and file mutation tools", async () => {
+  const workflow = parseYaml(
+    await readFile(
+      join(
+        import.meta.dir,
+        "../.github/workflows/issue-creation-qualification.yml",
+      ),
+      "utf8",
+    ),
+  );
+  expect(workflow.jobs.create.permissions.contents).toBe("read");
+  const agent = workflow.jobs.create.steps.find(
+    (step: any) => step.id === "creator",
+  );
+  const options = await resolveCompatibility(
+    agent.with.codex_args,
+    "",
+    '{"mcpServers":{}}',
+    ["*"],
+  );
+  const permissions = new AgentPermissions({
+    cwd: tmpdir(),
+    permissionMode: options.permissionMode,
+    allowedTools: ["*"],
+    disallowedTools: options.disallowedTools,
+  });
+  for (const tool of [
+    "Write",
+    "Edit",
+    "Bash",
+    "mcp__github_git__push",
+    "mcp__github_git__commit_files",
+    "mcp__github_git__delete_files",
+    "mcp__github_file_ops__commit_files",
+  ]) {
+    expect(options.tools).not.toContain(tool);
+    expect(() => permissions.assertDenied(tool)).toThrow();
+  }
+  expect(() =>
+    permissions.assertDenied("mcp__github_issues__create_issue"),
+  ).not.toThrow();
 });

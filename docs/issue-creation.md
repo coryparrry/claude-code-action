@@ -1,48 +1,62 @@
 # Opening GitHub issues
 
-Ask `/codex Open an issue about ...` in a trusted issue or PR request. The action
-can create the issue in that same repository and returns its actual URL in the
+Ask `/codex Open an issue about ...` in a trusted comment or new-issue request.
+The action opens it in that same repository and returns the confirmed URL in the
 tracking comment. Supply a title, description and existing label names if needed.
+The job needs `issues: write`, and the repository's Issues feature must be enabled.
+Generated command workflows already request that permission.
 
-The command job needs `issues: write`, and the repository's Issues feature must be
-enabled. Generated command workflows already request that permission. Automatic
-reviews and read-only/plan runs cannot create issues. Creation is reserved for an
-explicit request; ordinary reviews do not turn findings into backlog issues.
+## Scope and opt-in
 
-Automatic tracking reviews, label/assignment automation, prompt-driven tasks and agent-mode workflows opt in by allowing `mcp__github_issues__create_issue` through
-`codex_args: --allowedTools mcp__github_issues__create_issue`. The tool takes title,
-body and optional labels, with no model-selected owner or repository. It uses the
-action's repository-scoped token and does not need Docker or a separate MCP service.
+Automatic PR reviews do not receive issue creation. Read-only/plan policy blocks
+it even with an explicit grant. Prompt-driven tasks, automatic tracking reviews,
+label/assignment automation and agent mode must explicitly opt in, for example:
 
-Identical calls within one MCP server process share the same result, including
-concurrent calls. The action never retries a potentially completed issue POST. Confirmed URLs are also recorded outside the model workspace and exposed as the JSON-array `created_issue_urls` output. Tracking finalization retains these links on agent errors and timeouts.
-For uncertain failures, inspect GitHub before another request. Deduplication does
-not persist across separate workflow runs; do not rerun a creation request blindly.
+```yaml
+codex_args: --allowedTools mcp__github_issues__create_issue
+```
 
-## Verification
+Runtime-compatible namespace and wildcard grants, including
+`mcp__github_issues__*`, also work. The tool takes title, body and optional labels;
+the model cannot select an owner or repository. It uses the action-owned token
+and existing dependencies, with no Docker requirement.
 
-Regression and real stdio/API tests cover scope, input validation, sanitization,
-duplicate calls, ambiguous failures, permissions, disabled Issues and read-only
-policy. The GitHub live workflow requires the `test-issue-creation` label, the
-trusted actor and the isolated `codex/issue-creation` branch. It checks actual issue
-creation through the command action, a repeated tool call returning the same URL,
-tracking-comment delivery, an unchanged PR head and rejection by a read-only token.
-Fixture issues are closed after verification.
+Issue bodies retain literal Markdown, accessible image descriptions, HTML
+attributes and fenced reproductions. Secret redaction applies before publication.
+Ordinary reviews do not turn findings into backlog issues automatically.
 
-GitHub qualification passed on 1 November 2026:
+## Delivery and retries
 
-- [Full CI](https://github.com/coryparrry/claude-code-action/actions/runs/41358060261): 1,575 tests passed, zero failures, 5,884 assertions across 117 files; root/base typechecks, formatting, production-package checks and composite boundaries passed.
-- [Live command action and permission check](https://github.com/coryparrry/claude-code-action/actions/runs/41358060324): two identical tool calls produced one actual [fixture issue #20](https://github.com/coryparrry/claude-code-action/issues/20), the same confirmed URL reached the tracking comment, and the PR head was unchanged. Cleanup closed the issue.
-- A real `issues: read` token was rejected and created no issue. Regression fixtures also covered disabled Issues, invalid payloads, repository scope, concurrent calls and uncertain API failures.
-- New named-symbol documentation coverage was **10/11 (90.9%)**, above the 85% requirement. No tests ran locally.
+Confirmed creations are recorded outside the model's workspace. The JSON-array
+`created_issue_urls` action output and the tracking comment retain those URLs when
+the agent subsequently errors or exhausts its turn/time limit. Agent failure still
+remains a failure; a created issue does not imply the rest of a task succeeded.
 
-The tested implementation is `8124d92dee8a03455fb16b024b430bc9f9135c63`; the installer, managed workflows and quickstart pin that revision. The live harness's subsequent MCP-envelope parser correction did not change production code. Separate workflow runs have separate deduplication scope.
+Identical concurrent/repeated calls within one MCP server process share their
+first result. Potentially completed issue POSTs are never automatically retried.
+Server-local deduplication does not span workflow runs or independent subagent
+servers. Inspect GitHub before retrying an uncertain request.
 
-## Review corrections
+## GitHub qualification
 
-The initial live evidence above predates six edge-case corrections. Requalification
-is pending for explicit automation opt-in, wildcard grants, literal body preservation,
-confirmed-URL receipts on failure, read-only qualification credentials and robust
-fixture cleanup. The final live workflow also deliberately exhausts a one-turn
-agent after successful creation and requires the actual URL in both failure outputs
-and tracking feedback. These corrections must pass before release.
+The installed implementation pin is
+`62daf7d83c5282e2344579369f72d496eb6fd923`.
+
+- [Qualified-source CI](https://github.com/coryparrry/claude-code-action/actions/runs/41362349119) and [consumer-pin CI](https://github.com/coryparrry/claude-code-action/actions/runs/41363172107) passed: 1,580 tests, zero failures, 5,898 assertions across 117 files; both typechecks, formatting, production packages and all composite boundaries passed.
+- [Exact-pin live qualification](https://github.com/coryparrry/claude-code-action/actions/runs/41363173970) called the creation tool twice and created one [fixture issue #26](https://github.com/coryparrry/claude-code-action/issues/26), reusing its confirmed URL and preserving the PR head.
+- The same run deliberately failed a one-turn agent after creating [fixture issue #27](https://github.com/coryparrry/claude-code-action/issues/27). The confirmed URL survived in both action outputs and failure tracking feedback. Expected-failure action annotations are part of this case; subsequent assertions must pass.
+- A real `issues: read` token was rejected and created no issue. Both created fixtures were closed.
+- Hosted regressions cover automation opt-in, wildcard installation, scope, payload validation, literal body preservation, secret redaction, concurrency, uncertain POSTs, failed tracking finalization and cleanup after changed model text.
+- New named-symbol documentation coverage is 16/17 (94.1%), exceeding 85%. Repository-wide coverage was not audited. No tests ran locally.
+
+The qualification workflow itself has `contents: read`, excludes Git/edit tools
+and explicitly denies mutations. Confirmed issue IDs are fetched directly for
+verification and cleanup, avoiding dependence on a lagging issue-list response.
+Paid reruns require `test-issue-creation`, the trusted actor and the isolated
+`codex/issue-creation` branch; the label is removed after qualification.
+
+All six initial native-review findings were fixed and covered by the hosted
+rechecks. [Current PR checks](https://github.com/coryparrry/claude-code-action/pull/18/checks)
+include an additional regression enforcing the qualification's Git/tool ceiling.
+The [machine-readable evidence](./issue-creation-evidence.json) records the exact
+source identities. No release or main-branch merge is performed by qualification.
