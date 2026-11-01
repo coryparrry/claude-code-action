@@ -1,3 +1,4 @@
+import { issueCreationAllowed } from "./issue-creation-policy";
 import { resolveCompatibility } from "../../base-action/src/codex-compat";
 import { usesApiCommitSigning } from "../github/operations/commit-signing";
 import * as core from "@actions/core";
@@ -126,13 +127,11 @@ export async function prepareMcpConfig(
       mcpServers: {},
     };
 
-    const issueCreationRequested =
-      !isAgentMode ||
-      allowedToolsList.some(
-        (tool) =>
-          tool === "mcp__github_issues" ||
-          tool === "mcp__github_issues__create_issue",
-      );
+    const issueCreationRequested = issueCreationAllowed(
+      context,
+      mode,
+      allowedToolsList,
+    );
     if (
       issueCreationRequested &&
       !planning &&
@@ -147,6 +146,8 @@ export async function prepareMcpConfig(
           REPO_OWNER: owner,
           REPO_NAME: repo,
           GITHUB_API_URL,
+          CODEX_CREATED_ISSUES_RECEIPT:
+            process.env.CODEX_CREATED_ISSUES_RECEIPT || "",
         },
       };
     }

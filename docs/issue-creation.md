@@ -9,13 +9,13 @@ enabled. Generated command workflows already request that permission. Automatic
 reviews and read-only/plan runs cannot create issues. Creation is reserved for an
 explicit request; ordinary reviews do not turn findings into backlog issues.
 
-Agent-mode workflows opt in by allowing `mcp__github_issues__create_issue` through
+Automatic tracking reviews, label/assignment automation, prompt-driven tasks and agent-mode workflows opt in by allowing `mcp__github_issues__create_issue` through
 `codex_args: --allowedTools mcp__github_issues__create_issue`. The tool takes title,
 body and optional labels, with no model-selected owner or repository. It uses the
 action's repository-scoped token and does not need Docker or a separate MCP service.
 
 Identical calls within one MCP server process share the same result, including
-concurrent calls. The action never retries a potentially completed issue POST.
+concurrent calls. The action never retries a potentially completed issue POST. Confirmed URLs are also recorded outside the model workspace and exposed as the JSON-array `created_issue_urls` output. Tracking finalization retains these links on agent errors and timeouts.
 For uncertain failures, inspect GitHub before another request. Deduplication does
 not persist across separate workflow runs; do not rerun a creation request blindly.
 
@@ -37,3 +37,12 @@ GitHub qualification passed on 1 November 2026:
 - New named-symbol documentation coverage was **10/11 (90.9%)**, above the 85% requirement. No tests ran locally.
 
 The tested implementation is `8124d92dee8a03455fb16b024b430bc9f9135c63`; the installer, managed workflows and quickstart pin that revision. The live harness's subsequent MCP-envelope parser correction did not change production code. Separate workflow runs have separate deduplication scope.
+
+## Review corrections
+
+The initial live evidence above predates six edge-case corrections. Requalification
+is pending for explicit automation opt-in, wildcard grants, literal body preservation,
+confirmed-URL receipts on failure, read-only qualification credentials and robust
+fixture cleanup. The final live workflow also deliberately exhausts a one-turn
+agent after successful creation and requires the actual URL in both failure outputs
+and tracking feedback. These corrections must pass before release.

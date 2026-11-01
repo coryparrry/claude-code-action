@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-24.04-firewall
     timeout-minutes: 15
     permissions:
-      contents: write
+      contents: read
       issues: write
       pull-requests: write
       actions: read
@@ -52,6 +52,11 @@ jobs:
           max_turns: "8"
           max_budget_usd: "1.00"
           claude_args: --permission-mode auto
+          codex_args: >-
+            --permission-mode auto
+            --allowedTools mcp__github_issues__create_issue
+            --tools "Read,Glob,Grep,LS,mcp__github_issues__create_issue,mcp__github_comment__update_codex_comment"
+            --disallowedTools "Write,Edit,MultiEdit,NotebookEdit,Bash,PowerShell,mcp__github_git__push,mcp__github_git__commit_files,mcp__github_git__delete_files,mcp__github_file_ops__commit_files,mcp__github_file_ops__delete_files"
           prompt: |
             Use mcp__github_issues__create_issue to open exactly one issue in this repository.
             Its exact title must be: ${{ env.ISSUE_TEST_TITLE }}
@@ -62,16 +67,54 @@ jobs:
       - name: Verify API state, duplicate protection and user-visible delivery
         env:
           GH_TOKEN: ${{ github.token }}
+          CREATED_ISSUE_URLS: ${{ steps.creator.outputs.created_issue_urls }}
           ACTION_CONCLUSION: ${{ steps.creator.outputs.conclusion }}
           EXECUTION_REPORT: ${{ steps.creator.outputs.execution_file }}
           TRACKING_COMMENT_ID: ${{ steps.creator.outputs.comment_id }}
           QUALIFICATION_PR: ${{ github.event.pull_request.number }}
           QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha }}
         run: bun --no-env-file scripts/qualify-issue-creation.ts verify
-      - name: Close only this run's fixture issue
+      - name: Exercise expected agent failure after confirmed creation
+        id: creator_failure
+        continue-on-error: true
+        uses: ./
+        with:
+          github_token: ${{ github.token }}
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          codex_model: gpt-6-luna
+          codex_effort: low
+          trigger_phrase: /qualify-issue
+          track_progress: "true"
+          max_turns: "1"
+          max_budget_usd: "0.50"
+          claude_args: --permission-mode auto
+          codex_args: >-
+            --permission-mode auto
+            --allowedTools mcp__github_issues__create_issue
+            --tools mcp__github_issues__create_issue
+            --disallowedTools "Write,Edit,MultiEdit,NotebookEdit,Bash,PowerShell,mcp__github_git__push,mcp__github_git__commit_files,mcp__github_git__delete_files,mcp__github_file_ops__commit_files,mcp__github_file_ops__delete_files"
+          prompt: |
+            Call mcp__github_issues__create_issue immediately. Do not use another tool or just describe the issue.
+            Use this exact title: ${{ env.ISSUE_TEST_TITLE }} (expected agent failure)
+            Use this exact body: ${{ env.ISSUE_TEST_BODY }}
+            The one-turn limit deliberately tests failure after the tool completes.
+      - name: Verify confirmed URL survives the expected agent failure
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_TEST_TITLE: "${{ env.ISSUE_TEST_TITLE }} (expected agent failure)"
+          CREATED_ISSUE_URLS: ${{ steps.creator_failure.outputs.created_issue_urls }}
+          ACTION_CONCLUSION: ${{ steps.creator_failure.outputs.conclusion }}
+          EXECUTION_REPORT: ${{ steps.creator_failure.outputs.execution_file }}
+          TRACKING_COMMENT_ID: ${{ steps.creator_failure.outputs.comment_id }}
+          QUALIFICATION_PR: ${{ github.event.pull_request.number }}
+          QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: bun --no-env-file scripts/qualify-issue-creation.ts verify-failure
+      - name: Close only this run's confirmed fixtures, even with changed model bodies
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
+          CREATED_ISSUE_URLS: ${{ steps.creator.outputs.created_issue_urls }}
+          FAILED_CREATED_ISSUE_URLS: ${{ steps.creator_failure.outputs.created_issue_urls }}
         run: bun --no-env-file scripts/qualify-issue-creation.ts cleanup
       - name: Save execution evidence
         if: ${{ always() && steps.creator.outputs.execution_file != '' }}
@@ -80,7 +123,7 @@ jobs:
           name: issue-creation-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ steps.creator.outputs.execution_file }}
-            ${{ runner.temp }}/issue-creation-evidence.json
+            ${{ runner.temp }}/issue-creation-*.json
           if-no-files-found: warn
           retention-days: 7
 

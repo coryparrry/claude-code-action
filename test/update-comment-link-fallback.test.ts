@@ -1,8 +1,15 @@
+import { rm } from "node:fs/promises";
+import { dirname } from "node:path";
+import {
+  initializeIssueReceipts,
+  recordCreatedIssue,
+} from "../src/github/operations/issue-creation-receipts";
 import { expect, mock, test } from "bun:test";
 import { updateCommentLink } from "../src/entrypoints/update-comment-link";
 import type { Octokits } from "../src/github/api/client";
 import { createMockContext } from "./mockContext";
 
+/** Provide the actual tracking namespaces for finalization and failure cases. */
 function fixture(status: number) {
   const getIssue = mock(async () => ({ data: { body: "Codex is working…" } }));
   const updateIssue = mock(async () => ({ data: { id: 45 } }));
@@ -81,4 +88,27 @@ test("known issue fallback namespace never probes a colliding review comment ID"
   expect(getIssue).toHaveBeenCalledTimes(1);
   expect(updateIssue).toHaveBeenCalledTimes(1);
   expect(updateReview).not.toHaveBeenCalled();
+});
+
+test("confirmed issue URLs survive agent failure before its final tracking update", async () => {
+  const saved = process.env.CODEX_CREATED_ISSUES_RECEIPT;
+  const receipt = initializeIssueReceipts();
+  process.env.CODEX_CREATED_ISSUES_RECEIPT = receipt;
+  try {
+    const { params, updateIssue } = fixture(404);
+    const { owner, repo } = params.context.repository;
+    const url = `https://github.com/${owner}/${repo}/issues/19`;
+    recordCreatedIssue({ owner, repo, number: 19, url });
+    await updateCommentLink({ ...params, claudeSuccess: false });
+    const posted = (updateIssue.mock.calls as unknown[][])[0]![0] as {
+      body: string;
+    };
+    expect(posted.body).toContain("Codex encountered an error");
+    expect(posted.body).toContain(url);
+    expect(posted.body).toContain("Created issues");
+  } finally {
+    if (saved === undefined) delete process.env.CODEX_CREATED_ISSUES_RECEIPT;
+    else process.env.CODEX_CREATED_ISSUES_RECEIPT = saved;
+    await rm(dirname(receipt), { recursive: true, force: true });
+  }
 });

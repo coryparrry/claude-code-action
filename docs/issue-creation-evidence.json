@@ -11,7 +11,10 @@
     "named_symbols": 11,
     "minimum": 0.85
   },
-  "live_runs": [41358059827, 41358060324],
+  "live_runs": [
+    41358059827,
+    41358060324
+  ],
   "verified_issue": "https://github.com/coryparrry/claude-code-action/issues/20",
   "tool_calls": 2,
   "actual_issues": 1,
@@ -20,5 +23,6 @@
   "read_only_token_denied": true,
   "fixture_closed": true,
   "issues_setting_preserved": true,
-  "local_tests_run": false
+  "local_tests_run": false,
+  "status": "initial evidence superseded by review fixes; requalification pending"
 }

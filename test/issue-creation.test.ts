@@ -11,6 +11,12 @@ import {
   issueCreationError,
   issueInputSchema,
 } from "../src/mcp/github-issues-server";
+import { issueCreationAllowed } from "../src/mcp/issue-creation-policy";
+import {
+  initializeIssueReceipts,
+  readCreatedIssues,
+} from "../src/github/operations/issue-creation-receipts";
+import { selectQualificationIssues } from "../scripts/qualify-issue-creation";
 import { prepareMcpConfig } from "../src/mcp/install-mcp-server";
 import { AgentPermissions } from "../base-action/src/agent-permissions";
 import { createMockContext } from "./mockContext";
@@ -186,6 +192,7 @@ test("actual stdio tool creates once for concurrent identical calls and caches u
     },
   });
   const home = await mkdtemp(join(tmpdir(), "issue-protocol-"));
+  const receipt = initializeIssueReceipts({ RUNNER_TEMP: home });
   const client = new Client({ name: "issue-protocol-test", version: "1" });
   const transport = new StdioClientTransport({
     command: process.execPath,
@@ -199,6 +206,7 @@ test("actual stdio tool creates once for concurrent identical calls and caches u
       REPO_OWNER: "owner",
       REPO_NAME: "repo",
       GITHUB_API_URL: String(http.url).replace(/\/$/, ""),
+      CODEX_CREATED_ISSUES_RECEIPT: receipt,
     },
   });
   try {
@@ -216,6 +224,7 @@ test("actual stdio tool creates once for concurrent identical calls and caches u
     expect(results[0]).toEqual(results[1]);
     expect(results[0]!.isError).not.toBe(true);
     expect(posts).toBe(1);
+    expect(readCreatedIssues("owner", "repo", receipt)).toHaveLength(1);
     for (let attempt = 0; attempt < 2; attempt++) {
       const result = await client.callTool({
         name: "create_issue",
@@ -262,6 +271,8 @@ test("new issue-creation code meets the 85% documentation requirement", async ()
   const results: boolean[] = [];
   for (const file of [
     "src/mcp/github-issues-server.ts",
+    "src/mcp/issue-creation-policy.ts",
+    "src/github/operations/issue-creation-receipts.ts",
     "test/issue-creation.test.ts",
     "scripts/qualify-issue-creation.ts",
   ])
@@ -277,4 +288,103 @@ test("new issue-creation code meets the 85% documentation requirement", async ()
     `Issue creation documentation: ${documented}/${results.length} named symbols`,
   );
   expect(documented / results.length).toBeGreaterThanOrEqual(0.85);
+});
+
+test("tracking reviews need an explicit issue-creation grant, including wildcard grants", () => {
+  const review = createMockContext({
+    eventName: "pull_request",
+    eventAction: "opened",
+    inputs: { trackProgress: true, prompt: "Review this PR" },
+  });
+  expect(issueCreationAllowed(review, "tag", [])).toBe(false);
+  expect(issueCreationAllowed(review, "agent", [])).toBe(false);
+  for (const rule of [
+    "mcp__github_issues__*",
+    "mcp__github_issues",
+    "mcp__github_*__create_issue",
+  ])
+    expect(issueCreationAllowed(review, "agent", [rule])).toBe(true);
+  expect(
+    issueCreationAllowed(
+      createMockContext({ eventName: "issues", eventAction: "labeled" }),
+      "tag",
+      [],
+    ),
+  ).toBe(false);
+});
+
+test("literal Markdown, accessible image descriptions and fenced examples survive issue creation", async () => {
+  const { client, calls } = apiFixture();
+  const body =
+    '![Meaningful chart description](https://example.com/chart.png)\n```html\n<img alt="Reproduction" title="Example">\n<!-- literal regression marker -->\n```';
+  await createRepositoryIssue(
+    client,
+    { owner: "owner", repo: "repo" },
+    { title: "Reproduction", body },
+  );
+  expect(calls[0]!.body).toBe(body);
+});
+
+test("cleanup finds confirmed fixtures with changed titles or bodies without touching another author's issue", () => {
+  const records = [
+    {
+      title: "Expected",
+      body: "Body plus extra",
+      html_url: "https://github.com/o/r/issues/1",
+      user: { login: "github-actions[bot]" },
+    },
+    {
+      title: "Changed",
+      body: "Changed",
+      html_url: "https://github.com/o/r/issues/2",
+      user: { login: "github-actions[bot]" },
+    },
+    {
+      title: "Expected",
+      body: "Body",
+      html_url: "https://github.com/o/r/issues/3",
+      user: { login: "human" },
+    },
+  ];
+  const matches = selectQualificationIssues(
+    records,
+    "Expected",
+    "Body",
+    [records[1]!.html_url],
+    true,
+  );
+  expect(matches.map((issue) => issue.html_url)).toEqual(
+    records.slice(0, 2).map((issue) => issue.html_url),
+  );
+});
+
+test("configuration installs wildcard issue grants but not an implicit automatic tracking review", async () => {
+  delete process.env.DEFAULT_WORKFLOW_TOKEN;
+  delete process.env.CODEX_SANDBOX;
+  process.env.CODEX_ARGS = "";
+  process.env.GITHUB_ACTION_PATH = "/trusted/action";
+  const options = {
+    githubToken: "fixture-token",
+    owner: "owner",
+    repo: "repo",
+    branch: "feature",
+    baseBranch: "main",
+    context: createMockContext({
+      eventName: "pull_request",
+      eventAction: "opened",
+      inputs: { trackProgress: true, prompt: "Review this PR" },
+    }),
+  };
+  const implicit = JSON.parse(
+    await prepareMcpConfig({ ...options, allowedTools: [], mode: "tag" }),
+  );
+  expect(implicit.mcpServers.github_issues).toBeUndefined();
+  const explicit = JSON.parse(
+    await prepareMcpConfig({
+      ...options,
+      allowedTools: ["mcp__github_issues__*"],
+      mode: "agent",
+    }),
+  );
+  expect(explicit.mcpServers.github_issues).toBeDefined();
 });

@@ -4,8 +4,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Octokit } from "@octokit/rest";
 import { z } from "zod";
+import { recordCreatedIssue } from "../github/operations/issue-creation-receipts";
 import { GITHUB_API_URL } from "../github/api/config";
-import { redactSecrets, sanitizeContent } from "../github/utils/sanitizer";
+import { redactSecrets } from "../github/utils/sanitizer";
 
 export const issueInputSchema = z.strictObject({
   title: z.string().trim().min(1).max(256),
@@ -41,13 +42,18 @@ export async function createRepositoryIssue(
   const parsed = issueInputSchema.parse(input);
   const payload = issueInputSchema.parse({
     ...parsed,
-    title: redactSecrets(sanitizeContent(parsed.title)).trim(),
-    body: redactSecrets(sanitizeContent(parsed.body)),
+    title: redactSecrets(parsed.title).trim(),
+    body: redactSecrets(parsed.body),
   });
   const result = await client.rest.issues.create({
     ...payload,
     ...scope,
     request: { timeout: 15000 },
+  });
+  recordCreatedIssue({
+    ...scope,
+    number: result.data.number,
+    url: result.data.html_url,
   });
   return {
     number: result.data.number,
@@ -91,7 +97,7 @@ export function createIssueServer(
   >();
   server.tool(
     "create_issue",
-    "Open an issue in this workflow's repository only when the user requests it. Returns the confirmed issue URL. Identical calls in this action process reuse their first result; uncertain failures must be checked on GitHub before a new attempt.",
+    "Open an issue in this workflow's repository only when the user requests it. Returns the confirmed issue URL. Identical calls in this MCP server process reuse their first result; uncertain failures must be checked on GitHub before a new attempt.",
     issueInputSchema.shape,
     async (input) => {
       try {
