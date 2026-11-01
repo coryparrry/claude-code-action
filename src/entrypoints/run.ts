@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { snapshotGuidance } from "../review/source-evidence";
 
 import { usesApiCommitSigning } from "../github/operations/commit-signing";
 import {
@@ -47,7 +48,10 @@ import { detectMode } from "../modes/detector";
 import { prepareTagMode } from "../modes/tag";
 import { prepareAgentMode } from "../modes/agent";
 import { checkContainsTrigger } from "../github/validation/trigger";
-import { restoreConfigFromBase } from "../github/operations/restore-config";
+import {
+  getReviewSourceMappings,
+  restoreConfigFromBase,
+} from "../github/operations/restore-config";
 import { validateBranchName } from "../github/operations/branch";
 import { actionRuntimeOptions } from "./runtime-options";
 import { initializeInlineCommentBuffer } from "../mcp/inline-comment-buffer";
@@ -100,6 +104,7 @@ async function run() {
   let deliveryError: string | undefined;
   let githubToken: string | undefined;
   let commentId: number | undefined;
+  let trackingCommentType: "issue" | "review" | undefined;
   let claudeBranch: string | undefined;
   let deliveryBranch: string | undefined;
   let baseBranch: string | undefined;
@@ -249,6 +254,8 @@ async function run() {
         : await prepareAgentMode({ context, octokit, githubToken });
 
     commentId = prepareResult.commentId;
+    if ("commentType" in prepareResult)
+      trackingCommentType = prepareResult.commentType;
     claudeBranch = prepareResult.branchInfo.claudeBranch;
     deliveryBranch = claudeBranch || prepareResult.branchInfo.currentBranch;
     baseBranch = prepareResult.branchInfo.baseBranch;
@@ -288,6 +295,14 @@ async function run() {
       prompt: "",
       promptFile,
     });
+
+    const sourceContext = {
+      workspace: process.env.GITHUB_WORKSPACE || process.cwd(),
+      aliases: getReviewSourceMappings(),
+      restoredPaths: restoredConfigPaths,
+    };
+    if (nativeReview)
+      await appendFile(promptConfig.path, snapshotGuidance(sourceContext));
 
     const reviewOptions = nativeReview
       ? await nativeReviewOptions(
@@ -336,6 +351,8 @@ async function run() {
           reviewOptions!,
           reviewTarget.head,
           reviewMemory,
+          undefined,
+          sourceContext,
         );
       } finally {
         const verificationFile = getExecutionFilePath(
@@ -422,6 +439,7 @@ async function run() {
     ) {
       try {
         await updateCommentLink({
+          commentType: trackingCommentType,
           commentId,
           githubToken,
           claudeBranch,
@@ -454,6 +472,7 @@ async function run() {
     // Set remaining action-level outputs
     core.setOutput("branch_name", deliveryBranch);
     core.setOutput("comment_id", commentId);
+    core.setOutput("comment_type", commentId ? trackingCommentType || "" : "");
     if (
       !nativeReview &&
       claudeSuccess &&

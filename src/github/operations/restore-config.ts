@@ -15,6 +15,13 @@ import {
 import { dirname, join, posix, relative, sep } from "path";
 import { fetchDepthArgs } from "./fetch-depth";
 
+const reviewSources = new Map<string, string>();
+
+/** Return only preserved regular PR files, never placeholders or restored base files. */
+export function getReviewSourceMappings(): Record<string, string> {
+  return Object.fromEntries(reviewSources);
+}
+
 // Paths that are both PR-controllable and read from cwd at CLI startup.
 //
 // Deliberately excluded from the CLI's broader auto-edit blocklist:
@@ -186,10 +193,22 @@ function snapshotSensitivePath(
   tracked: TrackedPaths,
 ): void {
   const excluded: Array<{ src: string; dest: string }> = [];
+  /** Record evidence aliases only for unchanged tracked regular files. */
   const keepOrExclude =
     (keep: (entry: string) => boolean) =>
     (entrySrc: string, entryDest: string) => {
       if (keep(entrySrc)) {
+        if (
+          lstatSync(entrySrc).isFile() &&
+          tracked.files.has(
+            relative(process.cwd(), entrySrc).split(sep).join("/"),
+          )
+        ) {
+          reviewSources.set(
+            relative(process.cwd(), entryDest).split(sep).join("/"),
+            relative(process.cwd(), entrySrc).split(sep).join("/"),
+          );
+        }
         return true;
       }
       excluded.push({ src: entrySrc, dest: entryDest });
@@ -287,6 +306,7 @@ function ensureClaudePrExcludedFromGit(): void {
  *   will commit the revert back onto the PR author's branch.
  */
 export function restoreConfigFromBase(baseBranch: string): string[] {
+  reviewSources.clear();
   const sensitivePaths = new Set(SENSITIVE_PATHS);
   addCodexInstructionPaths(
     sensitivePaths,

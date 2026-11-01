@@ -176,6 +176,7 @@ export async function prepareTagMode({
     branchSourceSha: branchInfo.sourceSha,
     images: githubData.contextImages,
     claudeCommentId: commentId.toString(),
+    commentType: commentData.commentType,
     allowedTools: Array.from(new Set(tagModeTools)),
     mode: "tag",
     context,
@@ -206,6 +207,7 @@ export async function prepareTagMode({
   }
 
   return {
+    commentType: commentData.commentType,
     commentId,
     branchInfo,
     mcpConfig: ourMcpConfig,

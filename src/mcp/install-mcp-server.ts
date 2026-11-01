@@ -1,3 +1,4 @@
+import { resolveCompatibility } from "../../base-action/src/codex-compat";
 import { usesApiCommitSigning } from "../github/operations/commit-signing";
 import * as core from "@actions/core";
 import { GITHUB_API_URL, GITHUB_SERVER_URL } from "../github/api/config";
@@ -16,6 +17,7 @@ type PrepareConfigParams = {
   branchSourceSha?: string;
   images?: ContextImage[];
   claudeCommentId?: string;
+  commentType?: "issue" | "review";
   allowedTools: string[];
   mode: AutoDetectedMode;
   context: GitHubContext;
@@ -85,6 +87,16 @@ export async function prepareMcpConfig(
   } = params;
   try {
     const allowedToolsList = allowedTools || [];
+    const permission = await resolveCompatibility(
+      process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "",
+      "",
+      '{"mcpServers":{}}',
+      [],
+      { permissionMode: process.env.PERMISSION_MODE || undefined },
+    );
+    const planning = ["plan", "readonly", "read-only"].includes(
+      permission.permissionMode || "",
+    );
 
     // Detect if we're in agent mode (explicit prompt provided)
     const isAgentMode = mode === "agent";
@@ -140,6 +152,7 @@ export async function prepareMcpConfig(
           REPO_OWNER: owner,
           REPO_NAME: repo,
           ...(claudeCommentId && { CODEX_COMMENT_ID: claudeCommentId }),
+          ...(params.commentType && { CODEX_COMMENT_TYPE: params.commentType }),
           GITHUB_EVENT_NAME: process.env.GITHUB_EVENT_NAME || "",
           GITHUB_API_URL: GITHUB_API_URL,
         },
@@ -163,6 +176,7 @@ export async function prepareMcpConfig(
           BASE_BRANCH: baseBranch,
           GIT_READ_ONLY: String(
             process.env.CODEX_SANDBOX === "read-only" ||
+              planning ||
               usesApiCommitSigning(context.inputs) ||
               !!context.inputs.allowedNonWriteUsers,
           ),

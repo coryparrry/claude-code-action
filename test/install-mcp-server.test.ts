@@ -93,6 +93,29 @@ describe("prepareMcpConfig", () => {
     fetchSpy.mockRestore();
   });
 
+  test("plan mode disables the scoped Git server even with an explicit write grant", async () => {
+    const old = process.env.CODEX_ARGS;
+    try {
+      process.env.CODEX_ARGS = "--permission-mode plan";
+      const config = JSON.parse(
+        await prepareMcpConfig({
+          githubToken: "test-token",
+          owner: "o",
+          repo: "r",
+          branch: "head",
+          baseBranch: "main",
+          allowedTools: ["mcp__github_git__push"],
+          mode: "agent",
+          context: mockPRContext,
+        }),
+      );
+      expect(config.mcpServers.github_git.env.GIT_READ_ONLY).toBe("true");
+    } finally {
+      if (old === undefined) delete process.env.CODEX_ARGS;
+      else process.env.CODEX_ARGS = old;
+    }
+  });
+
   test("legacy classify=false posts immediately even with default buffering enabled", async () => {
     const config = JSON.parse(
       await prepareMcpConfig({

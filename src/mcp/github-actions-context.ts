@@ -1,3 +1,4 @@
+import { retryGitHubRead } from "../github/api/retry";
 import type { Octokit } from "@octokit/rest";
 import {
   listWorkflowJobs,
@@ -74,12 +75,14 @@ export async function getCIStatus(
   params: PRParams,
   status?: string,
 ) {
-  const { data: pr } = await client.pulls.get(params);
-  const runs = await listWorkflowRuns(client, {
-    owner: params.owner,
-    repo: params.repo,
-    head_sha: pr.head.sha,
-  });
+  const { data: pr } = await retryGitHubRead(() => client.pulls.get(params));
+  const runs = await retryGitHubRead(() =>
+    listWorkflowRuns(client, {
+      owner: params.owner,
+      repo: params.repo,
+      head_sha: pr.head.sha,
+    }),
+  );
   const scoped = runs.filter(
     (run) =>
       !["pull_request", "pull_request_target"].includes(run.event) ||
@@ -95,9 +98,13 @@ export async function getWorkflowRunDetails(
 ) {
   const { owner, repo, run_id, pull_number } = params;
   const [runResult, prResult, jobs] = await Promise.all([
-    client.actions.getWorkflowRun({ owner, repo, run_id }),
-    client.pulls.get({ owner, repo, pull_number }),
-    listWorkflowJobs(client, { owner, repo, run_id, filter: "latest" }),
+    retryGitHubRead(() =>
+      client.actions.getWorkflowRun({ owner, repo, run_id }),
+    ),
+    retryGitHubRead(() => client.pulls.get({ owner, repo, pull_number })),
+    retryGitHubRead(() =>
+      listWorkflowJobs(client, { owner, repo, run_id, filter: "latest" }),
+    ),
   ]);
   const run = runResult.data;
   const isCurrentPR =

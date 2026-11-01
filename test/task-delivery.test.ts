@@ -127,6 +127,11 @@ test("validation reporting updates the existing section after a same-commit retr
     _url: string,
     options: { method?: string; body?: string },
   ) => {
+    expect(_url).toContain(
+      env.COMMENT_TYPE === "review"
+        ? "/pulls/comments/20"
+        : "/issues/comments/20",
+    );
     if (options.method === "PATCH") {
       body = JSON.parse(options.body!).body;
       requests.push(body);
@@ -137,6 +142,7 @@ test("validation reporting updates the existing section after a same-commit retr
     API_URL: "https://api.github.com",
     REPOSITORY: "owner/repo",
     COMMENT_ID: "20",
+    COMMENT_TYPE: "issue",
     HEAD_SHA: "a".repeat(40),
     VALIDATION_RESULT: "failure",
     RUN_URL: "https://github.com/owner/repo/actions/runs/1/attempts/1",
@@ -144,6 +150,7 @@ test("validation reporting updates the existing section after a same-commit retr
   };
   await execute({ env }, fetch);
   expect(body).toContain("**failure**");
+  env.COMMENT_TYPE = "review";
   env.VALIDATION_RESULT = "success";
   env.RUN_URL = env.RUN_URL.replace("attempts/1", "attempts/2");
   await execute({ env }, fetch);

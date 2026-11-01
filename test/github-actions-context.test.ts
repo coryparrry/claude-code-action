@@ -214,3 +214,40 @@ test("run details do not treat another PR at the same SHA as current evidence", 
   expect(result.is_current_pr).toBe(false);
   expect(result.is_current_head).toBe(false);
 });
+
+test("CI reads retry a transient provider failure but never an authorization failure", async () => {
+  let reads = 0;
+  let pages = 0;
+  const client = {
+    pulls: {
+      get: async () => {
+        reads++;
+        if (reads === 1)
+          throw Object.assign(new Error("gateway"), { status: 502 });
+        return { data: { head: { sha: "current" } } };
+      },
+    },
+    actions: { listWorkflowRunsForRepo: () => {} },
+    paginate: async () => {
+      pages++;
+      if (pages === 1)
+        throw Object.assign(new Error("gateway"), { status: 502 });
+      return [];
+    },
+  } as unknown as Octokit;
+  expect(
+    (await getCIStatus(client, { owner: "o", repo: "r", pull_number: 1 }))
+      .head_sha,
+  ).toBe("current");
+  expect(reads).toBe(2);
+  expect(pages).toBe(2);
+  reads = 0;
+  client.pulls.get = (async () => {
+    reads++;
+    throw Object.assign(new Error("forbidden"), { status: 403 });
+  }) as unknown as typeof client.pulls.get;
+  await expect(
+    getCIStatus(client, { owner: "o", repo: "r", pull_number: 1 }),
+  ).rejects.toThrow("forbidden");
+  expect(reads).toBe(1);
+});

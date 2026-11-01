@@ -18,6 +18,7 @@ import {
 } from "../../context";
 import type { Octokit } from "@octokit/rest";
 
+/** Create tracking feedback and retain the actual API namespace, including fallback comments. */
 export async function createInitialComment(
   octokit: Octokit,
   context: ParsedGitHubContext,
@@ -29,6 +30,7 @@ export async function createInitialComment(
 
   try {
     let response;
+    let commentType: "issue" | "review" = "issue";
 
     if (
       context.inputs.useStickyComment &&
@@ -79,6 +81,7 @@ export async function createInitialComment(
         comment_id: context.payload.comment.id,
         body: initialBody,
       });
+      commentType = "review";
     } else {
       // For all other cases (issues, issue comments, or missing comment_id)
       response = await octokit.rest.issues.createComment({
@@ -93,7 +96,7 @@ export async function createInitialComment(
     const githubOutput = process.env.GITHUB_OUTPUT!;
     appendFileSync(githubOutput, `codex_comment_id=${response.data.id}\n`);
     console.log(`✅ Created initial comment with ID: ${response.data.id}`);
-    return response.data;
+    return { ...response.data, commentType };
   } catch (error) {
     console.error("Error in initial comment:", error);
 
@@ -109,7 +112,7 @@ export async function createInitialComment(
       const githubOutput = process.env.GITHUB_OUTPUT!;
       appendFileSync(githubOutput, `codex_comment_id=${response.data.id}\n`);
       console.log(`✅ Created fallback comment with ID: ${response.data.id}`);
-      return response.data;
+      return { ...response.data, commentType: "issue" as const };
     } catch (fallbackError) {
       console.error("Error creating fallback comment:", fallbackError);
       throw fallbackError;

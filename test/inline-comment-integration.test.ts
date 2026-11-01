@@ -195,7 +195,7 @@ test.each([3, 124])(
     mock.module(root + "/src/github/token.ts", () => ({ setupGitHubToken: async () => "offline-fixture-token", hasMintedGitHubAppToken: () => false }));
     mock.module(root + "/src/github/validation/permissions.ts", () => ({ checkWritePermissions: async () => true }));
     mock.module(root + "/src/codex-install.ts", () => ({ validateCodexInputs: () => {} }));
-    mock.module(root + "/src/github/operations/restore-config.ts", () => ({ restoreConfigFromBase: () => [] }));
+    mock.module(root + "/src/github/operations/restore-config.ts", () => ({ restoreConfigFromBase: () => [], getReviewSourceMappings: () => ({}) }));
     mock.module(root + "/src/modes/tag/index.ts", () => ({ prepareTagMode: async () => {
       await mkdir(process.env.RUNNER_TEMP + "/codex-prompts", { recursive: true });
       await writeFile(process.env.RUNNER_TEMP + "/codex-prompts/codex-prompt.txt", "Review this change");
