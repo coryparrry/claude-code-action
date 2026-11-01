@@ -1,7 +1,7 @@
 name: Live request verification
 on:
   pull_request:
-    types: [opened, synchronize, labeled]
+    types: [opened, synchronize, reopened, labeled]
 permissions:
   contents: read
 jobs:
@@ -11,11 +11,83 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
       - run: bun --no-env-file test test/fixtures/live-request/normalize.test.ts
-  verify:
+
+  review:
+    if: >-
+      github.event.action == 'labeled' &&
+      (github.event.label.name == 'codex-live-review-new' || github.event.label.name == 'codex-live-review-memory') &&
+      github.actor == 'coryparrry' && github.head_ref == 'codex/live-request-workflows' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04-firewall
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      LIVE_PR: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Prepare actual PR snapshot
+        env:
+          LIVE_EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/live-request-fixture.mjs prepare
+      - name: Prepare frozen PR patch
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff --no-ext-diff --no-textconv "$BASE_SHA...$HEAD_SHA" -- > .git/codex-review.diff
+      - id: agent
+        uses: coryparrry/claude-code-action@39cf9a682e1fc1fd562672af07a8bc8866643d2b
+        env:
+          LIVE_EVENT_NAME: pull_request
+          LIVE_EVENT_PATH: ${{ runner.temp }}/live-review.json
+        with:
+          path_to_bun_executable: ${{ runner.temp }}/live-bun
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          codex_model: gpt-6.1-terra
+          codex_effort: max
+          review_mode: "true"
+          codex_sandbox: read-only
+          claude_args: --permission-mode auto --no-session-persistence
+          max_turns: "30"
+          prompt: |
+            Review only test/fixtures/live-request/normalize.ts and its regression contract.
+            normalizeLabel(null) must return the empty string. Report a concrete patch-introduced violation if present.
+            Treat missing-input variants as one underlying cause. Do not review the temporary harness or unrelated source.
+            Honor prior review memory; never post an equivalent previous finding again.
+      - name: Verify actual review and durable-memory behavior
+        env:
+          LIVE_CONCLUSION: ${{ steps.agent.outputs.conclusion }}
+          LIVE_REPORT: ${{ steps.agent.outputs.execution_file }}
+          LIVE_VERIFIER_REPORT: ${{ steps.agent.outputs.verification_file }}
+          LIVE_EXPECT_MEMORY: ${{ github.event.label.name == 'codex-live-review-memory' }}
+        run: node "$RUNNER_TEMP/live-request-fixture.mjs" review
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-review-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/live-*-report.json
+            ${{ runner.temp }}/codex-*-output.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  commands:
     if: >-
       github.event.action == 'labeled' && github.event.label.name == 'codex-live-verify' &&
       github.actor == 'coryparrry' && github.head_ref == 'codex/live-request-workflows' &&
@@ -27,6 +99,10 @@ jobs:
       issues: write
       pull-requests: write
       actions: read
+    outputs:
+      head_sha: ${{ steps.check_inline.outputs.head_sha }}
+      comment_id: ${{ steps.check_inline.outputs.comment_id }}
+      issue_sha: ${{ steps.check_issue.outputs.head_sha }}
     env:
       GH_TOKEN: ${{ github.token }}
       LIVE_PR: ${{ github.event.pull_request.number }}
@@ -38,11 +114,37 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
-      - name: Prepare actual GitHub event snapshots
+      - name: Capture actual requests
+        env:
+          LIVE_EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          LIVE_PHASE: commands
         run: node scripts/live-request-fixture.mjs prepare
-      - name: Implement actual inline reply
-        id: inline
-        uses: ./
+      - id: diagnosis
+        uses: coryparrry/claude-code-action@39cf9a682e1fc1fd562672af07a8bc8866643d2b
+        env:
+          LIVE_EVENT_NAME: issue_comment
+          LIVE_EVENT_PATH: ${{ runner.temp }}/live-diagnosis.json
+        with:
+          path_to_bun_executable: ${{ runner.temp }}/live-bun
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          trigger_phrase: /verify-codex
+          codex_model: gpt-6.1-terra
+          codex_effort: max
+          codex_sandbox: read-only
+          claude_args: --permission-mode auto --no-session-persistence
+          max_turns: "30"
+          append_system_prompt: |
+            Diagnose the current PR CI only. Use get_ci_status, run details and download_job_log.
+            Read the returned excerpt directly. Cite the current head SHA, failing run/job and actual error.
+            Do not edit or run repository code. Repository validation is isolated from this job.
+      - name: Verify current-head log diagnosis
+        env:
+          LIVE_CONCLUSION: ${{ steps.diagnosis.outputs.conclusion }}
+          LIVE_REPORT: ${{ steps.diagnosis.outputs.execution_file }}
+          LIVE_COMMENT: ${{ steps.diagnosis.outputs.comment_id }}
+        run: node "$RUNNER_TEMP/live-request-fixture.mjs" diagnosis
+      - id: inline
+        uses: coryparrry/claude-code-action@39cf9a682e1fc1fd562672af07a8bc8866643d2b
         env:
           LIVE_EVENT_NAME: pull_request_review_comment
           LIVE_EVENT_PATH: ${{ runner.temp }}/live-inline.json
@@ -52,21 +154,148 @@ jobs:
           trigger_phrase: /verify-codex
           codex_model: gpt-6.1-terra
           codex_effort: max
-          allowed_tools: Write(.git/codex-commit-message.txt),Write(test/fixtures/live-request/**),Edit(test/fixtures/live-request/**),Bash(bun --no-env-file test test/fixtures/live-request/normalize.test.ts:*)
           claude_args: --permission-mode auto --no-session-persistence
-          max_turns: "25"
-      - name: Verify pushed inline fix and passing regression
+          max_turns: "30"
+          append_system_prompt: |
+            Implement the requested normalizeLabel fix and relevant regression coverage.
+            Commit and push with the scoped Git tools. Do not install packages, execute tests or run repository code here.
+            A separate read-only job validates your delivered commit. Report that validation is pending.
+      - id: check_inline
+        name: Verify actual pushed inline fix
         env:
           LIVE_CONCLUSION: ${{ steps.inline.outputs.conclusion }}
           LIVE_REPORT: ${{ steps.inline.outputs.execution_file }}
+          LIVE_HEAD: ${{ steps.inline.outputs.head_sha }}
+          LIVE_BRANCH: ${{ steps.inline.outputs.branch_name }}
+          LIVE_COMMENT: ${{ steps.inline.outputs.comment_id }}
         run: node "$RUNNER_TEMP/live-request-fixture.mjs" inline
-      - name: Save live reports
-        if: always()
-        uses: actions/upload-artifact@v4
+      - id: issue
+        uses: coryparrry/claude-code-action@39cf9a682e1fc1fd562672af07a8bc8866643d2b
+        env:
+          LIVE_EVENT_NAME: issues
+          LIVE_EVENT_PATH: ${{ runner.temp }}/live-issue.json
         with:
-          name: live-request-reports-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/live-*-report.json
-            ${{ runner.temp }}/codex-execution-output.json
+          path_to_bun_executable: ${{ runner.temp }}/live-bun
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          trigger_phrase: /verify-codex
+          base_branch: codex/requested-change-workflows
+          codex_model: gpt-6.1-terra
+          codex_effort: max
+          claude_args: --permission-mode auto --no-session-persistence
+          max_turns: "30"
+          append_system_prompt: |
+            Implement only the issue's requested text file. Read it back, commit and push with the scoped Git tools, then provide the Create a PR handoff.
+            Do not install packages, execute tests or run repository code in this write job. Validation runs separately.
+      - id: check_issue
+        name: Verify issue delivery and handoff
+        env:
+          LIVE_CONCLUSION: ${{ steps.issue.outputs.conclusion }}
+          LIVE_REPORT: ${{ steps.issue.outputs.execution_file }}
+          LIVE_HEAD: ${{ steps.issue.outputs.head_sha }}
+          LIVE_BRANCH: ${{ steps.issue.outputs.branch_name }}
+          LIVE_COMMENT: ${{ steps.issue.outputs.comment_id }}
+        run: node "$RUNNER_TEMP/live-request-fixture.mjs" issue
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-commands-${{ github.run_id }}
+          path: ${{ runner.temp }}/live-*-report.json
           if-no-files-found: warn
           retention-days: 7
+
+  validate_inline:
+    needs: commands
+    if: needs.commands.outputs.head_sha != ''
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.commands.outputs.head_sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun --no-env-file install --frozen-lockfile
+      - run: bun --no-env-file test
+      - run: bun --no-env-file run typecheck
+
+  validate_issue:
+    needs: commands
+    if: needs.commands.outputs.issue_sha != ''
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.commands.outputs.issue_sha }}
+          persist-credentials: false
+      - run: node -e 'require("node:assert/strict").equal(require("node:fs").readFileSync("test/fixtures/live-request/issue-result.txt", "utf8"), "issue-handoff-terra-max-20261031\n")'
+
+  report_validation:
+    needs:
+      - commands
+      - validate_inline
+    if: always() && needs.commands.outputs.head_sha != '' &&
+      needs.commands.outputs.comment_id != ''
+    permissions:
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Append validation to the existing tracking comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+          COMMENT_ID: ${{ needs.commands.outputs.comment_id }}
+          HEAD_SHA: ${{ needs.commands.outputs.head_sha }}
+          VALIDATION_RESULT: ${{ needs.validate_inline.result }}
+          RUN_URL:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{
+            github.run_id }}/attempts/${{ github.run_attempt }}
+        run: >
+          node --input-type=module <<'NODE'
+
+          const { API_URL, REPOSITORY, COMMENT_ID, HEAD_SHA, VALIDATION_RESULT,
+          RUN_URL, GH_TOKEN } = process.env;
+
+          if (!/^\d+$/.test(COMMENT_ID) || !/^[a-f0-9]{40}$/.test(HEAD_SHA)) throw
+          new Error('Invalid delivery metadata');
+
+          const url =
+          `${API_URL}/repos/${REPOSITORY}/issues/comments/${COMMENT_ID}`;
+
+          const headers = { Authorization: `Bearer ${GH_TOKEN}`, Accept:
+          'application/vnd.github+json', 'Content-Type': 'application/json' };
+
+          const response = await fetch(url, { headers });
+
+          if (!response.ok) throw new Error(`Comment read failed:
+          ${response.status}`);
+
+          const comment = await response.json();
+
+          const marker = `<!-- codex-validation:${HEAD_SHA} -->`;
+
+          const endMarker = '<!-- /codex-validation -->';
+
+          const section = `${marker}\nValidation for \`${HEAD_SHA}\`:
+          **${VALIDATION_RESULT}**. [View checks](${RUN_URL}).\n${endMarker}`;
+
+          const start = comment.body.indexOf(marker);
+
+          const end = start < 0 ? -1 : comment.body.indexOf(endMarker, start);
+
+          const body = start >= 0 && end >= 0 ? comment.body.slice(0, start) +
+          section + comment.body.slice(end + endMarker.length) :
+          `${comment.body}\n\n${section}`;
+
+          if (body !== comment.body) {
+            const update = await fetch(url, { method: 'PATCH', headers, body: JSON.stringify({ body }) });
+            if (!update.ok) throw new Error(`Comment update failed: ${update.status}`);
+          }
+
+          NODE
