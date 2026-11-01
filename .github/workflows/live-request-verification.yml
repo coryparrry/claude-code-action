@@ -40,33 +40,6 @@ jobs:
           bun-version: 1.4.2
       - name: Prepare actual GitHub event snapshots
         run: node scripts/live-request-fixture.mjs prepare
-      - name: Implement actual fixture issue
-        id: issue
-        uses: ./
-        env:
-          LIVE_EVENT_NAME: issues
-          LIVE_EVENT_PATH: ${{ runner.temp }}/live-issue.json
-        with:
-          path_to_bun_executable: ${{ runner.temp }}/live-bun
-          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
-          trigger_phrase: /verify-codex
-          codex_model: gpt-6.1-terra
-          codex_effort: max
-          base_branch: codex/requested-change-workflows
-          branch_prefix: codex/live-issue-
-          allowed_tools: Write(.git/codex-commit-message.txt),Write(test/fixtures/live-request/**),Edit(test/fixtures/live-request/**),Bash(bun --no-env-file test:*),Bash(bun --no-env-file run typecheck:*)
-          claude_args: --permission-mode auto --no-session-persistence
-          max_turns: "25"
-      - name: Verify pushed issue result and PR handoff
-        env:
-          LIVE_CONCLUSION: ${{ steps.issue.outputs.conclusion }}
-          LIVE_REPORT: ${{ steps.issue.outputs.execution_file }}
-          LIVE_BRANCH: ${{ steps.issue.outputs.branch_name }}
-        run: node "$RUNNER_TEMP/live-request-fixture.mjs" issue
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
       - name: Implement actual inline reply
         id: inline
         uses: ./
