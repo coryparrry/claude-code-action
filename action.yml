@@ -257,6 +257,9 @@ inputs:
     default: ""
 
 outputs:
+  verification_file:
+    description: "Independent review verification report, including withheld candidates"
+    value: ${{ steps.run.outputs.verification_file }}
   head_sha:
     description: "Commit recorded by this run’s successful push and confirmed against the remote branch"
     value: ${{ steps.run.outputs.head_sha }}

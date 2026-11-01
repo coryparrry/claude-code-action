@@ -1,14 +1,14 @@
 export const WORKFLOW_PATH = ".github/workflows/codex.yml";
 export const MANAGED_MARKER = "# Managed by the Codex GitHub Action installer.";
 export const DEFAULT_ACTION_REF =
-  "coryparrry/claude-code-action@6b725d2a320c4ecca97c605fc8fb641c3a3d133f";
+  "coryparrry/claude-code-action@39cf9a682e1fc1fd562672af07a8bc8866643d2b";
 export const DEFAULT_MODEL = "gpt-6.1-terra";
 export const DEFAULT_TRIGGER_PHRASE = "/codex";
 export const REVIEW_DIFF_PATH = ".git/codex-review.diff";
 export const AUTOMATIC_REVIEW_PROMPT = `Review this pull request for code quality, bugs, security and performance issues.
 Read the prepared patch in ${REVIEW_DIFF_PATH} first; it includes removed lines as well as additions.
 Use the repository and PR context. Return actionable findings and a concise summary together.
-Return verified findings using the native review schema. The action submits one native review summary with a separate coloured inline comment for each finding at its own code location. Do not create severity-specific reviews or a combined findings comment.
+Propose candidate findings using the native review schema. A separate verifier checks them before publication. Only new, high-confidence patch defects receive inline comments; remembered findings stay in their existing threads. Do not create severity-specific reviews or a combined findings comment.
 Do not edit files, commit changes or implement fixes during this review.
 The author can request an implementation in a comment with ${DEFAULT_TRIGGER_PHRASE}.`;
 
@@ -103,7 +103,9 @@ ${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_t
         uses: actions/upload-artifact@v4
         with:
           name: codex-command-\${{ github.run_id }}-\${{ github.run_attempt }}
-          path: \${{ steps.agent.outputs.execution_file }}
+          path: |
+            \${{ steps.agent.outputs.execution_file }}
+            \${{ steps.agent.outputs.verification_file }}
           if-no-files-found: error
           retention-days: 7
 
@@ -150,7 +152,9 @@ ${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_t
         uses: actions/upload-artifact@v4
         with:
           name: codex-review-\${{ github.run_id }}-\${{ github.run_attempt }}
-          path: \${{ steps.agent.outputs.execution_file }}
+          path: |
+            \${{ steps.agent.outputs.execution_file }}
+            \${{ steps.agent.outputs.verification_file }}
           if-no-files-found: error
           retention-days: 7
 `;

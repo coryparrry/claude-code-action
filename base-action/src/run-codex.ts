@@ -14,6 +14,7 @@ import { readFile, realpath, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir, homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { redactSecrets } from "../../src/github/utils/sanitizer";
+import { readEvidence, type ReadEvidence } from "./read-evidence";
 import { writeExecutionFile } from "./execution-file";
 import {
   resolveCompatibility,
@@ -58,6 +59,9 @@ export type CodexRunResult = {
   sessionId?: string;
   conclusion: "success" | "failure";
   structuredOutput?: unknown;
+  numTurns?: number;
+  costUsd?: number;
+  readEvidence?: ReadEvidence[];
 };
 export type CodexOptions = Omit<
   DirectCompatibilityOptions,
@@ -91,6 +95,7 @@ export type CodexOptions = Omit<
   signal?: AbortSignal;
   configurationHome?: string;
   sessionStoragePath?: string;
+  executionFileName?: import("./execution-file").ExecutionFilename;
   modelPrices?: Record<string, ModelPrice>;
   workspace?: string;
 };
@@ -218,6 +223,7 @@ export async function runCodex(
     return value;
   };
   const messages: Record<string, unknown>[] = [];
+  const inspected: ReadEvidence[] = [];
   const backgroundTasks = new Map<string, BackgroundAgentTask>();
   let runtime: Awaited<ReturnType<typeof createCodexAgentRuntime>> | undefined;
   let result: Omit<OpenAIAgentResult, "finalOutput"> | undefined;
@@ -637,6 +643,10 @@ export async function runCodex(
       register,
       redact,
       emit,
+      onToolResult: (event) => {
+        const evidence = readEvidence(event, workspace);
+        if (evidence) inspected.push(evidence);
+      },
       sessionStoragePath: sessionDirectory,
       removeSecretAliases: () => {
         for (const [name, value] of Object.entries(toolEnvironment))
@@ -877,6 +887,7 @@ export async function runCodex(
       duration_ms: Date.now() - started,
       num_turns: result?.turns ?? 0,
       usage: usageReport(totalUsage),
+      read_evidence: inspected,
       ...(budget?.costKnown ? { total_cost_usd: budget.cost } : {}),
       ...(failure ? { errors: [failure] } : {}),
       ...(finalOutput !== undefined && typeof finalOutput !== "string"
@@ -888,11 +899,15 @@ export async function runCodex(
     await rm(cacheDirectory, { recursive: true, force: true });
   const executionFile = await writeExecutionFile(
     sanitize(messages) as unknown[],
+    options.executionFileName,
   );
   if (outputFormat) core.info(JSON.stringify(sanitize(messages.at(-1))));
   if (failure) throw new Error(redact(failure));
   return {
     conclusion: "success",
+    numTurns: result?.turns ?? 0,
+    readEvidence: inspected,
+    ...(budget?.costKnown ? { costUsd: budget.cost } : {}),
     executionFile,
     sessionId,
     ...(finalOutput !== undefined && typeof finalOutput !== "string"

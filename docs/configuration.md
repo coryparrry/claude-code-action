@@ -230,6 +230,8 @@ These environment variables will be available to Codex during execution, allowin
 
 ## Time and Cost Bounds
 
+Native reviews use separate reviewer and verifier passes with [durable PR memory](review-verification.md). Their configured turn and USD limits are shared across both phases; the reviewer reserves one third for verification.
+
 `max_turns` or `--max-turns` bounds model turns. `max_budget_usd` bounds estimated usage costs after each response; it is not an account spending cap. Set job `timeout-minutes` for elapsed time. Luna, Sol and Astra have built-in standard token rates, including cached input and long-context rates. Other models require `settings.modelPrices` when a USD limit is set.
 
 ## Custom Tools

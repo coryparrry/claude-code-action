@@ -40,6 +40,8 @@ import {
   retireReviewSummaries,
   type ReviewTarget,
 } from "../review/publisher";
+import { loadReviewMemory, type RememberedFinding } from "../review/memory";
+import { candidateLimits, verifyReviewCandidates } from "../review/verify";
 import { nativeReviewOptions, reviewPrompt } from "../review/runtime";
 import { detectMode } from "../modes/detector";
 import { prepareTagMode } from "../modes/tag";
@@ -123,6 +125,10 @@ async function run() {
     );
     const previousExecutionFile = getExecutionFilePath();
     if (previousExecutionFile) await rm(previousExecutionFile, { force: true });
+    const previousVerifierFile = getExecutionFilePath(
+      "codex-review-verifier-output.json",
+    );
+    if (previousVerifierFile) await rm(previousVerifierFile, { force: true });
     if (process.env.OPENAI_API_KEY) core.setSecret(process.env.OPENAI_API_KEY);
     // Phase 1: Prepare
     const actionInputsPresent = collectActionInputsPresence();
@@ -202,8 +208,9 @@ async function run() {
             author: context.inputs.botName,
           }
         : undefined;
+    let reviewMemory: RememberedFinding[] = [];
     if (reviewTarget) {
-      const history = await loadReviewHistory(octokit.rest, reviewTarget);
+      const history = await loadReviewHistory(octokit.rest, reviewTarget, true);
       if (history.reviewedHeads.has(reviewTarget.head)) {
         if (history.review) {
           await retireReviewSummaries(
@@ -220,9 +227,15 @@ async function run() {
         );
         return;
       }
+      reviewMemory = await loadReviewMemory(
+        octokit.graphql,
+        reviewTarget,
+        history.summaries,
+      );
       context.inputs.prompt = reviewPrompt(
         context.inputs.prompt,
         history.context,
+        reviewMemory,
       );
     }
 
@@ -276,6 +289,15 @@ async function run() {
       promptFile,
     });
 
+    const reviewOptions = nativeReview
+      ? await nativeReviewOptions(
+          prepareResult.claudeArgs,
+          actionRuntimeOptions(process.env),
+        )
+      : undefined;
+    const reviewLimits = reviewOptions
+      ? await candidateLimits(reviewOptions)
+      : {};
     const result: CodexRunResult = await runCodex(promptConfig.path, {
       mcpConfig: prepareResult.mcpConfig,
       ...actionRuntimeOptions(process.env),
@@ -292,12 +314,8 @@ async function run() {
             GITHUB_EVENT_PATH: process.env.GITHUB_EVENT_PATH || "",
             GITHUB_WORKSPACE: process.env.GITHUB_WORKSPACE || process.cwd(),
           },
-      ...(nativeReview
-        ? await nativeReviewOptions(
-            prepareResult.claudeArgs,
-            actionRuntimeOptions(process.env),
-          )
-        : {}),
+      ...reviewOptions,
+      ...reviewLimits,
     });
 
     claudeSuccess = result.conclusion === "success";
@@ -310,22 +328,40 @@ async function run() {
     if (result.sessionId) {
       core.setOutput("session_id", result.sessionId);
     }
-    if (result.structuredOutput !== undefined) {
-      core.setOutput(
-        "structured_output",
-        JSON.stringify(result.structuredOutput),
-      );
-    }
     if (reviewTarget && result.conclusion === "success") {
+      let verified;
+      try {
+        verified = await verifyReviewCandidates(
+          result,
+          reviewOptions!,
+          reviewTarget.head,
+          reviewMemory,
+        );
+      } finally {
+        const verificationFile = getExecutionFilePath(
+          "codex-review-verifier-output.json",
+        );
+        if (verificationFile && existsSync(verificationFile))
+          core.setOutput("verification_file", verificationFile);
+      }
+      result.structuredOutput = verified.review;
+      core.info(`Review verification: ${JSON.stringify(verified.audit)}`);
       const url = await publishReview(
         octokit.rest,
         reviewTarget,
         result.structuredOutput,
+        true,
       );
       if (url) {
         core.setOutput("review_url", url);
         core.info(`Review published: ${url}`);
       }
+    }
+    if (result.structuredOutput !== undefined) {
+      core.setOutput(
+        "structured_output",
+        JSON.stringify(result.structuredOutput),
+      );
     }
     core.setOutput("conclusion", result.conclusion);
   } catch (error) {

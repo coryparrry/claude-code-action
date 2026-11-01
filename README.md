@@ -4,13 +4,13 @@ A fork of [Anthropic's Claude Code Action](https://github.com/anthropics/claude-
 
 This is an independent adaptation, not an official OpenAI or Anthropic release. The upstream MIT copyright and license notices are retained in [LICENSE](LICENSE).
 
-Automatic reviews keep GitHub’s native review layout: a walkthrough-led summary with grouped changes, an optional flow diagram and expandable review details, plus a separate coloured inline comment for each issue. See [review presentation](docs/review-presentation.md) for the format and named-bot setup.
+Automatic reviews keep GitHub’s native review layout: a walkthrough-led summary with grouped changes, an optional flow diagram and expandable review details, plus inline comments only for new defects confirmed with high confidence by a separate verification pass. PR history provides durable memory so open and resolved findings are not posted again. See [verification and memory](docs/review-verification.md). See [review presentation](docs/review-presentation.md) for the format and named-bot setup.
 
 ## Quickstart
 
 Use this repository as a GitHub Action in your workflow. No local installer is required.
 
-The examples pin source commit `6b725d2a320c4ecca97c605fc8fb641c3a3d133f`, which includes native reviews, requested-change refinements and CI diagnosis. No release tag is required. Existing installations must update their workflow to this revision and enable `review_mode` for automatic reviews.
+The examples pin source commit `39cf9a682e1fc1fd562672af07a8bc8866643d2b`, which includes native reviews, requested-change refinements and CI diagnosis. No release tag is required. Existing installations must update their workflow to this revision and enable `review_mode` for automatic reviews.
 
 Add your existing OpenAI key as the repository Actions secret `OPENAI_API_KEY`. Save this workflow as `.github/workflows/codex.yml` in the repository where you want the action to operate. Replace `your-github-username` with the trusted user's login. The workflow must be on the default branch for `issue_comment` events.
 
@@ -56,7 +56,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: agent
-        uses: coryparrry/claude-code-action@6b725d2a320c4ecca97c605fc8fb641c3a3d133f
+        uses: coryparrry/claude-code-action@39cf9a682e1fc1fd562672af07a8bc8866643d2b
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -69,7 +69,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: codex-command-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ steps.agent.outputs.execution_file }}
+          path: |
+            ${{ steps.agent.outputs.execution_file }}
+            ${{ steps.agent.outputs.verification_file }}
           if-no-files-found: error
           retention-days: 7
 
@@ -100,7 +102,7 @@ jobs:
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
       - id: agent
-        uses: coryparrry/claude-code-action@6b725d2a320c4ecca97c605fc8fb641c3a3d133f
+        uses: coryparrry/claude-code-action@39cf9a682e1fc1fd562672af07a8bc8866643d2b
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -113,7 +115,7 @@ jobs:
             Review this pull request for code quality, bugs, security and performance issues.
             Read the prepared patch in .git/codex-review.diff first; it includes removed lines as well as additions.
             Use the repository and PR context. Return actionable findings and a concise summary together.
-            Return verified findings using the native review schema. The action submits one native review summary with a separate coloured inline comment for each finding at its own code location. Do not create severity-specific reviews or a combined findings comment.
+            Propose candidate findings using the native review schema. A separate verifier checks them before publication. Only new, high-confidence patch defects receive inline comments; remembered findings stay in their existing threads. Do not create severity-specific reviews or a combined findings comment.
             Do not edit files, commit changes or implement fixes during this review.
             The author can request an implementation in a comment with /codex.
       - name: Save execution report
@@ -121,7 +123,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: codex-review-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ steps.agent.outputs.execution_file }}
+          path: |
+            ${{ steps.agent.outputs.execution_file }}
+            ${{ steps.agent.outputs.verification_file }}
           if-no-files-found: error
           retention-days: 7
 ```
@@ -153,7 +157,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
-      - uses: coryparrry/claude-code-action@6b725d2a320c4ecca97c605fc8fb641c3a3d133f
+      - uses: coryparrry/claude-code-action@39cf9a682e1fc1fd562672af07a8bc8866643d2b
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           codex_sandbox: read-only
