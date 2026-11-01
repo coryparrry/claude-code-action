@@ -47,7 +47,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: agent
-        uses: coryparrry/claude-code-action@8982119b2aaec3fcbb4e15fef72c8bd5b61cec84
+        uses: coryparrry/claude-code-action@7e87c5fa66bc28f1cd03b601ed4198b4aa35d136
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -146,6 +146,8 @@ jobs:
       cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      CODEX_REVIEW_REPOSITORY_MEMORY: "true"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -158,7 +160,7 @@ jobs:
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
       - id: agent
-        uses: coryparrry/claude-code-action@8982119b2aaec3fcbb4e15fef72c8bd5b61cec84
+        uses: coryparrry/claude-code-action@7e87c5fa66bc28f1cd03b601ed4198b4aa35d136
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -184,3 +186,9 @@ jobs:
             ${{ steps.agent.outputs.verification_file }}
           if-no-files-found: error
           retention-days: 7
+      - name: Save repository learning
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: codex-review-memory-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/codex-review-memory/${{ github.run_id }}-${{ github.run_attempt }}/candidate.json
+          if-no-files-found: ignore
