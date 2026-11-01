@@ -334,6 +334,7 @@ export class AgentPermissions {
         "mcp__github_git__push",
         "mcp__github_file_ops__commit_files",
         "mcp__github_file_ops__delete_files",
+        "mcp__github_issues__create_issue",
       ].includes(name)
     )
       throw new Error(`${name} is unavailable in read-only/plan mode`);

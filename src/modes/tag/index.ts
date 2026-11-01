@@ -29,6 +29,7 @@ import { enrichContextImages } from "../../github/data/context-images";
  * Tag mode responds to /codex mentions, issue assignments, or labels.
  * Creates tracking comments showing progress and has full implementation capabilities.
  */
+/** Prepare trusted interactive requests with scoped GitHub context and write tools. */
 export async function prepareTagMode({
   context,
   octokit,
@@ -148,6 +149,7 @@ export async function prepareTagMode({
     ...GIT_READ_TOOLS,
     "mcp__github_context__view_image",
     "mcp__github_comment__update_codex_comment",
+    "mcp__github_issues__create_issue",
     "mcp__github_ci__get_ci_status",
     "mcp__github_ci__get_workflow_run_details",
     "mcp__github_ci__download_job_log",
