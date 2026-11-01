@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { appendCreatedIssueFeedback } from "../github/operations/issue-creation-receipts";
 import { createOctokit } from "../github/api/client";
 import type { Octokits } from "../github/api/client";
 import * as fs from "fs/promises";
@@ -245,7 +246,7 @@ export async function updateCommentLink(
       owner,
       repo,
       commentId,
-      body: updatedBody,
+      body: appendCreatedIssueFeedback(updatedBody, owner, repo),
       isPullRequestReviewComment: isPRReviewComment,
     });
     console.log(

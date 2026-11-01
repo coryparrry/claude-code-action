@@ -1,3 +1,4 @@
+import { issueCreationAllowed } from "../../mcp/issue-creation-policy";
 import { usesApiCommitSigning } from "../../github/operations/commit-signing";
 import { checkHumanActor } from "../../github/validation/actor";
 import { createInitialComment } from "../../github/operations/comments/create-initial";
@@ -149,7 +150,9 @@ export async function prepareTagMode({
     ...GIT_READ_TOOLS,
     "mcp__github_context__view_image",
     "mcp__github_comment__update_codex_comment",
-    "mcp__github_issues__create_issue",
+    ...(issueCreationAllowed(context, "tag", userAllowedTools)
+      ? ["mcp__github_issues__create_issue"]
+      : []),
     "mcp__github_ci__get_ci_status",
     "mcp__github_ci__get_workflow_run_details",
     "mcp__github_ci__download_job_log",
