@@ -9,7 +9,7 @@ const proofTime = Date.parse("2026-11-01T12:00:00Z") / 1000;
 
 /** Use real JWT signatures and local keys; no test can contact the GitHub issuer. */
 export async function signFixtureCandidate(value: any, claims: Record<string, unknown> = {}) {
-  const proof = await new SignJWT({ repository_id: "123", run_id: "42", run_attempt: "1", event_name: "pull_request", ref: "refs/pull/1/merge", workflow_sha: "a".repeat(40), ...claims })
+  const proof = await new SignJWT({ repository_id: "123", run_id: "42", run_attempt: "1", event_name: "pull_request", base_ref: "main", ref: "refs/pull/1/merge", workflow_sha: "a".repeat(40), ...claims })
     .setProtectedHeader({ alg: "RS256", kid: "fixture" })
     .setIssuer("https://token.actions.githubusercontent.com")
     .setAudience(reviewProofAudience(value)).setIssuedAt(proofTime - 1).setNotBefore(proofTime - 1).setExpirationTime(proofTime + 300).sign(proofKeys.privateKey);

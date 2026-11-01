@@ -249,3 +249,79 @@ test("pending merge lookup stays within eight distinct PRs", async () => {
   ).toEqual([]);
   expect(reads).toBe(8);
 });
+
+test("retargeting an unchanged head never transfers learning to another base", async () => {
+  const fixture = memoryFixture();
+  await publishReviewRun(
+    fixture.client,
+    memoryOptions,
+    42,
+    ["trusted-user"],
+    async () => candidate(),
+  );
+  fixture.pulls.get(1).base.ref = "release";
+  fixture.pulls.get(1).merged_at = "2026-11-01";
+  expect(
+    (
+      await loadRepositoryMemory(fixture.client, memoryOptions, {
+        ...current,
+        baseRef: "release",
+      })
+    ).records,
+  ).toEqual([]);
+  await reconcilePullMemory(fixture.client, memoryOptions, 1);
+  expect(
+    (await readMemorySnapshot(fixture.client, memoryOptions)).index.entries,
+  ).toEqual([]);
+  const source = { pr: 1, head: memoryHead, baseRef: "main" };
+  const body = renderRepositoryLearning(
+    { paths: ["src/"], note: "Main-only constraint." },
+    source,
+  );
+  expect(
+    recoverRepositoryLearning(body, { ...source, baseRef: "release" }),
+  ).toBeNull();
+});
+
+test("a file rename retrieves prior-path knowledge and accepts prior-path proposals", async () => {
+  const fixture = memoryFixture();
+  fixture.api.pulls.listFiles = async () => ({
+    data: [{ filename: "new/access.ts", previous_filename: "src/access.ts" }],
+  });
+  await storeRepositoryMemory(fixture.client, memoryOptions, memoryRecord, {
+    ...pending,
+    merged: true,
+  });
+  expect(
+    (
+      await loadRepositoryMemory(fixture.client, memoryOptions, {
+        ...current,
+        changedPaths: [],
+        pathsComplete: false,
+      })
+    ).records,
+  ).toEqual([memoryRecord]);
+  await publishReviewRun(
+    fixture.client,
+    memoryOptions,
+    42,
+    ["trusted-user"],
+    async () => candidate(),
+  );
+});
+
+test("an already merged retargeted PR cannot publish its old-base proposal", async () => {
+  const fixture = memoryFixture();
+  fixture.pulls.get(1).base.ref = "release";
+  fixture.pulls.get(1).merged_at = "2026-11-01";
+  expect(
+    await publishReviewRun(
+      fixture.client,
+      memoryOptions,
+      42,
+      ["trusted-user"],
+      async () => candidate(),
+    ),
+  ).toContain("retargeted");
+  expect(fixture.branch()).toBeUndefined();
+});

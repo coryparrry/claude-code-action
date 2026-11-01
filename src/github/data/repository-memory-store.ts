@@ -178,7 +178,7 @@ export async function loadRepositoryMemory(
     .filter(
       (entry) =>
         entry.sourcePr !== current.pr &&
-        (!entry.merged || entry.baseRef === current.baseRef) &&
+        entry.baseRef === current.baseRef &&
         memoryRelevance(entry, inventory.paths) > 0,
     )
     .sort(
@@ -224,7 +224,13 @@ export async function changedFileInventory(
         page,
       }),
     );
-    paths.push(...files.data.map((file) => file.filename));
+    paths.push(
+      ...files.data.flatMap((file) =>
+        file.previous_filename
+          ? [file.filename, file.previous_filename]
+          : [file.filename],
+      ),
+    );
     if (files.data.length < 100) return { paths, complete: true };
   }
   return { paths, complete: false };
@@ -377,7 +383,8 @@ export async function reconcilePullMemory(
       ...index,
       entries: index.entries.flatMap((entry) => {
         if (entry.sourcePr !== pr || entry.merged) return [entry];
-        if (entry.head !== pull.head.sha) return [];
+        if (entry.head !== pull.head.sha || entry.baseRef !== pull.base.ref)
+          return [];
         return [
           { ...entry, merged: Boolean(pull.merged_at), baseRef: pull.base.ref },
         ];

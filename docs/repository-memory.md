@@ -58,3 +58,9 @@ production-package checks, the complexity gate and hosted CI. Live qualification
 must install into two repositories and demonstrate pending storage, exact-head merge
 publication and retrieval from a later PR. Source and installed-action commit pins
 are recorded with the final release evidence; local tests alone are not hosted proof.
+
+## Trust boundary
+
+Repository writers control the memory branch. Retry recovery shares the existing native-review bot identity with other workflows using that identity. OIDC authenticates the staging run and exact candidate; it does not prove model authorship or factual correctness. All notes remain untrusted input to read-only reviews, never security policy, merge approval or instructions for write jobs.
+
+Learning remains scoped to its signed reviewed base branch; retargeting the same head cannot transfer it to another base. Retry metadata preserves that base, and rename inventory includes old and new filenames.

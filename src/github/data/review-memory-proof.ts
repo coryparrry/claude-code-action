@@ -59,7 +59,7 @@ export async function verifyReviewProof(
   run: SourceRun,
   repositoryId: number,
   getKey: JWTVerifyGetKey = githubKeys,
-): Promise<string> {
+): Promise<{ workflowSha: string; baseRef: string }> {
   if (!candidate.proof) throw new Error("Missing signed review provenance");
   const { payload } = await jwtVerify(candidate.proof, getKey, {
     issuer,
@@ -72,6 +72,8 @@ export async function verifyReviewProof(
     payload.run_id !== String(run.id) ||
     payload.run_attempt !== String(run.run_attempt ?? 1) ||
     payload.event_name !== "pull_request" ||
+    typeof payload.base_ref !== "string" ||
+    !payload.base_ref ||
     payload.ref !== `refs/pull/${candidate.record.sourcePr}/merge` ||
     typeof payload.workflow_sha !== "string" ||
     !/^[a-f0-9]{40,64}$/i.test(payload.workflow_sha)
@@ -79,5 +81,5 @@ export async function verifyReviewProof(
     throw new Error(
       "Signed review provenance does not match the repository, run or PR",
     );
-  return payload.workflow_sha;
+  return { workflowSha: payload.workflow_sha, baseRef: payload.base_ref };
 }

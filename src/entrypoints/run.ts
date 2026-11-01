@@ -217,6 +217,7 @@ async function run() {
             pull_number: context.payload.pull_request.number,
             head: context.payload.pull_request.head.sha,
             base: context.payload.pull_request.base.sha,
+            baseRef: context.payload.pull_request.base.ref,
             author: context.inputs.botName,
           }
         : undefined;
@@ -237,6 +238,7 @@ async function run() {
             recoverRepositoryLearning(saved?.body ?? "", {
               pr: reviewTarget.pull_number,
               head: reviewTarget.head,
+              baseRef: reviewTarget.baseRef,
             }),
           );
         }

@@ -23,6 +23,7 @@ export type ReviewTarget = {
   pull_number: number;
   head: string;
   base: string;
+  baseRef?: string;
   author: string;
 };
 export type ReviewHistory = {
@@ -254,6 +255,7 @@ export async function publishReview(
     renderRepositoryLearning(learning, {
       pr: target.pull_number,
       head: target.head,
+      baseRef: target.baseRef,
     }) + renderReview(review, target.head, target, verified),
   );
   let files: ChangedReviewFile[] = [];

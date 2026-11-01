@@ -83,7 +83,7 @@ export async function stageReviewMemory(
 /** Persist a sanitized proposal atomically with its native review for zero-model retry recovery. */
 export function renderRepositoryLearning(
   learning: RepositoryLearning | null | undefined,
-  source: { pr: number; head: string },
+  source: { pr: number; head: string; baseRef?: string },
 ): string {
   if (!learning) return "";
   const record = parseMemoryRecord(
@@ -95,13 +95,13 @@ export function renderRepositoryLearning(
     }),
   );
   if (!record) return "";
-  return `<!-- codex-action:learning:v1:${Buffer.from(JSON.stringify(record)).toString("base64")} -->\n\n`;
+  return `<!-- codex-action:learning:v1:${Buffer.from(JSON.stringify({ ...record, baseRef: source.baseRef })).toString("base64")} -->\n\n`;
 }
 
 /** Recover only this exact PR and reviewed revision from trusted native-review metadata. */
 export function recoverRepositoryLearning(
   body: string,
-  source: { pr: number; head: string },
+  source: { pr: number; head: string; baseRef?: string },
 ): RepositoryLearning | null {
   const matches = [
     ...body.matchAll(
@@ -109,12 +109,20 @@ export function recoverRepositoryLearning(
     ),
   ];
   if (matches.length !== 1) return null;
-  const record = parseMemoryRecord(
-    Buffer.from(matches[0]![1]!, "base64").toString("utf8"),
-  );
-  return record && record.sourcePr === source.pr && record.head === source.head
-    ? { paths: record.paths, note: record.note }
-    : null;
+  try {
+    const { baseRef, ...value } = JSON.parse(
+      Buffer.from(matches[0]![1]!, "base64").toString("utf8"),
+    );
+    const record = parseMemoryRecord(JSON.stringify(value));
+    return record &&
+      record.sourcePr === source.pr &&
+      record.head === source.head &&
+      baseRef === source.baseRef
+      ? { paths: record.paths, note: record.note }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Omit opaque recovery metadata from model context while preserving native review content. */

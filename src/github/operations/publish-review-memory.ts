@@ -101,14 +101,14 @@ async function reviewRunCandidate(
   )
     throw new Error("Memory candidate does not belong to the source run");
   const identity = await repositoryIdentity(client, options);
-  const workflowSha = await verifyProof(JSON.parse(body), run, identity.id);
+  const proof = await verifyProof(JSON.parse(body), run, identity.id);
   await validateReviewProducer(
     client,
     options,
     identity.default_branch,
-    workflowSha,
+    proof.workflowSha,
   );
-  return candidate;
+  return { ...candidate, reviewedBase: proof.baseRef };
 }
 
 /** Bind PR-head reviews and GitHub's synthetic merge-ref reviews to the saved head. */
@@ -192,10 +192,11 @@ export async function publishReviewRun(
     )
   ).data;
   if (
+    pull.base.ref !== candidate.reviewedBase ||
     pull.head.sha !== record.head ||
     pull.head.repo?.full_name.toLowerCase() !== repository
   )
-    return "Discarded candidate for a superseded or foreign PR revision";
+    return "Discarded candidate for a superseded, foreign or retargeted PR revision";
   const files = await changedFileInventory(client, options, record.sourcePr);
   if (
     !record.paths.every((path) =>
@@ -208,7 +209,7 @@ export async function publishReviewRun(
     throw new Error("Memory candidate scope is outside verified changed paths");
   const changed = await storeRepositoryMemory(client, options, record, {
     merged: Boolean(pull.merged_at),
-    baseRef: pull.base.ref,
+    baseRef: candidate.reviewedBase,
     updatedAt: run.updated_at,
   });
   const reconciled = await reconcilePullMemory(

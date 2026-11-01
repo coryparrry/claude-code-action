@@ -30,6 +30,7 @@ const target: ReviewTarget = {
   pull_number: 12,
   head,
   base: "b".repeat(40),
+  baseRef: "main",
   author: "github-actions[bot]",
 };
 const finding: Finding = {
@@ -1236,6 +1237,7 @@ test("native review publication atomically retains learning for a same-head retr
     recoverRepositoryLearning(history.review!.body, {
       pr: target.pull_number,
       head: target.head,
+      baseRef: target.baseRef,
     }),
   ).toEqual(learning);
   expect(await publishReview(api.client, target, review, true, learning)).toBe(

@@ -20,7 +20,10 @@ const run = {
 
 test("GitHub-signed job identity binds repository, PR, run, attempt and exact proposal", async () => {
   const signed = JSON.parse(await signFixtureCandidate(candidate));
-  expect(await verifyFixtureProof(signed, run, 123)).toBe(memoryRecord.head);
+  expect(await verifyFixtureProof(signed, run, 123)).toEqual({
+    workflowSha: memoryRecord.head,
+    baseRef: "main",
+  });
   await expect(
     verifyFixtureProof(
       { ...signed, record: { ...signed.record, note: "forged" } },
@@ -46,14 +49,17 @@ test.each([
 
 test("signed issuance time permits slow uploads while staying inside the source execution window", async () => {
   const signed = JSON.parse(await signFixtureCandidate(candidate));
-  expect(await verifyFixtureProof(signed, run, 123)).toBe(memoryRecord.head);
+  expect(await verifyFixtureProof(signed, run, 123)).toEqual({
+    workflowSha: memoryRecord.head,
+    baseRef: "main",
+  });
   expect(
     await verifyFixtureProof(
       signed,
       { ...run, updated_at: "2026-11-01T12:10:00Z" },
       123,
     ),
-  ).toBe(memoryRecord.head);
+  ).toEqual({ workflowSha: memoryRecord.head, baseRef: "main" });
   await expect(
     verifyFixtureProof(
       signed,
