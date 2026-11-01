@@ -90,5 +90,40 @@ describe("downloadJobLog", () => {
 
     const written = await readFile(result.path, "utf-8");
     expect(written).toBe("log line 1\nlog line 2\n");
+    expect(result.excerpt).toBe(written);
+    expect(result.next_offset).toBeNull();
+  });
+
+  test("returns bounded redacted UTF-8 excerpts without requiring file-tool access", async () => {
+    const runnerTemp = makeRunnerTemp();
+    const secret = `ghp_${"a".repeat(36)}`;
+    const text = `${"🎉".repeat(300)}\n${secret}\nERROR: fixture failure\n`;
+    const client = {
+      actions: { downloadJobLogsForWorkflowRun: async () => ({ data: text }) },
+    } as unknown as Octokit;
+    const params = { owner: "o", repo: "r", job_id: 10 };
+    const tail = await downloadJobLog(client, params, runnerTemp, 30_000, {
+      maxBytes: 256,
+    });
+    expect(tail.excerpt).toContain("ERROR: fixture failure");
+    expect(tail.excerpt).not.toContain(secret);
+    expect(Buffer.byteLength(tail.excerpt)).toBeLessThanOrEqual(256);
+    let offset = 0;
+    let combined = "";
+    do {
+      const page = await downloadJobLog(client, params, runnerTemp, 30_000, {
+        offset,
+        maxBytes: 257,
+      });
+      expect(page.excerpt).not.toContain("�");
+      expect(Buffer.byteLength(page.excerpt)).toBeLessThanOrEqual(257);
+      combined += page.excerpt;
+      if (page.next_offset === null) break;
+      expect(page.next_offset).toBeGreaterThan(offset);
+      offset = page.next_offset;
+    } while (offset < 10_000);
+    expect(combined).toContain("🎉".repeat(300));
+    expect(combined).toContain("ERROR: fixture failure");
+    expect(combined).not.toContain(secret);
   });
 });

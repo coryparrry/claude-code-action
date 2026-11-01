@@ -79,7 +79,7 @@ describe("Tag Mode", () => {
             ]),
           }),
         );
-        expect(result.claudeArgs).toContain('--disallowedTools "WebSearch"');
+        expect(result.claudeArgs).toContain('--disallowedTools "WebSearch,');
         expect(result.claudeArgs).not.toContain(
           '--disallowedTools "WebSearch,WebFetch"',
         );
@@ -122,7 +122,7 @@ describe("Tag Mode", () => {
         42,
         "main",
         "claude/test",
-        { reviewRequest: request },
+        expect.objectContaining({ reviewRequest: request }),
         mockPullRequestReviewCommentContext,
       );
     });

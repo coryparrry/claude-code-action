@@ -76,6 +76,7 @@ afterEach(async () => {
   );
 });
 
+/** Host a real-shaped GitHub REST fixture, including idempotent overview edits. */
 function fixture(
   options: {
     status?: number;
@@ -87,6 +88,7 @@ function fixture(
     page?: boolean;
     ambiguousCreate?: boolean;
     headAfterFiles?: string;
+    failUpdateOnce?: boolean;
   } = {},
 ) {
   const requests: { method: string; path: string; body?: any }[] = [];
@@ -96,6 +98,7 @@ function fixture(
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
+    /** Serve the GitHub calls made by the publisher and action integration. */
     async fetch(request): Promise<Response> {
       const url = new URL(request.url),
         path = url.pathname;
@@ -134,6 +137,22 @@ function fixture(
           state: options.state ?? "open",
           head: { sha: currentHead },
         });
+      if (request.method === "PUT" && /\/reviews\/\d+$/.test(path)) {
+        if (options.failUpdateOnce) {
+          options.failUpdateOnce = false;
+          return Response.json(
+            { message: "Update forbidden" },
+            { status: 403 },
+          );
+        }
+        record.body = await request.json();
+        const saved = reviews.find(
+          (item) => item.id === Number(path.split("/").at(-1)),
+        );
+        if (!saved) return Response.json({}, { status: 404 });
+        saved.body = record.body.body;
+        return Response.json(saved);
+      }
       if (request.method === "POST" && path.endsWith("/reviews")) {
         record.body = await request.json();
         if (options.status)
@@ -585,7 +604,39 @@ describe("individual native GitHub review delivery", () => {
     expect(api.reviews).toHaveLength(2);
     expect(api.reviews[1].commit_id).toBe(next);
     expect(api.comments).toHaveLength(2);
+    expect(api.reviews[0].body).toContain("Superseded by the [current review]");
+    expect(api.reviews[0].body).not.toContain(finding.title);
+    expect(api.reviews[1].body).toContain(review.summary);
+    const edits = api.requests.filter((item) => item.method === "PUT").length;
+    await publishReview(api.client, { ...target, head: next }, review);
+    expect(api.reviews).toHaveLength(2);
+    expect(api.requests.filter((item) => item.method === "PUT")).toHaveLength(
+      edits,
+    );
     expect(api.comments[1].body).toContain(finding.title);
+  });
+
+  test("returning to an earlier head regenerates a full overview and rejects stale cleanup", async () => {
+    const api = fixture();
+    await publishReview(api.client, target, review);
+    const next = "e".repeat(40);
+    api.setHead(next);
+    await publishReview(api.client, { ...target, head: next }, review);
+    await expect(publishReview(api.client, target, review)).rejects.toThrow(
+      "changed or closed",
+    );
+    expect(api.reviews[1].body).toContain(review.summary);
+    api.setHead(head);
+    await publishReview(api.client, target, review);
+    expect(api.reviews).toHaveLength(3);
+    expect(api.reviews[2].body).toContain(review.summary);
+    expect(api.reviews[0].body).toContain(api.reviews[2].html_url);
+    expect(api.reviews[1].body).toContain(api.reviews[2].html_url);
+    api.setHead(next);
+    await expect(publishReview(api.client, target, review)).rejects.toThrow(
+      "changed or closed",
+    );
+    expect(api.reviews[2].body).toContain(review.summary);
   });
 
   test("large total evidence is allowed when each individual comment fits", async () => {
@@ -605,6 +656,21 @@ describe("individual native GitHub review delivery", () => {
       api.comments.reduce((size, comment) => size + comment.body.length, 0),
     ).toBeGreaterThan(60000);
     expect(writes(api)).toHaveLength(1);
+  });
+
+  test("same-head retry repairs overview retirement without publishing another review", async () => {
+    const api = fixture({ failUpdateOnce: true });
+    await publishReview(api.client, target, review);
+    const next = "d".repeat(40);
+    api.setHead(next);
+    await expect(
+      publishReview(api.client, { ...target, head: next }, review),
+    ).rejects.toThrow();
+    expect(api.reviews).toHaveLength(2);
+    await publishReview(api.client, { ...target, head: next }, review);
+    expect(api.reviews).toHaveLength(2);
+    expect(api.reviews[0].body).toContain("Superseded by");
+    expect(api.comments).toHaveLength(2);
   });
 
   test("retains complete current evidence beyond 48k for the next review", async () => {

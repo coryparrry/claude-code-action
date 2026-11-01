@@ -22,6 +22,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
   });
   const parent = {
     id: 17,
+    node_id: "PRRC_parent",
     body: "This drops the empty-input case.",
     path: "src/original.ts",
     line: 9,
@@ -41,6 +42,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
   };
   const calls: unknown[] = [];
   const octokits = {
+    graphql: async () => ({ node: { isMinimized: false } }),
     rest: {
       pulls: {
         getReviewComment: async (params: unknown) => {
@@ -97,6 +99,18 @@ describe("inline implementation request context", () => {
     });
   }
 
+  for (const node of [{ isMinimized: true }, null, {}]) {
+    test(`withholds minimized or unverifiable parent: ${JSON.stringify(node)}`, async () => {
+      const { context, octokits } = fixture();
+      octokits.graphql = (async () => ({
+        node,
+      })) as unknown as typeof octokits.graphql;
+      const result = await fetchReviewRequest(context, octokits);
+      expect(result?.parentUnavailable).toBe(true);
+      expect(result?.parentBody).toBeUndefined();
+    });
+  }
+
   test("respects bot actor exclusion", async () => {
     const { context, octokits } = fixture();
     context.inputs.excludeCommentsByActor = "*[bot]";
@@ -117,7 +131,7 @@ describe("inline implementation request context", () => {
     const spy = spyOn(
       octokits.rest.pulls,
       "getReviewComment",
-    ).mockRejectedValue(new Error("404"));
+    ).mockRejectedValue(Object.assign(new Error("404"), { status: 404 }));
     try {
       expect(
         (await fetchReviewRequest(context, octokits))?.parentUnavailable,

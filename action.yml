@@ -257,6 +257,12 @@ inputs:
     default: ""
 
 outputs:
+  head_sha:
+    description: "Commit recorded by this run’s successful push and confirmed against the remote branch"
+    value: ${{ steps.run.outputs.head_sha }}
+  comment_id:
+    description: "Tracking comment ID for downstream validation reporting"
+    value: ${{ steps.run.outputs.comment_id }}
   review_url:
     description: "URL of the native review submitted by review_mode"
     value: ${{ steps.run.outputs.review_url }}

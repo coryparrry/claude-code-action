@@ -167,6 +167,7 @@ export async function setupBranch(
   const isPR = context.isPR;
 
   let closedPR: GitHubPullRequest | undefined;
+  let completedPR: GitHubPullRequest | undefined;
   if (isPR) {
     const prData = githubData.contextData as GitHubPullRequest;
     const prState = prData.state;
@@ -176,6 +177,7 @@ export async function setupBranch(
       console.log(
         `PR #${entityNumber} is ${prState}, creating new branch from source...`,
       );
+      completedPR = prData;
       if (prState === "CLOSED") closedPR = prData;
       // Closed PRs preserve their head; merged PRs start from the current base.
     } else {
@@ -237,11 +239,11 @@ export async function setupBranch(
   // Determine source branch - use baseBranch if provided, otherwise fetch default
   let sourceBranch: string;
 
-  if (closedPR) {
-    sourceBranch = closedPR.baseRefName;
-  } else if (baseBranch) {
+  if (baseBranch) {
     // Use provided base branch for source
     sourceBranch = baseBranch;
+  } else if (completedPR) {
+    sourceBranch = completedPR.baseRefName;
   } else {
     // No base branch provided, fetch the default branch to use as source
     const repoResponse = await octokits.rest.repos.get({
@@ -318,12 +320,14 @@ export async function setupBranch(
     /** Check out the verified source, including a closed PR whose original branch was deleted. */
     const checkoutSource = () => {
       validateBranchName(sourceBranch);
-      if (closedPR) {
+      if (completedPR) {
+        const shallow = fetchDepthArgs(1).length > 0;
         execGit([
           "fetch",
           "origin",
-          `pull/${entityNumber}/head`,
-          ...fetchDepthArgs(Math.max(closedPR.commits.totalCount, 20)),
+          ...(shallow ? ["--unshallow"] : []),
+          `+refs/heads/${sourceBranch}:refs/remotes/origin/${sourceBranch}`,
+          ...(closedPR ? [`refs/pull/${entityNumber}/head`] : []),
         ]);
         execGit(["checkout", "--detach", sourceSHA!]);
       } else {

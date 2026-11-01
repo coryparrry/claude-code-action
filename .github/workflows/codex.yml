@@ -13,14 +13,18 @@ on:
   pull_request_review:
     types: [submitted]
 
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-  actions: read
+permissions: {}
 
 jobs:
   codex:
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+    outputs:
+      head_sha: ${{ steps.agent.outputs.head_sha }}
+      comment_id: ${{ steps.agent.outputs.comment_id }}
     if: >-
       github.repository == 'coryparrry/claude-code-action' &&
       (!github.event.pull_request ||
@@ -42,7 +46,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: agent
-        uses: coryparrry/claude-code-action@28e7ffcc4a2c129bde8585c85354de4ef91ea837
+        uses: coryparrry/claude-code-action@6b725d2a320c4ecca97c605fc8fb641c3a3d133f
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -50,7 +54,10 @@ jobs:
           codex_effort: max
           max_turns: "30"
           track_progress: "true"
-          allowed_tools: "Bash(bun --no-env-file install --frozen-lockfile:*),Bash(bun --no-env-file test:*),Bash(bun --no-env-file run typecheck:*)"
+          append_system_prompt: |
+            Implement the requested change, inspect the diff, commit and push using the scoped Git tools.
+            Do not execute repository code, package installation or tests in this write job.
+            A separate job validates the delivered commit with read-only permissions. Report validation as pending until that job completes.
       - name: Save execution report
         if: ${{ always() && steps.agent.outputs.execution_file != '' }}
         uses: actions/upload-artifact@v4
@@ -59,6 +66,63 @@ jobs:
           path: ${{ steps.agent.outputs.execution_file }}
           if-no-files-found: error
           retention-days: 7
+
+  validate_change:
+    needs: codex
+    if: needs.codex.outputs.head_sha != ''
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.codex.outputs.head_sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun --no-env-file install --frozen-lockfile
+      - run: bun --no-env-file test
+      - run: bun --no-env-file run typecheck
+
+  report_validation:
+    needs: [codex, validate_change]
+    if: always() && needs.codex.outputs.head_sha != '' && needs.codex.outputs.comment_id != ''
+    permissions:
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Append validation to the existing tracking comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+          COMMENT_ID: ${{ needs.codex.outputs.comment_id }}
+          HEAD_SHA: ${{ needs.codex.outputs.head_sha }}
+          VALIDATION_RESULT: ${{ needs.validate_change.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        run: |
+          node --input-type=module <<'NODE'
+          const { API_URL, REPOSITORY, COMMENT_ID, HEAD_SHA, VALIDATION_RESULT, RUN_URL, GH_TOKEN } = process.env;
+          if (!/^\d+$/.test(COMMENT_ID) || !/^[a-f0-9]{40}$/.test(HEAD_SHA)) throw new Error('Invalid delivery metadata');
+          const url = `${API_URL}/repos/${REPOSITORY}/issues/comments/${COMMENT_ID}`;
+          const headers = { Authorization: `Bearer ${GH_TOKEN}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' };
+          const response = await fetch(url, { headers });
+          if (!response.ok) throw new Error(`Comment read failed: ${response.status}`);
+          const comment = await response.json();
+          const marker = `<!-- codex-validation:${HEAD_SHA} -->`;
+          const endMarker = '<!-- /codex-validation -->';
+          const section = `${marker}\nValidation for \`${HEAD_SHA}\`: **${VALIDATION_RESULT}**. [View checks](${RUN_URL}).\n${endMarker}`;
+          const start = comment.body.indexOf(marker);
+          const end = start < 0 ? -1 : comment.body.indexOf(endMarker, start);
+          const body = start >= 0 && end >= 0 ? comment.body.slice(0, start) + section + comment.body.slice(end + endMarker.length) : `${comment.body}\n\n${section}`;
+          if (body !== comment.body) {
+            const update = await fetch(url, { method: 'PATCH', headers, body: JSON.stringify({ body }) });
+            if (!update.ok) throw new Error(`Comment update failed: ${update.status}`);
+          }
+          NODE
 
   codex_review:
     if: >-
@@ -88,7 +152,7 @@ jobs:
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
       - id: agent
-        uses: coryparrry/claude-code-action@28e7ffcc4a2c129bde8585c85354de4ef91ea837
+        uses: coryparrry/claude-code-action@6b725d2a320c4ecca97c605fc8fb641c3a3d133f
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}

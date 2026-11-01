@@ -1,4 +1,5 @@
 import type { Octokits } from "../api/client";
+import { retryGitHubRead } from "../api/retry";
 import { GITHUB_API_URL } from "../api/config";
 import {
   isPullRequestReviewCommentEvent,
@@ -25,6 +26,7 @@ export type ReviewRequest = ReviewLocation & {
   parentId?: number;
   parentBody?: string;
   parentUnavailable?: boolean;
+  attachmentIds?: string[];
 };
 
 /** Preserve the trigger's location and resolve its parent beyond paged PR context. */
@@ -55,11 +57,13 @@ export async function fetchReviewRequest(
   request.parentUnavailable = true;
   try {
     const { owner, repo } = context.repository;
-    const { data: parent } = await octokits.rest.pulls.getReviewComment({
-      owner,
-      repo,
-      comment_id: request.parentId,
-    });
+    const { data: parent } = await retryGitHubRead(() =>
+      octokits.rest.pulls.getReviewComment({
+        owner,
+        repo,
+        comment_id: request.parentId!,
+      }),
+    );
     const expectedPR = `${GITHUB_API_URL.replace(/\/+$/, "")}/repos/${owner}/${repo}/pulls/${context.entityNumber}`;
     if (parent.pull_request_url !== expectedPR) return request;
     const timestamps = [
@@ -87,6 +91,13 @@ export async function fetchReviewRequest(
       context.inputs.excludeCommentsByActor,
     );
     if (safeParents.length) {
+      const moderation = await retryGitHubRead(() =>
+        octokits.graphql<{ node: { isMinimized: boolean } | null }>(
+          "query($id: ID!) { node(id: $id) { ... on PullRequestReviewComment { isMinimized } } }",
+          { id: parent.node_id },
+        ),
+      );
+      if (moderation.node?.isMinimized !== false) return request;
       request.parentBody = parent.body;
       request.parentLocation = {
         path: parent.path,

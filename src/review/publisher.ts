@@ -22,9 +22,11 @@ export type ReviewHistory = {
   findings: Set<string>;
   reviewedHeads: Set<string>;
   context: string;
+  summaries?: { id: number; head: string; body: string }[];
   review?: { id: number; html_url: string; body: string };
 };
 
+/** Retry idempotent review reads on transient GitHub failures. */
 const retryRead = <T>(operation: () => Promise<T>) =>
   retryWithBackoff(operation, {
     initialDelayMs: 250,
@@ -57,12 +59,16 @@ export async function loadReviewHistory(
     (review) =>
       own(review) &&
       review.state === "COMMENTED" &&
+      !!review.commit_id &&
       reviewHead(review.body) === review.commit_id,
   );
+  const active = owned.filter(
+    (review) => !review.body?.startsWith("Superseded by the [current review]("),
+  );
   const reviewedHeads = new Set<string>();
-  for (const review of owned)
+  for (const review of active)
     if (review.commit_id) reviewedHeads.add(review.commit_id);
-  const existing = owned
+  const existing = active
     .filter((review) => review.commit_id === target.head)
     .at(-1);
   const latest = owned.at(-1);
@@ -86,11 +92,77 @@ export async function loadReviewHistory(
   return {
     findings,
     reviewedHeads,
+    summaries: owned.map((review) => ({
+      id: review.id,
+      head: review.commit_id!,
+      body: review.body,
+    })),
     context,
     review: existing
       ? { id: existing.id, html_url: existing.html_url, body: existing.body }
       : undefined,
   };
+}
+
+/** Keep one full current overview while preserving historical reviews and their inline threads. */
+export async function retireReviewSummaries(
+  client: Octokit,
+  target: ReviewTarget,
+  current: { id: number; html_url: string },
+  history: ReviewHistory,
+): Promise<void> {
+  const currentPR = await retryRead(() =>
+    client.rest.pulls.get({
+      owner: target.owner,
+      repo: target.repo,
+      pull_number: target.pull_number,
+    }),
+  );
+  if (
+    currentPR.data.state !== "open" ||
+    currentPR.data.head.sha !== target.head
+  )
+    throw new Error(
+      "The pull request changed or closed before overview cleanup; rerun on its current head.",
+    );
+  for (const previous of history.summaries ?? []) {
+    if (previous.id === current.id) continue;
+    const body = `Superseded by the [current review](${current.html_url}). Historical inline findings remain attached to this review.\n\n<!-- codex-action:review:${previous.head} -->\n<!-- codex-action:inline-review -->`;
+    if (previous.body === body) continue;
+    const currentPR = await retryRead(() =>
+      client.rest.pulls.get({
+        owner: target.owner,
+        repo: target.repo,
+        pull_number: target.pull_number,
+      }),
+    );
+    if (
+      currentPR.data.state !== "open" ||
+      currentPR.data.head.sha !== target.head
+    )
+      throw new Error(
+        "The pull request changed or closed before overview cleanup; rerun on its current head.",
+      );
+    // Updating a known review body is idempotent, unlike creating a new review.
+    await retryWithBackoff(
+      () =>
+        client.rest.pulls.updateReview({
+          owner: target.owner,
+          repo: target.repo,
+          pull_number: target.pull_number,
+          review_id: previous.id,
+          body,
+        }),
+      {
+        initialDelayMs: 250,
+        maxDelayMs: 1000,
+        shouldRetry: (error) => {
+          const status = (error as Error & { status?: number }).status;
+          return status === undefined || status === 429 || status >= 500;
+        },
+      },
+    );
+  }
 }
 
 /** Submit one native summary and one individually anchored comment per finding. */
@@ -101,7 +173,11 @@ export async function publishReview(
 ): Promise<string | undefined> {
   const parsed = reviewSchema.parse(output);
   const history = await loadReviewHistory(client, target);
-  if (history.reviewedHeads.has(target.head)) return history.review?.html_url;
+  if (history.reviewedHeads.has(target.head)) {
+    if (history.review)
+      await retireReviewSummaries(client, target, history.review, history);
+    return history.review?.html_url;
+  }
   const route = {
     owner: target.owner,
     repo: target.repo,
@@ -164,5 +240,6 @@ export async function publishReview(
     body: summary,
     comments,
   });
+  await retireReviewSummaries(client, target, result.data, history);
   return result.data.html_url;
 }

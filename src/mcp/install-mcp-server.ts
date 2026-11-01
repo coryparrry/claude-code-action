@@ -5,6 +5,7 @@ import type { GitHubContext } from "../github/context";
 import { isEntityContext } from "../github/context";
 import { Octokit } from "@octokit/rest";
 import type { AutoDetectedMode } from "../modes/detector";
+import type { ContextImage } from "../github/data/context-images";
 
 type PrepareConfigParams = {
   githubToken: string;
@@ -13,6 +14,7 @@ type PrepareConfigParams = {
   branch: string;
   baseBranch: string;
   branchSourceSha?: string;
+  images?: ContextImage[];
   claudeCommentId?: string;
   allowedTools: string[];
   mode: AutoDetectedMode;
@@ -112,6 +114,18 @@ export async function prepareMcpConfig(
       mcpServers: {},
     };
 
+    if (params.images?.length) {
+      baseMcpConfig.mcpServers.github_context = {
+        command: process.execPath,
+        args: bunServerArgs("src/mcp/github-context-server.ts"),
+        env: {
+          GITHUB_IMAGE_PATHS: JSON.stringify(
+            Object.fromEntries(params.images.map(({ id, path }) => [id, path])),
+          ),
+        },
+      };
+    }
+
     // Include comment server:
     // - Always in tag mode (for updating Codex comments)
     // - Only with explicit tools in agent mode
@@ -132,6 +146,30 @@ export async function prepareMcpConfig(
       };
     }
 
+    const hasGitTools = allowedToolsList.some(
+      (tool) =>
+        tool === "mcp__github_git" || tool.startsWith("mcp__github_git__"),
+    );
+    if (!isAgentMode || hasGitTools) {
+      baseMcpConfig.mcpServers.github_git = {
+        command: process.execPath,
+        args: bunServerArgs("src/mcp/github-git-server.ts"),
+        env: {
+          REPO_DIR: process.env.GITHUB_WORKSPACE || process.cwd(),
+          BRANCH_NAME: branch,
+          ...(process.env.CODEX_GIT_DELIVERY_RECEIPT && {
+            CODEX_GIT_DELIVERY_RECEIPT: process.env.CODEX_GIT_DELIVERY_RECEIPT,
+          }),
+          BASE_BRANCH: baseBranch,
+          GIT_READ_ONLY: String(
+            process.env.CODEX_SANDBOX === "read-only" ||
+              usesApiCommitSigning(context.inputs) ||
+              !!context.inputs.allowedNonWriteUsers,
+          ),
+        },
+      };
+    }
+
     // Include file ops server when commit signing is enabled
     if (usesApiCommitSigning(context.inputs)) {
       baseMcpConfig.mcpServers.github_file_ops = {
@@ -142,6 +180,9 @@ export async function prepareMcpConfig(
           REPO_OWNER: owner,
           REPO_NAME: repo,
           BRANCH_NAME: branch,
+          ...(process.env.CODEX_GIT_DELIVERY_RECEIPT && {
+            CODEX_GIT_DELIVERY_RECEIPT: process.env.CODEX_GIT_DELIVERY_RECEIPT,
+          }),
           BASE_BRANCH: baseBranch,
           ...(branchSourceSha && { BRANCH_SOURCE_SHA: branchSourceSha }),
           REPO_DIR: process.env.GITHUB_WORKSPACE || process.cwd(),
