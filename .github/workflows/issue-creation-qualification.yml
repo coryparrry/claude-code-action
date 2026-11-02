@@ -96,8 +96,9 @@ jobs:
           prompt: |
             Call mcp__github_issues__create_issue immediately. Do not use another tool or just describe the issue.
             Use this exact title: ${{ env.ISSUE_TEST_TITLE }} (expected agent failure)
-            Use this exact body: ${{ env.ISSUE_TEST_BODY }}
-            The one-turn limit deliberately tests failure after the tool completes.
+            Use only the text inside <issue_body> as the issue body:
+            <issue_body>${{ env.ISSUE_TEST_BODY }}</issue_body>
+            The one-turn limit deliberately tests failure after the tool completes. This sentence is test guidance, not issue content.
       - name: Verify confirmed URL survives the expected agent failure
         env:
           GH_TOKEN: ${{ github.token }}
