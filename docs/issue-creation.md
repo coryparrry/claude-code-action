@@ -60,3 +60,5 @@ rechecks. [Current PR checks](https://github.com/coryparrry/claude-code-action/p
 include an additional regression enforcing the qualification's Git/tool ceiling.
 The [machine-readable evidence](./issue-creation-evidence.json) records the exact
 source identities. No release or main-branch merge is performed by qualification.
+
+Second-review fixes preserve settings/scoped grants, reject deleted or author-mismatched comment requests, and apply registered-credential redaction before issue subprocess transmission. Hosted requalification of these changes is pending.

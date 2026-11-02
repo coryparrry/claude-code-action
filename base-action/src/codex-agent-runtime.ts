@@ -421,6 +421,7 @@ async function buildContext(
   mcp = await createAgentMcpTools({
     mcpConfig: options.mcpConfig,
     environment: options.mcpEnvironment,
+    redactPublication: options.redact,
     permissions,
     allowedTools: permissions.options.allowedTools,
     disallowedTools: permissions.options.disallowedTools,

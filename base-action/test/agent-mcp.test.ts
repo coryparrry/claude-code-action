@@ -590,3 +590,31 @@ describe("Agents SDK MCP transport adapter", () => {
     },
   );
 });
+
+test("issue publication redacts after hook replacement and fails closed without a registered redactor", async () => {
+  const fixture = await stdio();
+  // Use the fixture's echo transport under the action-owned publication tool name.
+  const path = fixture.args.at(-1)!;
+  const { readFile } = await import("node:fs/promises");
+  await writeFile(
+    path,
+    (await readFile(path, "utf8")).replaceAll("echo", "create_issue"),
+  );
+  const hidden = "opaque-hook-secret";
+  const result = await connected(
+    { github_issues: fixture },
+    {
+      beforeTool: async () => ({ updatedInput: { value: hidden } }),
+      redactPublication: (text) => text.split(hidden).join("[REDACTED]"),
+    },
+  );
+  const output = await result.invoke("mcp__github_issues__create_issue", {
+    value: "original",
+  });
+  expect(output).toContain("[REDACTED]");
+  expect(output).not.toContain(hidden);
+  const denied = await connected({ github_issues: fixture });
+  await expect(
+    denied.invoke("mcp__github_issues__create_issue", { value: hidden }),
+  ).rejects.toThrow("registered-credential redaction");
+});

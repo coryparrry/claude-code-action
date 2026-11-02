@@ -1,4 +1,5 @@
-import { issueCreationAllowed } from "../../mcp/issue-creation-policy";
+import { issueCreationGrants } from "../../mcp/issue-creation-policy";
+import { resolveCompatibility } from "../../../base-action/src/codex-compat";
 import { usesApiCommitSigning } from "../../github/operations/commit-signing";
 import { checkHumanActor } from "../../github/validation/actor";
 import { createInitialComment } from "../../github/operations/comments/create-initial";
@@ -20,7 +21,6 @@ import { isEntityContext } from "../../github/context";
 import type { GitHubContext } from "../../github/context";
 import type { Octokits } from "../../github/api/client";
 import { GIT_READ_TOOLS, GIT_WRITE_TOOLS } from "../../create-prompt/git-tools";
-import { parseAllowedTools } from "../agent/parse-tools";
 import { fetchReviewRequest } from "../../github/data/review-request";
 import { enrichContextImages } from "../../github/data/context-images";
 
@@ -130,10 +130,14 @@ export async function prepareTagMode({
 
   const userClaudeArgs =
     process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "";
-  const userAllowedTools = parseAllowedTools(
+  const userPermissions = await resolveCompatibility(
     userClaudeArgs,
-    process.env.ALLOWED_TOOLS,
+    process.env.INPUT_SETTINGS || "",
+    '{"mcpServers":{}}',
+    [],
+    { allowedTools: process.env.ALLOWED_TOOLS || undefined },
   );
+  const userAllowedTools = userPermissions.allowedTools ?? [];
   const userAllowedMCPTools = userAllowedTools.filter(
     (tool) => tool === "mcp__github" || tool.startsWith("mcp__github_"),
   );
@@ -150,9 +154,7 @@ export async function prepareTagMode({
     ...GIT_READ_TOOLS,
     "mcp__github_context__view_image",
     "mcp__github_comment__update_codex_comment",
-    ...(issueCreationAllowed(context, "tag", userAllowedTools)
-      ? ["mcp__github_issues__create_issue"]
-      : []),
+    ...issueCreationGrants(context, "tag", userAllowedTools),
     "mcp__github_ci__get_ci_status",
     "mcp__github_ci__get_workflow_run_details",
     "mcp__github_ci__download_job_log",

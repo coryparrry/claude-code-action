@@ -44,6 +44,7 @@ export async function createRepositoryIssue(
     ...parsed,
     title: redactSecrets(parsed.title).trim(),
     body: redactSecrets(parsed.body),
+    labels: parsed.labels?.map((label) => redactSecrets(label)),
   });
   const result = await client.rest.issues.create({
     ...payload,

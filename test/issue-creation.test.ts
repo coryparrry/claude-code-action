@@ -154,6 +154,8 @@ test.each([
         allowedTools: grant ? ["mcp__github_issues__create_issue"] : [],
         mode,
         context: createMockContext({
+          eventAction: "created",
+          payload: { comment: { user: { login: "test-actor" } } } as any,
           inputs: { allowedNonWriteUsers: untrusted ? "reader" : "" },
         }),
       }),
@@ -276,6 +278,7 @@ test("new issue-creation code meets the 85% documentation requirement", async ()
     "src/mcp/issue-creation-policy.ts",
     "src/github/operations/issue-creation-receipts.ts",
     "test/issue-creation.test.ts",
+    "test/issue-creation-grants.test.ts",
     "scripts/qualify-issue-creation.ts",
   ])
     documentation(
@@ -432,4 +435,35 @@ test("issue-only qualification cannot expose or authorize Git and file mutation 
   expect(() =>
     permissions.assertDenied("mcp__github_issues__create_issue"),
   ).not.toThrow();
+});
+
+test.each(["deleted", "edited", "created"])(
+  "comment %s cannot lend the actor's trust to another author",
+  (eventAction) => {
+    const context = createMockContext({
+      eventAction,
+      actor: "maintainer",
+      payload: { comment: { user: { login: "outsider" } } } as any,
+    });
+    expect(issueCreationAllowed(context, "tag", [])).toBe(false);
+    expect(
+      issueCreationAllowed(context, "tag", [
+        "mcp__github_issues__create_issue",
+      ]),
+    ).toBe(false);
+  },
+);
+
+test("only live author-matching comment requests get the default creation tool", () => {
+  const context = createMockContext({
+    eventAction: "created",
+    payload: { comment: { user: { login: "test-actor" } } } as any,
+  });
+  expect(issueCreationAllowed(context, "tag", [])).toBe(true);
+  expect(
+    issueCreationAllowed({ ...context, eventAction: "deleted" }, "tag", ["*"]),
+  ).toBe(false);
+  expect(
+    issueCreationAllowed({ ...context, payload: {} as any }, "tag", []),
+  ).toBe(false);
 });

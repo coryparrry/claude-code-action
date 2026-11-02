@@ -87,14 +87,19 @@ export async function prepareMcpConfig(
     mode,
   } = params;
   try {
-    const allowedToolsList = allowedTools || [];
     const permission = await resolveCompatibility(
       process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "",
-      "",
+      process.env.INPUT_SETTINGS || "",
       '{"mcpServers":{}}',
       [],
-      { permissionMode: process.env.PERMISSION_MODE || undefined },
+      {
+        allowedTools: process.env.ALLOWED_TOOLS || undefined,
+        permissionMode: process.env.PERMISSION_MODE || undefined,
+      },
     );
+    const allowedToolsList = [
+      ...new Set([...(allowedTools || []), ...(permission.allowedTools || [])]),
+    ];
     const planning = ["plan", "readonly", "read-only"].includes(
       permission.permissionMode || "",
     );

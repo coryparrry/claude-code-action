@@ -32,5 +32,6 @@
   "initial_native_review_findings_fixed": 6,
   "issues_setting_preserved": true,
   "local_tests_run": false,
-  "current_pr_checks": "https://github.com/coryparrry/claude-code-action/pull/18/checks"
+  "current_pr_checks": "https://github.com/coryparrry/claude-code-action/pull/18/checks",
+  "status": "Previous live proof superseded by second review fixes; hosted requalification pending"
 }

@@ -463,3 +463,72 @@ describe("runtime parity controls", () => {
     }
   }
 });
+
+test("issue publication masks registered opaque Azure credentials after hooks before the actual POST", async () => {
+  const credential = "opaque-azure-fixture-987654321";
+  delete process.env.OPENAI_API_KEY;
+  process.env.OPENAI_PROVIDER = "azure";
+  process.env.OPENAI_API_VERSION = "2025-03-01-preview";
+  process.env.AZURE_OPENAI_API_KEY = credential;
+  process.env.AZURE_OPENAI_ENDPOINT = "https://fixture.openai.azure.com";
+  await writeFile(join(directory, "reproduction.txt"), credential);
+  const posts: any[] = [];
+  const http = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    /** Capture the real scoped issue server's outgoing REST payload. */
+    async fetch(request) {
+      posts.push(await request.json());
+      return Response.json(
+        {
+          number: 1,
+          title: posts[0].title,
+          html_url: "https://github.com/owner/repo/issues/1",
+        },
+        { status: 201 },
+      );
+    },
+  });
+  const model = new ScriptedModel([
+    call("Read", { file_path: join(directory, "reproduction.txt") }),
+    call("mcp__github_issues__create_issue", {
+      title: `Report ${credential}`,
+      body: `Literal <img alt="Example"> ${credential}`,
+      labels: [credential],
+    }),
+    message("Created"),
+  ]);
+  try {
+    await runCodex(
+      prompt,
+      options(model, {
+        timeoutMs: 10000,
+        mcpConfig: JSON.stringify({
+          mcpServers: {
+            github_issues: {
+              command: process.execPath,
+              args: [
+                join(import.meta.dir, "../../src/mcp/github-issues-server.ts"),
+              ],
+              env: {
+                GITHUB_TOKEN: "fixture-token",
+                REPO_OWNER: "owner",
+                REPO_NAME: "repo",
+                GITHUB_API_URL: String(http.url).replace(/\/$/, ""),
+              },
+            },
+          },
+        }),
+      }),
+    );
+    expect(posts).toHaveLength(1);
+    expect(JSON.stringify(posts)).not.toContain(credential);
+    expect(posts[0]).toMatchObject({
+      title: "Report [REDACTED]",
+      body: 'Literal <img alt="Example"> [REDACTED]',
+      labels: ["[REDACTED]"],
+    });
+  } finally {
+    http.stop(true);
+  }
+});
