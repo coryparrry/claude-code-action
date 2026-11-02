@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: coryparrry/claude-code-action/review-memory@62daf7d83c5282e2344579369f72d496eb6fd923
+      - uses: coryparrry/claude-code-action/review-memory@a6b7ec0bdd4ed98520d40c727bb9be85946f6e0b
         with:
           github_token: ${{ github.token }}
           trusted_actors: "coryparrry"

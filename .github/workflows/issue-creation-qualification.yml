@@ -41,7 +41,7 @@ jobs:
           bun-version: 1.4.2
       - name: Create an issue through the actual command action
         id: creator
-        uses: coryparrry/claude-code-action@62daf7d83c5282e2344579369f72d496eb6fd923
+        uses: coryparrry/claude-code-action@a6b7ec0bdd4ed98520d40c727bb9be85946f6e0b
         with:
           github_token: ${{ github.token }}
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -77,7 +77,7 @@ jobs:
       - name: Exercise expected agent failure after confirmed creation
         id: creator_failure
         continue-on-error: true
-        uses: coryparrry/claude-code-action@62daf7d83c5282e2344579369f72d496eb6fd923
+        uses: coryparrry/claude-code-action@a6b7ec0bdd4ed98520d40c727bb9be85946f6e0b
         with:
           github_token: ${{ github.token }}
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
