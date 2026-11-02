@@ -34,7 +34,7 @@ async function api(path: string, method = "GET", data?: unknown) {
 }
 
 /** Find only this run's issue, including closed records, for assertions and cleanup. */
-async function issues(cleanup = false) {
+async function issues(cleanup = false, expectedBody = body) {
   const urls = [
     process.env.CREATED_ISSUE_URLS,
     process.env.FAILED_CREATED_ISSUE_URLS,
@@ -58,7 +58,7 @@ async function issues(cleanup = false) {
   return selectQualificationIssues(
     [...records.values()],
     title,
-    body,
+    expectedBody,
     urls,
     cleanup,
   );
@@ -141,13 +141,23 @@ if (import.meta.main) {
       "The model must really call the new tool twice",
     );
     assert.equal(report.at(-1).is_error, !success);
-    const matches = await issues();
+    const submitted = JSON.parse(calls[0].input.arguments);
+    assert.equal(submitted.title, title);
+    assert.ok(
+      typeof submitted.body === "string" && submitted.body.startsWith(body),
+    );
+    if (success)
+      assert.deepEqual(submitted, JSON.parse(calls[1].input.arguments));
+    // Failure delivery is independent of model-added explanatory prose. Verify the
+    // stored body against the real tool input; normal creation remains exact.
+    const matches = await issues(false, success ? body : submitted.body);
     assert.equal(
       matches.length,
       1,
       "Identical tool calls must create exactly one actual issue",
     );
     const issue = matches[0];
+    assert.equal(issue.body, submitted.body);
     assert.equal(issue.user.login, "github-actions[bot]");
     assert.ok(
       issue.html_url.startsWith(`https://github.com/${repository}/issues/`),
