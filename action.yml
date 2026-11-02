@@ -257,6 +257,9 @@ inputs:
     default: ""
 
 outputs:
+  created_issue_urls:
+    description: "JSON array of confirmed issue URLs, retained even if the agent later fails"
+    value: ${{ steps.run.outputs.created_issue_urls }}
   comment_type:
     description: "Tracking comment API namespace: issue or review"
     value: ${{ steps.run.outputs.comment_type }}

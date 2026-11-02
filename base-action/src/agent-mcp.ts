@@ -26,6 +26,7 @@ export type AgentMcpOptions = {
   permissions?: AgentPermissions;
   deadline: number;
   signal?: AbortSignal;
+  redactPublication?: (text: string) => string;
   beforeTool?: (event: AgentToolEvent) => Promise<void | AgentToolHookResult>;
   permissionRequest?: (
     event: AgentToolEvent,
@@ -597,6 +598,27 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
               decision = request?.permissionDecision;
             }
             permissions.authorize(eventName, undefined, decision);
+            if (eventName === "mcp__github_issues__create_issue") {
+              if (!options.redactPublication)
+                throw new Error(
+                  "Issue publication requires registered-credential redaction",
+                );
+              // Redact after hook/approval changes and before any subprocess receives input.
+              input = Object.fromEntries(
+                Object.entries(input).map(([key, value]) => [
+                  key,
+                  typeof value === "string"
+                    ? options.redactPublication!(value)
+                    : Array.isArray(value)
+                      ? value.map((item) =>
+                          typeof item === "string"
+                            ? options.redactPublication!(item)
+                            : item,
+                        )
+                      : value,
+                ]),
+              );
+            }
             if (!validate(input))
               throw new Error(
                 `Invalid MCP tool arguments: ${ajv.errorsText(validate.errors)}`,

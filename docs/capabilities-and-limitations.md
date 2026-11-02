@@ -8,6 +8,7 @@ diagnosis, see the [requested changes guide](./requested-changes.md).
 ## What Codex Can Do
 
 - **Respond in a Single Comment**: Codex operates by updating a single initial comment with progress and results
+- **Open Requested Issues**: Trusted command requests can open issues in the current repository and receive their actual URLs; see [issue creation](./issue-creation.md).
 - **Answer Questions**: Analyze code and provide explanations
 - **Implement Code Changes**: Make simple to moderate code changes based on requests
 - **Prepare Pull Requests**: Creates commits on a branch and links back to a prefilled PR creation page

@@ -1,4 +1,8 @@
 #!/usr/bin/env bun
+import {
+  initializeIssueReceipts,
+  readCreatedIssues,
+} from "../github/operations/issue-creation-receipts";
 import { recoverRepositoryLearning } from "../github/data/review-memory-candidate";
 import { snapshotGuidance } from "../review/source-evidence";
 
@@ -127,6 +131,10 @@ async function run() {
   // Track whether we've completed prepare phase, so we can attribute errors correctly
   let prepareCompleted = false;
   try {
+    core.exportVariable(
+      "CODEX_CREATED_ISSUES_RECEIPT",
+      initializeIssueReceipts(),
+    );
     core.exportVariable(
       "CODEX_GIT_DELIVERY_RECEIPT",
       initializeDeliveryReceipt(),
@@ -475,6 +483,14 @@ async function run() {
         core.setOutput("conclusion", "failure");
       }
     }
+
+    const createdIssues = context
+      ? readCreatedIssues(context.repository.owner, context.repository.repo)
+      : [];
+    core.setOutput(
+      "created_issue_urls",
+      JSON.stringify(createdIssues.map((issue) => issue.url)),
+    );
 
     // Update tracking comment
     if (

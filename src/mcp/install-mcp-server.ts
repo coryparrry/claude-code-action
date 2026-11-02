@@ -1,3 +1,4 @@
+import { issueCreationAllowed } from "./issue-creation-policy";
 import { resolveCompatibility } from "../../base-action/src/codex-compat";
 import { usesApiCommitSigning } from "../github/operations/commit-signing";
 import * as core from "@actions/core";
@@ -86,14 +87,19 @@ export async function prepareMcpConfig(
     mode,
   } = params;
   try {
-    const allowedToolsList = allowedTools || [];
     const permission = await resolveCompatibility(
       process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "",
-      "",
+      process.env.INPUT_SETTINGS || "",
       '{"mcpServers":{}}',
       [],
-      { permissionMode: process.env.PERMISSION_MODE || undefined },
+      {
+        allowedTools: process.env.ALLOWED_TOOLS || undefined,
+        permissionMode: process.env.PERMISSION_MODE || undefined,
+      },
     );
+    const allowedToolsList = [
+      ...new Set([...(allowedTools || []), ...(permission.allowedTools || [])]),
+    ];
     const planning = ["plan", "readonly", "read-only"].includes(
       permission.permissionMode || "",
     );
@@ -125,6 +131,31 @@ export async function prepareMcpConfig(
     const baseMcpConfig: { mcpServers: Record<string, unknown> } = {
       mcpServers: {},
     };
+
+    const issueCreationRequested = issueCreationAllowed(
+      context,
+      mode,
+      allowedToolsList,
+    );
+    if (
+      issueCreationRequested &&
+      !planning &&
+      process.env.CODEX_SANDBOX !== "read-only" &&
+      !context?.inputs.allowedNonWriteUsers
+    ) {
+      baseMcpConfig.mcpServers.github_issues = {
+        command: process.execPath,
+        args: bunServerArgs("src/mcp/github-issues-server.ts"),
+        env: {
+          GITHUB_TOKEN: githubToken,
+          REPO_OWNER: owner,
+          REPO_NAME: repo,
+          GITHUB_API_URL,
+          CODEX_CREATED_ISSUES_RECEIPT:
+            process.env.CODEX_CREATED_ISSUES_RECEIPT || "",
+        },
+      };
+    }
 
     if (params.images?.length) {
       baseMcpConfig.mcpServers.github_context = {
