@@ -41,7 +41,7 @@ servers. Inspect GitHub before retrying an uncertain request.
 
 ## GitHub qualification
 
-The installed implementation pin is `a6b7ec0bdd4ed98520d40c727bb9be85946f6e0b`.
+The live issue creation run below used implementation `a6b7ec0bdd4ed98520d40c727bb9be85946f6e0b`.
 
 - [Implementation CI](https://github.com/coryparrry/claude-code-action/actions/runs/41368047400) and [driver CI](https://github.com/coryparrry/claude-code-action/actions/runs/41368603697) passed: **1,598 tests, zero failures, 5,962 assertions across 118 files**. Both typechecks, formatting, isolated production execution and all composite boundaries passed.
 - [Exact-pin live qualification](https://github.com/coryparrry/claude-code-action/actions/runs/41368603724) made two identical calls and created one [issue #30](https://github.com/coryparrry/claude-code-action/issues/30), reused its confirmed URL and preserved the PR head.
