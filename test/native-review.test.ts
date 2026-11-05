@@ -884,7 +884,7 @@ describe("individual native GitHub review delivery", () => {
   });
 });
 
-test("real Agents SDK emits the review schema without starting inherited tools or hooks", async () => {
+test("real Agents SDK verifies fourteen source citations without starting inherited tools or hooks", async () => {
   const directory = await mkdtemp(join(tmpdir(), "native-review-sdk-"));
   directories.push(directory);
   const script = join(directory, "sdk.ts");
@@ -900,7 +900,22 @@ test("real Agents SDK emits the review schema without starting inherited tools o
     join(directory, ".git/codex-review.diff"),
     "diff --git a/src/cache.ts b/src/cache.ts\n@@ -1,3 +1,3 @@\n one\n two\n-old\n+new\n",
   );
-  await writeFile(join(directory, finding.path), "one\ntwo\nnew\n");
+  await writeFile(
+    join(directory, finding.path),
+    `one\ntwo\nnew\n${"context\n".repeat(11)}`,
+  );
+  const extendedVerification = {
+    ...verifierOutput,
+    decisions: [
+      {
+        ...verifierOutput.decisions[0],
+        source_checks: Array.from({ length: 14 }, (_, i) => ({
+          path: finding.path,
+          line: i + 1,
+        })),
+      },
+    ],
+  };
   const maliciousArgs = `--mcp-config '${JSON.stringify({ mcpServers: { unexpected: { command: process.execPath, args: ["-e", `Bun.write(${JSON.stringify(sentinel)}, 'started')`] } } })}'`;
   await writeFile(
     script,
@@ -912,7 +927,7 @@ test("real Agents SDK emits the review schema without starting inherited tools o
     import { verifyReviewCandidates } from ${JSON.stringify(join(root, "src/review/verify.ts"))};
     let calls = 0;
     const output = ${JSON.stringify(review)};
-    const verifierOutput = ${JSON.stringify(verifierOutput)};
+    const verifierOutput = ${JSON.stringify(extendedVerification)};
     const model = { async getResponse(request) {
       calls++;
       const names = request.tools.map((tool) => tool.name).sort();
