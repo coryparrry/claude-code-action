@@ -25,12 +25,12 @@ const HELP = `Codex GitHub Action installer
 Usage: codex-action [install|doctor|repos] [options]
        npm run install-github-app -- [options]
 
-install (default)  Guided repository, secret and workflow setup; opens draft PRs.
+install (default)  Set up the current repository and open a draft workflow PR.
 doctor            Check GitHub login and report setup requirements.
 repos             List up to 100 owned repositories accessible for setup.
 
 Options:
-  --repo OWNER/REPO    Repository to configure; repeat for multiple repositories.
+  --repo OWNER/REPO    Override the current repo; repeat for multiple repositories.
   --key-file PATH     Read OPENAI_API_KEY from an env file or a plain key file.
   --use-env-key       Explicitly use OPENAI_API_KEY from the environment.
   --replace-secret    Replace an existing repository API-key secret.
@@ -48,6 +48,7 @@ Merge the setup PR onto the default branch to enable automatic PR reviews.
 Use ${DEFAULT_TRIGGER_PHRASE} in issues, PR comments or reviews to ask questions or request changes.
 `;
 
+/** Parse the installer's supported commands and flags. */
 function argumentsFor(argv) {
   try {
     const parsed = parseArgs({
@@ -79,6 +80,7 @@ function argumentsFor(argv) {
   }
 }
 
+/** Prompt for a repository when running outside a GitHub checkout. */
 async function chooseRepositories(client, user, terminal) {
   const repositories = (await client.repositories(user.login)).filter(
     (repo) =>
@@ -107,6 +109,7 @@ async function chooseRepositories(client, user, terminal) {
   });
 }
 
+/** Select an API key through an explicit flag or a terminal prompt. */
 async function chooseKey(options, terminal) {
   if (options["key-file"]) return readKeyFile(resolve(options["key-file"]));
   if (options["use-env-key"]) return validateApiKey(process.env.OPENAI_API_KEY);
@@ -140,6 +143,7 @@ async function chooseKey(options, terminal) {
   return validateApiKey(await terminal.secret("OpenAI API key (hidden): "));
 }
 
+/** Plan the requested setup, confirm interactive changes and apply each plan. */
 export async function runCli(
   argv,
   { client = new GitHubClient(), terminal = new Terminal() } = {},
@@ -173,7 +177,7 @@ export async function runCli(
       model: DEFAULT_MODEL,
       authentication: authenticated ? "GitHub CLI" : "missing",
       nextStep: authenticated
-        ? "Run install to choose repositories."
+        ? "Run install from the repository you want to configure."
         : "Run gh auth login --web --scopes repo,workflow.",
     };
     if (!options.json) terminal.write(result.nextStep);
@@ -205,11 +209,15 @@ export async function runCli(
     (!terminal.interactive || options.yes || options.json)
   )
     throw new Error("Specify --repo for noninteractive installation.");
+  const current = options.repo ? undefined : await client.currentRepository();
   const repositories = [
     ...new Set(
       options.repo?.flatMap((value) =>
         value.split(",").map(validateRepository),
-      ) ?? (await chooseRepositories(client, user, terminal)),
+      ) ??
+        (current
+          ? [current]
+          : await chooseRepositories(client, user, terminal)),
     ),
   ];
   let runner = options.runner ?? "ubuntu-latest";

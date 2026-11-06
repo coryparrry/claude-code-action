@@ -12,7 +12,18 @@ per repository, with no additional storage credentials. [Design and limits](docs
 
 ## Quickstart
 
-Use this repository as a GitHub Action in your workflow. No local installer is required.
+When the latest stable release includes `codex-action.tgz`, run this command
+from the GitHub repository you want to connect:
+
+```bash
+npx --yes --allow-remote=all https://github.com/coryparrry/claude-code-action/releases/latest/download/codex-action.tgz install
+```
+
+The installer uses Node.js 20 or later and GitHub CLI. It detects the repository,
+sets up the OpenAI key, and opens a draft setup PR. Merge the PR to enable
+`/codex` and automatic reviews. [Installer guide](docs/installer.md)
+
+### Manual workflow setup
 
 The examples pin source commit `633c206996a8849aedeb77687369e1e7a31e3a37`, which includes verified native reviews, requested-change delivery and bounded repository learning. Existing installations can run the guided installer to update both workflows and enable automatic cross-PR memory. The manual examples below run reviews without the separate memory publisher.
 
@@ -143,8 +154,6 @@ must agree, including when the workflow pins an older action revision. Custom tr
 The action uses the workflow GitHub token. A repository-scoped `github_token` can be supplied when a custom bot or additional permissions are needed. Set `bot_name` to that token's comment author login for sticky comments. Changes pushed with the default workflow token follow GitHub's normal restrictions on triggering other workflows.
 
 For authentication alternatives and custom GitHub Apps, see the [setup guide](docs/setup.md).
-An optional [local installer](docs/installer.md) can propose a workflow PR; it is
-separate from using or releasing the action.
 
 ## Automated prompts
 

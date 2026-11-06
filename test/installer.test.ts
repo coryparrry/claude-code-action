@@ -1101,6 +1101,7 @@ describe("terminal input", () => {
 });
 
 describe("installer interaction guards", () => {
+  /** Capture the interactive setup plan without touching credentials. */
   function interactiveTerminalSpy() {
     const prompts: string[] = [];
     return {
@@ -1123,6 +1124,23 @@ describe("installer interaction guards", () => {
       },
     };
   }
+
+  test("previews the current checkout without opening the repository picker", async () => {
+    const { client, calls } = fakeClient({
+      authenticated: true,
+      user: { login: "alice" },
+    });
+    client.currentRepository = async () => "octo/demo";
+    const { terminal, prompts } = interactiveTerminalSpy();
+    const result = await runCli(["--dry-run"], { client, terminal } as any);
+    expect(result).toMatchObject({
+      dryRun: true,
+      plans: [{ repository: "octo/demo", status: "new" }],
+    });
+    expect(prompts.some((message) => message.includes("octo/demo"))).toBe(true);
+    expect(calls.some(([name]) => name === "repositories")).toBe(false);
+    expect(calls.some(([name]) => name === "setSecret")).toBe(false);
+  });
 
   test("JSON install never prompts for a key even when a terminal is interactive", async () => {
     const { client, calls } = fakeClient({
@@ -1229,7 +1247,7 @@ process.exit(2);
     await withFakeGh(async ({ eventLog, invoke }) => {
       const help = invoke(["--help"]);
       expect(help.status).toBe(0);
-      expect(help.stdout).toContain("Guided repository");
+      expect(help.stdout).toContain("Set up the current repository");
       expect(help.stderr).toBe("");
       expect(await readFile(eventLog, "utf8").catch(() => "")).toBe("");
 
@@ -1242,6 +1260,44 @@ process.exit(2);
       });
     });
   });
+
+  test("runs the standalone tarball with npx outside the action checkout", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "codex-installer-package-"));
+    try {
+      const env = {
+        ...process.env,
+        npm_config_cache: join(directory, "npm-cache"),
+      };
+      const pack = spawnSync(
+        "node",
+        [
+          resolve(import.meta.dir, "../scripts/pack-installer.mjs"),
+          "0.0.0-test",
+          directory,
+        ],
+        { cwd: directory, encoding: "utf8", env },
+      );
+      expect(pack.stderr).toBe("");
+      expect(pack.status).toBe(0);
+      const result = spawnSync(
+        "npx",
+        [
+          "--offline",
+          "--loglevel=error",
+          "--yes",
+          `--package=${join(directory, "codex-action.tgz")}`,
+          "codex-action",
+          "--help",
+        ],
+        { cwd: directory, encoding: "utf8", env },
+      );
+      expect(result.stderr).toBe("");
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("Set up the current repository");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }, 15_000);
 
   test("dry run from an unrelated directory does not read a key file or write to GitHub", async () => {
     await withFakeGh(async ({ eventLog, invoke }) => {

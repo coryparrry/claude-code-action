@@ -100,6 +100,21 @@ export class GitHubClient {
     ]);
   }
 
+  /** Resolve GitHub CLI's selected repo for the checkout, or fall back to the picker. */
+  async currentRepository() {
+    try {
+      const { nameWithOwner, url } = await this.json([
+        "repo",
+        "view",
+        "--json",
+        "nameWithOwner,url",
+      ]);
+      if (new URL(url).origin === "https://github.com") return nameWithOwner;
+    } catch {
+      return undefined;
+    }
+  }
+
   repository(repository) {
     return this.json([
       "repo",

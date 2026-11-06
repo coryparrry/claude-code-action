@@ -11,16 +11,26 @@ The reviewed runtime changes are included in that source pin. See the
 
 ## Guided installation
 
-From the cloned action repository:
+When the latest stable release includes `codex-action.tgz`, run this command
+from the GitHub repository you want to connect. Use Node.js 20 or later and
+GitHub CLI.
 
 ```bash
-npm run install-github-app
+npx --yes --allow-remote=all https://github.com/coryparrry/claude-code-action/releases/latest/download/codex-action.tgz install
 ```
 
-The wizard offers GitHub browser login when needed, lists up to 100 owned
-repositories and also accepts organization or collaborator repositories by
-`owner/repository` name. Select one or several repositories, choose Linux or
-macOS for Xcode tasks, then review the proposed setup before applying it.
+The wizard offers GitHub browser login when needed and uses GitHub CLI's selected
+repository for the current checkout. It shows the target before applying the
+setup. Outside a checkout, the wizard offers a repository picker. Use
+`--repo owner/repository` to select a different target or repeat it for multiple
+repositories. Choose Linux or macOS for Xcode tasks.
+
+The `--allow-remote=all` flag lets npm 12 fetch the GitHub release tarball for
+this command. The tarball contains the installer and has no npm dependencies.
+
+To try a build before release, download and unzip the `codex-action-installer`
+artifact from its CI run. From the repository you want to connect, run
+`npx --yes --package=/path/to/codex-action.tgz codex-action install`.
 
 Existing `OPENAI_API_KEY` repository secrets are reused. For missing secrets, the
 wizard asks whether to use an existing environment variable or `.env.local` key,
@@ -91,7 +101,7 @@ Actions run to the existing GitHub tracking comment. Without a project action,
 the workflow checks the checkout SHA and reports that project checks were
 skipped. A request that pushes no commit has no validation result.
 
-## Run from any directory
+## Run from a source checkout
 
 Link the command once from this checkout:
 
@@ -101,6 +111,14 @@ npm link --ignore-scripts
 
 Then run `codex-action install` in any directory. Without linking, use
 `node /path/to/claude-code-action/scripts/install-github-app.mjs`.
+
+## Package the installer for a release
+
+From the release commit, run `npm run pack:installer -- VERSION OUTPUT_DIRECTORY`
+with the release version without its `v` prefix. Attach the resulting
+`codex-action.tgz` to the GitHub release before publishing. The quickstart URL
+downloads that asset from the latest stable release. For a pinned installer,
+replace `latest/download` with `download/vVERSION` in the command.
 
 ## Preview and automation
 
