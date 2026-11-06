@@ -34,6 +34,7 @@ Options:
   --key-file PATH     Read OPENAI_API_KEY from an env file or a plain key file.
   --use-env-key       Explicitly use OPENAI_API_KEY from the environment.
   --replace-secret    Replace an existing repository API-key secret.
+  --accept-validation-migration  Confirm older inline checks were moved to the trusted action.
   --runner RUNNER     ubuntu-latest (default) or macos-latest for Xcode tasks.
   --model MODEL       OpenAI model (default: ${DEFAULT_MODEL}).
   --actor USER        Trusted trigger user; repeat (default: signed-in user).
@@ -59,6 +60,7 @@ function argumentsFor(argv) {
         "key-file": { type: "string" },
         "use-env-key": { type: "boolean" },
         "replace-secret": { type: "boolean" },
+        "accept-validation-migration": { type: "boolean" },
         runner: { type: "string" },
         model: { type: "string" },
         actor: { type: "string", multiple: true },
@@ -272,18 +274,32 @@ export async function runCli(
     terminal.write(
       `Automatic reviews: trusted users' same-repository, non-draft PRs when opened or updated. Reviews use read-only code access; ${DEFAULT_TRIGGER_PHRASE} requests can implement changes. Both show progress.`,
     );
-    for (const plan of plans)
+    for (const plan of plans) {
       terminal.write(
         `${plan.repository}: ${plan.status} workflow on ${plan.defaultBranch}; OPENAI_API_KEY: ${plan.needsSecret ? (plan.replaceSecret ? "replace" : "create") : "reuse"}\n  Model: ${plan.model}; runner: ${plan.runner}; trusted users: ${plan.actors.join(", ")}`,
       );
+      if (plan.validationMigration)
+        terminal.write(
+          "  This upgrade replaces inline validation with the trusted project action.",
+        );
+    }
     terminal.write(
       "Review the workflow changes in the draft setup PR before merging.",
     );
   }
   if (options["dry-run"]) return emit({ dryRun: true, plans });
+  const migration = plans.some((plan) => plan.validationMigration);
+  if (migration && options.yes && !options["accept-validation-migration"])
+    throw new Error(
+      "Confirm the inline checks were moved to the trusted validation action with --accept-validation-migration.",
+    );
   if (
     !options.yes &&
-    !(await terminal.confirm("Apply this setup to the selected repositories?"))
+    !(await terminal.confirm(
+      migration
+        ? "Confirm the inline checks were moved to the trusted action and apply this setup?"
+        : "Apply this setup to the selected repositories?",
+    ))
   )
     return emit({ cancelled: true });
   if (

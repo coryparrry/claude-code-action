@@ -63,6 +63,7 @@ function evaluateWorkflowCondition(
 /** Build canonical repository metadata for installer API fixtures. */
 function repository(overrides: Record<string, any> = {}) {
   return {
+    id: "R_fixture",
     nameWithOwner: "octo/demo",
     defaultBranchRef: { name: "main" },
     viewerPermission: "ADMIN",
@@ -81,6 +82,7 @@ function fakeClient(overrides: Record<string, any> = {}): {
   const values = {
     repository: repository(),
     workflowScopeMissing: false,
+    hasValidationRecipe: false,
     secrets: [],
     workflow: null,
     memoryWorkflow: null,
@@ -122,10 +124,13 @@ function fakeClient(overrides: Record<string, any> = {}): {
     "createBranch",
     "writeWorkflow",
     "createPullRequest",
+    "closePullRequest",
+    "deleteBranch",
   ]) {
     client[name] = async (...args: any[]) => {
       calls.push([name, ...args]);
-      return name === "createPullRequest" ? values.pullRequestUrl : undefined;
+      if (name === "createPullRequest") return values.pullRequestUrl;
+      if (name === "writeWorkflow") return { commit: { sha: "b".repeat(40) } };
     };
   }
   return { client, calls };
@@ -678,11 +683,12 @@ describe("installation planning and application", () => {
       "pullRequests",
       "head",
       "secrets",
-      "setSecret",
       "createBranch",
       "writeWorkflow",
       "writeWorkflow",
       "createPullRequest",
+      "secrets",
+      "setSecret",
     ]);
     expect(calls.find(([name]) => name === "setSecret")).toEqual([
       "setSecret",
@@ -911,6 +917,121 @@ describe("installation planning and application", () => {
     expect(calls.some(([name]) => name === "setSecret")).toBe(false);
   });
 
+  test("requires the trusted base recipe before replacing inline checks", async () => {
+    const workflow = renderWorkflow(defaultOptions).replace(
+      /  validate_change:\n[\s\S]*?(?=  report_validation:\n)/,
+      "  'validate_change': # Existing checks\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n\n",
+    );
+    const { client, calls } = fakeClient({
+      workflow: { sha: "legacy", content: workflow },
+    });
+    await expect(planInstallation(client, defaultOptions)).rejects.toThrow(
+      "This upgrade would replace existing inline validation",
+    );
+    expect(calls).toContainEqual([
+      "hasValidationRecipe",
+      "octo/demo",
+      "0123456789abcdef0123456789abcdef01234567",
+    ]);
+    client.hasValidationRecipe = async () => true;
+    await expect(
+      planInstallation(client, defaultOptions),
+    ).resolves.toMatchObject({ status: "update", validationMigration: true });
+    client.authenticated = async () => true;
+    client.user = async () => ({ login: "alice" });
+    const terminal = { interactive: false, write() {} };
+    await expect(
+      runCli(["--repo", "octo/demo", "--yes", "--json"], {
+        client,
+        terminal,
+      } as any),
+    ).rejects.toThrow("--accept-validation-migration");
+    expect(
+      calls.some(([name]) => name === "setSecret" || name === "createBranch"),
+    ).toBe(false);
+  });
+
+  test("guards additional inline checks alongside a trusted action but allows runner changes", async () => {
+    const source = renderWorkflow(defaultOptions);
+    const workflow = { sha: "installed", content: source };
+    const { client } = fakeClient({ workflow });
+    await expect(
+      planInstallation(client, { ...defaultOptions, runner: "macos-latest" }),
+    ).resolves.toMatchObject({ validationMigration: false });
+    workflow.content = source.replace(
+      "\n  report_validation:",
+      "      - run: npm run lint\n\n  report_validation:",
+    );
+    await expect(planInstallation(client, defaultOptions)).rejects.toThrow(
+      "would replace existing inline validation",
+    );
+  });
+
+  test.each(["command workflow", "memory workflow", "draft PR", "secret"])(
+    "rolls back a failed setup at the %s stage",
+    async (stage) => {
+      const { client } = fakeClient();
+      const plan = await planInstallation(client, defaultOptions);
+      let branchHead: string | undefined;
+      let draft = false;
+      let secretAttempts = 0;
+      let writes = 0;
+      client.createBranch = async () => {
+        branchHead = plan.baseSha;
+      };
+      client.head = async () => branchHead;
+      client.writeWorkflow = async () => {
+        writes++;
+        if (stage === (writes === 1 ? "command workflow" : "memory workflow"))
+          throw new Error("write rejected");
+        branchHead = String(writes).repeat(40);
+        return { commit: { sha: branchHead } };
+      };
+      client.createPullRequest = async () => {
+        if (stage === "draft PR") throw new Error("PR rejected");
+        draft = true;
+        return "https://github.com/octo/demo/pull/9";
+      };
+      client.closePullRequest = async () => {
+        draft = false;
+      };
+      client.deleteBranch = async (
+        repositoryId: string,
+        _branch: string,
+        expectedHead: string,
+      ) => {
+        expect(repositoryId).toBe("R_fixture");
+        expect(branchHead).toBe(expectedHead);
+        branchHead = undefined;
+      };
+      client.setSecret = async () => {
+        secretAttempts++;
+        throw new Error("secret rejected");
+      };
+      await expect(
+        applyInstallation(client, plan, { apiKey: "sk-test" }),
+      ).rejects.toThrow("The setup branch was removed");
+      expect(branchHead).toBeUndefined();
+      expect(draft).toBe(false);
+      expect(secretAttempts).toBe(stage === "secret" ? 1 : 0);
+    },
+  );
+
+  test("keeps a setup branch that changed before rollback", async () => {
+    const { client, calls } = fakeClient();
+    const plan = await planInstallation(client, defaultOptions);
+    client.head = async () => "c".repeat(40);
+    client.writeWorkflow = async () => {
+      throw new Error("write rejected");
+    };
+    await expect(
+      applyInstallation(client, plan, { apiKey: "sk-test" }),
+    ).rejects.toThrow("Cleanup could not be confirmed");
+    expect(
+      calls.some(([name]) => name === "setSecret" || name === "deleteBranch"),
+    ).toBe(false);
+  });
+
   test("reports failed writes without exposing command output or the API key", async () => {
     const { client } = fakeClient();
     client.writeWorkflow = async () => {
@@ -965,6 +1086,42 @@ describe("installation planning and application", () => {
 });
 
 describe("GitHub CLI adapter", () => {
+  test("requires the expected commit when deleting a setup ref", async () => {
+    const requests: any[] = [];
+    const client = new GitHubClient({
+      run: (args: string[], { input }: { input?: string }) => {
+        requests.push({ args, input: JSON.parse(input!) });
+        return {
+          status: 0,
+          stdout: JSON.stringify({ data: { updateRefs: {} } }),
+        };
+      },
+    } as any);
+    await client.deleteBranch(
+      "R_fixture",
+      "codex/install-github-action-test",
+      "a".repeat(40),
+    );
+    expect(requests).toEqual([
+      expect.objectContaining({
+        args: ["api", "graphql", "--method", "POST", "--input", "-"],
+        input: expect.objectContaining({
+          variables: {
+            input: {
+              repositoryId: "R_fixture",
+              refUpdates: [
+                {
+                  name: "refs/heads/codex/install-github-action-test",
+                  beforeOid: "a".repeat(40),
+                  afterOid: "0".repeat(40),
+                },
+              ],
+            },
+          },
+        }),
+      }),
+    ]);
+  });
   test("sends secret material as stdin, never as an argument", async () => {
     const invocations: any[] = [];
     const client = new GitHubClient({
@@ -1019,10 +1176,12 @@ describe("GitHub CLI adapter", () => {
 });
 
 describe("terminal input", () => {
+  /** Record terminal mode and output as each synthetic key prompt is written. */
   function fakeSecretTerminal(initialRaw = false) {
     const input = new EventEmitter();
     const writes: string[] = [];
     const rawModes: boolean[] = [];
+    const promptModes: boolean[] = [];
     Object.assign(input, {
       isTTY: true,
       isRaw: initialRaw,
@@ -1035,17 +1194,22 @@ describe("terminal input", () => {
     });
     const output = {
       isTTY: true,
-      write: (value: string) => writes.push(String(value)),
+      write: (value: string) => {
+        if (value.startsWith("OpenAI API key"))
+          promptModes.push((input as any).isRaw);
+        return writes.push(String(value));
+      },
     };
     const terminal = new Terminal({
       input: input as any,
       output: output as any,
     });
-    return { input, writes, rawModes, terminal };
+    return { input, writes, rawModes, promptModes, terminal };
   }
 
   test("masks typed API-key characters and returns the value only after Enter", async () => {
-    const { input, writes, rawModes, terminal } = fakeSecretTerminal();
+    const { input, writes, rawModes, promptModes, terminal } =
+      fakeSecretTerminal();
     const pending = terminal.secret("OpenAI API key: ");
     input.emit("keypress", "s", { name: "s" });
     input.emit("keypress", "k", { name: "k" });
@@ -1055,6 +1219,7 @@ describe("terminal input", () => {
     expect(writes.join("")).toContain("***");
     expect(writes.join("")).not.toContain("sk-");
     expect(rawModes).toEqual([true, false]);
+    expect(promptModes).toEqual([true]);
   });
 
   test("Ctrl-C cancels masked key entry and restores terminal mode", async () => {
@@ -1332,7 +1497,7 @@ if (args[0] === 'api' && args.includes('--method') && args.includes('POST')) {
   if (args[1].includes('/pulls')) return json({ html_url: 'https://github.com/octo/demo/pull/9' });
   return json({ ok: true });
 }
-if (args[0] === 'api' && args.includes('--method') && args.includes('PUT')) return json({ ok: true });
+if (args[0] === 'api' && args.includes('--method') && args.includes('PUT')) return json({ commit: { sha: 'b'.repeat(40) } });
 if (args[0] === 'secret' && args[1] === 'set') process.exit(0);
 process.stderr.write('Unexpected fake gh request');
 process.exit(2);

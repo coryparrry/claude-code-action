@@ -1,5 +1,7 @@
 export const WORKFLOW_PATH = ".github/workflows/codex.yml";
 export const MEMORY_WORKFLOW_PATH = ".github/workflows/codex-memory.yml";
+export const VALIDATION_ACTION_DIR = ".github/actions/codex-validate";
+export const TRUSTED_VALIDATION_ACTION = `./.git/codex-validation/${VALIDATION_ACTION_DIR}`;
 export const MANAGED_MARKER = "# Managed by the Codex GitHub Action installer.";
 export const DEFAULT_ACTION_REF =
   "coryparrry/claude-code-action@633c206996a8849aedeb77687369e1e7a31e3a37";
@@ -139,7 +141,7 @@ ${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_t
         with:
           ref: \${{ github.event.pull_request.base.sha || github.workflow_sha }}
           path: .git/codex-validation
-          sparse-checkout: .github/actions/codex-validate
+          sparse-checkout: ${VALIDATION_ACTION_DIR}
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - name: Verify delivered commit
@@ -150,7 +152,7 @@ ${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_t
         run: |
           test "$(git rev-parse HEAD)" = "$HEAD_SHA"
           echo "Checked out delivered commit $HEAD_SHA"
-          recipe=.github/actions/codex-validate/action.yml
+          recipe=${VALIDATION_ACTION_DIR}/action.yml
           entry=$(git -C .git/codex-validation ls-tree HEAD -- "$recipe")
           case "\${entry%% *}" in
             100644|100755)
@@ -168,7 +170,7 @@ ${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_t
           esac
       - name: Run project validation
         if: steps.verify.outputs.configured == 'true'
-        uses: ./.git/codex-validation/.github/actions/codex-validate
+        uses: ${TRUSTED_VALIDATION_ACTION}
 
   report_validation:
     needs: [codex, validate_change]

@@ -77,6 +77,7 @@ function installerFixture() {
     ) => {
       writes.push({ repository, ref, path, content });
       files.set(key(repository, ref, path), { sha: "workflow-sha", content });
+      return { commit: { sha: "b".repeat(40) } };
     },
     createPullRequest: async (repository: string) =>
       `https://github.com/${repository}/pull/1`,

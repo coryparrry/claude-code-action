@@ -129,9 +129,9 @@ test("repository validation executes without write credentials or model secrets"
     ),
   );
   expect(projectAction.runs.steps[1].run.trim().split("\n")).toEqual([
-    "bun --no-env-file install --frozen-lockfile",
+    "bun --no-env-file install --frozen-lockfile --ignore-scripts",
     "bun --no-env-file test",
-    "bun --no-env-file run typecheck",
+    "bun --no-env-file ./node_modules/typescript/bin/tsc --noEmit",
   ]);
   const report = workflow.jobs.report_validation;
   expect(report.needs).toEqual(["codex", "validate_change"]);

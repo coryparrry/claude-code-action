@@ -1,5 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { WORKFLOW_PATH, DEFAULT_ACTION_REF } from "./workflow.mjs";
+import {
+  WORKFLOW_PATH,
+  DEFAULT_ACTION_REF,
+  VALIDATION_ACTION_DIR,
+} from "./workflow.mjs";
 
 function runGh(args, { input, inherit = false } = {}) {
   const result = spawnSync("gh", args, {
@@ -140,7 +144,7 @@ export class GitHubClient {
       "view",
       repository,
       "--json",
-      "nameWithOwner,defaultBranchRef,viewerPermission,isArchived,url",
+      "id,nameWithOwner,defaultBranchRef,viewerPermission,isArchived,url",
     ]);
   }
 
@@ -194,6 +198,28 @@ export class GitHubClient {
     };
   }
 
+  /** Check the pinned Git tree so symlinks cannot satisfy the migration guard. */
+  async hasValidationRecipe(repository, ref) {
+    const [owner, name] = repository.split("/");
+    const response = await this.json([
+      "api",
+      "graphql",
+      "-f",
+      "query=query($owner:String!,$name:String!,$expression:String!){repository(owner:$owner,name:$name){object(expression:$expression){... on Tree {entries{name mode}}}}}",
+      "-f",
+      `owner=${owner}`,
+      "-f",
+      `name=${name}`,
+      "-f",
+      `expression=${ref}:${VALIDATION_ACTION_DIR}`,
+    ]);
+    const entries = response.data?.repository?.object?.entries;
+    return !!entries?.some(
+      ({ name, mode }) =>
+        name === "action.yml" && [33188, 33261].includes(mode),
+    );
+  }
+
   pullRequests(repository, base) {
     return this.json([
       "pr",
@@ -238,6 +264,33 @@ export class GitHubClient {
       ref: `refs/heads/${branch}`,
       sha,
     });
+  }
+
+  /** Atomically remove an installer ref only at the last commit it wrote. */
+  async deleteBranch(repositoryId, branch, expectedHead) {
+    const response = await this.api("graphql", "POST", {
+      query:
+        "mutation($input:UpdateRefsInput!){updateRefs(input:$input){clientMutationId}}",
+      variables: {
+        input: {
+          repositoryId,
+          refUpdates: [
+            {
+              name: `refs/heads/${branch}`,
+              beforeOid: expectedHead,
+              afterOid: "0".repeat(40),
+            },
+          ],
+        },
+      },
+    });
+    if (!response.data?.updateRefs)
+      throw new Error("GitHub did not confirm branch cleanup.");
+  }
+
+  /** Close the draft created by this setup attempt. */
+  closePullRequest(url) {
+    return this.execute(["pr", "close", url]);
   }
 
   /** Write only the installer-selected workflow path on the setup branch. */

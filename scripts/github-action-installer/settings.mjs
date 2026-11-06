@@ -1,10 +1,34 @@
 import { DEFAULT_MODEL } from "./workflow.mjs";
 
+/** Read a top-level job from the installer-generated workflow format. */
+function managedJob(content, job) {
+  return content
+    .split(
+      new RegExp(
+        `^  (?:${job}|"${job}"|'${job}'):[ \\t]*(?:#[^\\r\\n]*)?\\r?$`,
+        "m",
+      ),
+    )[1]
+    ?.split(/^  (?:[\w-]+|"[\w-]+"|'[\w-]+'):[ \t]*(?:#[^\r\n]*)?\r?$/m, 1)[0];
+}
+
+/** Ignore runner overrides when comparing the installed and proposed validation jobs. */
+function validationJob(content) {
+  return managedJob(content, "validate_change")
+    ?.replace(/\r\n/g, "\n")
+    .replace(/^    runs-on: .*\n/m, "")
+    .trim();
+}
+
+/** Detect old or customized validation that the generated job would replace. */
+export function needsValidationMigration(content = "", proposed) {
+  const installed = validationJob(content);
+  return !!installed && installed !== validationJob(proposed);
+}
+
 /** Read only the generated options in one managed job. */
 function jobSettings(content, job) {
-  const command = content
-    .split(new RegExp(`^  ${job}:\\r?$`, "m"))[1]
-    ?.split(/^  [\w-]+:\r?$/m, 1)[0];
+  const command = managedJob(content, job);
   if (!command) return;
   const actor = command.match(
     /^ {6}\(github\.actor == '([\w-]+)'\) &&\r?$/m,

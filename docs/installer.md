@@ -84,20 +84,32 @@ Add a composite action at `.github/actions/codex-validate/action.yml` in the
 target repository. Define the setup and checks for that project in the action.
 The workflow loads the recipe from the PR's base commit or the workflow commit
 for issue and comment events. Its commands run from the delivered checkout.
-Merge changes to the recipe before a later delivery can use them.
-For a project with an npm lockfile, for example:
+Merge changes to the recipe before a later delivery can use them. Put verifier
+scripts beside `action.yml` and invoke them through `GITHUB_ACTION_PATH`. The
+following example checks a file in the delivered checkout from a trusted script.
 
 ```yaml
 name: Validate Codex change
-description: Install locked dependencies and run project tests.
+description: Verify the delivered project files.
 runs:
   using: composite
   steps:
     - shell: bash
-      run: |
-        npm ci
-        npm test
+      run: node "$GITHUB_ACTION_PATH/verify.mjs"
 ```
+
+Save `verify.mjs` next to `action.yml` and adapt the assertion to your project.
+
+```js
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+assert.match(readFileSync("README.md", "utf8"), /^# \S/m);
+```
+
+Commands such as `npm test` delegate to scripts in the delivered checkout.
+Changes to those scripts, tests, or dependencies can affect the result. Keep
+checks that must stay fixed in the trusted action directory.
 
 The reporting job adds the result, the exact commit SHA and a link to the
 Actions run to the existing GitHub tracking comment. Without a project action,
@@ -156,8 +168,11 @@ include completed `results`, so an earlier repository's setup is still visible.
   `--model`, or `--actor`. If the workflow was edited and its settings are
   ambiguous, the installer asks for the affected options explicitly.
 - Rerun the installer and merge its update PR to add validation and reporting
-  to an existing managed workflow. Move any custom checks embedded in an older
-  workflow to the repository's composite action before merging the update.
+  to an existing managed workflow. If an older workflow runs validation inline,
+  move its checks to `.github/actions/codex-validate/action.yml` on the default
+  branch before running the upgrade. The installer checks that file before
+  proposing a replacement and asks you to confirm the checks were moved.
+  For unattended upgrades, confirm with `--accept-validation-migration`.
 - Matching open setup PRs are reused after checking that they contain only the
   installer workflow. PRs with different settings or extra changes are rejected.
 - Only workflows bearing the installer marker can be updated. An existing
@@ -168,9 +183,10 @@ include completed `results`, so an earlier repository's setup is still visible.
   wizard offers to refresh it before writing a secret or setup branch. In
   automation, run `gh auth refresh --hostname github.com --scopes workflow`
   beforehand or provide a token with workflow access.
-- If setup fails after uploading a secret or creating a branch, those completed
-  steps remain. Inspect the named branch before retrying. Rerunning reuses existing
-  secrets and matching open PRs; it never removes another branch or PR.
+- The installer writes both workflows and opens a draft before uploading a new
+  key. If a setup step fails, it removes the draft and branch it created while
+  the branch still matches its last write. If GitHub rejects cleanup or the
+  branch has changed, the installer reports the branch to inspect before retrying.
 - Repository or organization Actions policies must permit this action and its
   requested workflow permissions. The installer does not change those policies.
 
