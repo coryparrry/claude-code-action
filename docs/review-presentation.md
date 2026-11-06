@@ -33,10 +33,11 @@ patch, including renamed files and deleted lines. The publisher never moves an
 issue to unrelated code. A finding without a commentable location fails before
 submission with an explicit diagnostic; it does not become an aggregate list or
 silently disappear. Binary-only diffs cannot support line comments. A review
-with no findings submits just the summary.
+with no new verified findings succeeds without posting. The workflow reports
+the result in its logs and retains the inspection artifacts.
 
-Same-head reruns return the completed review URL. New reviewed heads get a new
-commit-specific review. Follow-ups receive the full latest bot-owned summary
+Same-head reruns return the completed review URL when a review was posted.
+A new head gets a commit-specific review only if it has new verified findings. Follow-ups receive the full latest bot-owned summary
 and its individual finding comments as untrusted reference data, rechecking
 findings that still apply. Duplicate IDs within one result are removed.
 

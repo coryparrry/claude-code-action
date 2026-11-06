@@ -419,6 +419,8 @@ async function run() {
           );
         core.setOutput("review_url", url);
         core.info(`Review published: ${url}`);
+      } else {
+        core.info("No new verified findings. No GitHub review was posted.");
       }
     }
     if (result.structuredOutput !== undefined) {

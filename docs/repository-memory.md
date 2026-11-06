@@ -20,7 +20,9 @@ Unmerged notes stay pending. PR closure publishes only the exact merged head and
 retires superseded pending notes only once the merged head is immutable. Other pending notes remain hidden and age out under the bounded retention limit. Fresh reconciliation handles a merge
 that races with review completion.
 
-A sanitized proposal is saved atomically in hidden native-review metadata. Recovery metadata is omitted from model prompts. Same-head retries recover it without another model call, so a failed artifact upload does not discard the learning. Pending notes are retained when a PR closes unmerged and can publish if it later reopens and merges.
+When a native review is posted, its sanitized proposal is saved atomically in
+hidden review metadata. Runs with no new verified findings leave no review
+metadata to publish. Recovery metadata is omitted from model prompts. Same-head retries recover it without another model call, so a failed artifact upload does not discard the learning. Pending notes are retained when a PR closes unmerged and can publish if it later reopens and merges.
 
 Read-only retrieval confirms up to eight distinct pending PR merge states, recovering missed close events such as GitHub-token merges. Duplicate facts are removed before filling the prompt budget.
 

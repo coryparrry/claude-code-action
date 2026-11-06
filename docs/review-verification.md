@@ -54,9 +54,10 @@ both. A successful model pass is not a passing CI run or merge approval.
 ## Cache and call reuse
 
 A review with no candidate findings skips the verifier and produces no verifier
-report. Its overview states that no independent verification was needed; this is
-not proof that the patch is defect-free. Existing findings stay in their original
-threads. Verified reviews on the same head are reused without another model run.
+report. If no new verified findings remain after deduplication, the run succeeds
+without a GitHub review or review URL. The run logs and artifacts retain the
+inspection result. Existing findings stay in their original threads. Published
+reviews on the same head are reused without another model run.
 
 SDK calls use a stable, hashed repository-and-phase cache key across commits and
 reruns. The runtime keeps provider-default retention for frequent tool loops rather than

@@ -201,7 +201,7 @@ export async function retireReviewSummaries(
   }
 }
 
-/** Submit one native summary and one individually anchored comment per finding. */
+/** Publish verified reviews only when they add an individually anchored finding. */
 export async function publishReview(
   client: Octokit,
   target: ReviewTarget,
@@ -239,6 +239,10 @@ export async function publishReview(
       return true;
     }),
   };
+  if (verified && !review.findings.length) {
+    await requireCurrentHead();
+    return undefined;
+  }
   const bounded = (body: string) => {
     if (Buffer.byteLength(body, "utf8") > MAX_REVIEW_COMMENT_BYTES)
       throw new Error(
@@ -247,9 +251,8 @@ export async function publishReview(
     return body;
   };
   if (verified && review.findings.length !== parsed.findings.length) {
-    review.summary = review.findings.length
-      ? `${review.findings.length} new defects confirmed by independent inspection.`
-      : "No new confirmed defects; prior findings remain in their existing threads.";
+    const count = review.findings.length;
+    review.summary = `${count} new defect${count === 1 ? "" : "s"} confirmed by independent inspection.`;
   }
   const summary = bounded(
     renderRepositoryLearning(learning, {
