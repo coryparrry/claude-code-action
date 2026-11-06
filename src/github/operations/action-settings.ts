@@ -28,16 +28,12 @@ export async function resolveActionSettings(
     const physicalWorkspace = await realpath(workspace);
     path = repositoryPath(physicalWorkspace, file);
     if (path === undefined) {
-      const physicalFile = await realpath(file);
-      path = repositoryPath(physicalWorkspace, physicalFile);
-      if (path === undefined) {
-        // An external alias may pass through a PR symlink on its way outside.
-        if (physicalFile !== file)
-          throw new Error(
-            "Settings outside the PR workspace require a direct file path",
-          );
-        return (await readFile(file, "utf8")) + "\n";
-      }
+      // External aliases can traverse a PR symlink and change which file is read.
+      if ((await realpath(file)) !== file)
+        throw new Error(
+          "Settings outside the PR workspace require a direct file path",
+        );
+      return (await readFile(file, "utf8")) + "\n";
     }
   }
 

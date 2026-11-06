@@ -315,25 +315,31 @@ test.each(["pull_request", "issue_comment"] as const)(
   },
 );
 
-test("an external settings alias cannot traverse a PR symlink to choose another external file", async () => {
-  const root = await realpath(
-    await mkdtemp(join(tmpdir(), "issue-settings-alias-")),
-  );
-  directories.push(root);
-  const workspace = join(root, "workspace");
-  await mkdir(workspace);
-  process.env.GITHUB_WORKSPACE = workspace;
-  const external = join(root, "external.json");
-  const alias = join(root, "workflow-alias.json");
-  const fromPR = join(workspace, "settings.json");
-  await writeFile(external, '{"permissions":{"allow":["*"]}}');
-  await symlink(fromPR, alias);
-  await symlink(external, fromPR);
-  await expect(
-    resolveActionSettings(
-      createMockContext({ eventName: "pull_request", isPR: true }),
-      {} as any,
-      alias,
-    ),
-  ).rejects.toThrow("require a direct file path");
-});
+test.each(["external", "workspace"])(
+  "a PR symlink cannot redirect an external settings alias to another %s file",
+  async (destination) => {
+    const root = await realpath(
+      await mkdtemp(join(tmpdir(), "issue-settings-alias-")),
+    );
+    directories.push(root);
+    const workspace = join(root, "workspace");
+    await mkdir(workspace);
+    process.env.GITHUB_WORKSPACE = workspace;
+    const redirected = join(
+      destination === "workspace" ? workspace : root,
+      "different-settings.json",
+    );
+    const alias = join(root, "workflow-alias.json");
+    const fromPR = join(workspace, "settings.json");
+    await writeFile(redirected, '{"permissions":{"allow":["*"]}}');
+    await symlink(fromPR, alias);
+    await symlink(redirected, fromPR);
+    await expect(
+      resolveActionSettings(
+        createMockContext({ eventName: "pull_request", isPR: true }),
+        {} as any,
+        alias,
+      ),
+    ).rejects.toThrow("require a direct file path");
+  },
+);
