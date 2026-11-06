@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { WORKFLOW_PATH, DEFAULT_ACTION_REF } from "./workflow.mjs";
+import {
+  WORKFLOW_PATH,
+  DEFAULT_ACTION_REF,
+  VALIDATION_ACTION_DIR,
+  SETUP_TITLE,
+  setupCommitMessage,
+} from "./workflow.mjs";
 
 function runGh(args, { input, inherit = false } = {}) {
   const result = spawnSync("gh", args, {
@@ -21,6 +27,7 @@ export class GitHubClient {
     this.run = run;
   }
 
+  /** Run GitHub CLI without exposing diagnostics, classifying failures for read-back. */
   async execute(args, options = {}) {
     let result;
     try {
@@ -35,18 +42,24 @@ export class GitHubClient {
       const error = new Error(
         "GitHub request failed. Check your login, repository access and network connection.",
       );
-      error.notFound = /HTTP 404|Not Found/i.test(result.stderr ?? "");
+      error.notFound = /\bHTTP 404\b/i.test(result.stderr ?? "");
+      // A transport failure or a server error may arrive after GitHub committed the write.
+      error.uncertain = !/\bHTTP 4(?!08)\d\d\b/i.test(result.stderr ?? "");
       throw error;
     }
     return result.stdout ?? "";
   }
 
+  /** Parse structured output, marking incomplete receipts as uncertain. */
   async json(args, options) {
     const output = await this.execute(args, options);
     try {
       return JSON.parse(output);
     } catch {
-      throw new Error("GitHub CLI returned an invalid response.");
+      throw Object.assign(
+        new Error("GitHub CLI returned an invalid response."),
+        { uncertain: true },
+      );
     }
   }
 
@@ -88,6 +101,25 @@ export class GitHubClient {
     return this.api("user");
   }
 
+  /** Check classic OAuth scopes without exposing the credential or response. */
+  async workflowScopeMissing() {
+    const response = await this.execute(["api", "user", "--include"]);
+    const headers = response.split(/\r?\n\r?\n/, 1)[0];
+    const scopes = headers.match(/^x-oauth-scopes:[ \t]*([^\r\n]*)/im)?.[1];
+    return (
+      !!scopes?.trim() &&
+      !scopes.split(",").some((scope) => scope.trim() === "workflow")
+    );
+  }
+
+  /** Request the workflow scope for the current GitHub CLI login. */
+  refreshWorkflowScope() {
+    return this.execute(
+      ["auth", "refresh", "--hostname", "github.com", "--scopes", "workflow"],
+      { inherit: true },
+    );
+  }
+
   repositories(login) {
     return this.json([
       "repo",
@@ -100,13 +132,28 @@ export class GitHubClient {
     ]);
   }
 
+  /** Resolve GitHub CLI's selected repo for the checkout, or fall back to the picker. */
+  async currentRepository() {
+    try {
+      const { nameWithOwner, url } = await this.json([
+        "repo",
+        "view",
+        "--json",
+        "nameWithOwner,url",
+      ]);
+      if (new URL(url).origin === "https://github.com") return nameWithOwner;
+    } catch {
+      return undefined;
+    }
+  }
+
   repository(repository) {
     return this.json([
       "repo",
       "view",
       repository,
       "--json",
-      "nameWithOwner,defaultBranchRef,viewerPermission,isArchived,url",
+      "id,nameWithOwner,defaultBranchRef,viewerPermission,isArchived,url",
     ]);
   }
 
@@ -160,6 +207,28 @@ export class GitHubClient {
     };
   }
 
+  /** Check the pinned Git tree so symlinks cannot satisfy the migration guard. */
+  async hasValidationRecipe(repository, ref) {
+    const [owner, name] = repository.split("/");
+    const response = await this.json([
+      "api",
+      "graphql",
+      "-f",
+      "query=query($owner:String!,$name:String!,$expression:String!){repository(owner:$owner,name:$name){object(expression:$expression){... on Tree {entries{name mode}}}}}",
+      "-f",
+      `owner=${owner}`,
+      "-f",
+      `name=${name}`,
+      "-f",
+      `expression=${ref}:${VALIDATION_ACTION_DIR}`,
+    ]);
+    const entries = response.data?.repository?.object?.entries;
+    return !!entries?.some(
+      ({ name, mode }) =>
+        name === "action.yml" && [33188, 33261].includes(mode),
+    );
+  }
+
   pullRequests(repository, base) {
     return this.json([
       "pr",
@@ -190,6 +259,28 @@ export class GitHubClient {
     return response.object.sha;
   }
 
+  /** Read the commit behind a setup ref after an uncertain workflow write. */
+  commit(repository, sha) {
+    return this.api(`repos/${repository}/commits/${sha}`);
+  }
+
+  /** Look up the exact open setup PR for one repository, ref, and base. */
+  async setupPullRequest(repository, base, branch) {
+    const [owner] = repository.split("/");
+    const query = new URLSearchParams({
+      state: "open",
+      head: `${owner}:${branch}`,
+      base,
+    });
+    const pulls = await this.api(`repos/${repository}/pulls?${query}`);
+    return pulls.find(
+      (pull) =>
+        pull.head?.repo?.full_name === repository &&
+        pull.head.ref === branch &&
+        pull.base?.ref === base,
+    );
+  }
+
   async setSecret(repository, apiKey) {
     await this.execute(
       ["secret", "set", "OPENAI_API_KEY", "--repo", repository],
@@ -206,10 +297,48 @@ export class GitHubClient {
     });
   }
 
+  /** Atomically remove an installer ref only at the last commit it wrote. */
+  async deleteBranch(repositoryId, branch, expectedHead) {
+    const response = await this.api("graphql", "POST", {
+      query:
+        "mutation($input:UpdateRefsInput!){updateRefs(input:$input){clientMutationId}}",
+      variables: {
+        input: {
+          repositoryId,
+          refUpdates: [
+            {
+              name: `refs/heads/${branch}`,
+              beforeOid: expectedHead,
+              afterOid: "0".repeat(40),
+            },
+          ],
+        },
+      },
+    });
+    if (!response.data?.updateRefs)
+      throw new Error("GitHub did not confirm branch cleanup.");
+  }
+
+  /** Read the recorded setup PR even if its draft, head or base has changed. */
+  pullRequest(url) {
+    return this.json([
+      "pr",
+      "view",
+      url,
+      "--json",
+      "state,isDraft,headRefName,headRefOid,baseRefName,isCrossRepository",
+    ]);
+  }
+
+  /** Close the draft created by this setup attempt. */
+  closePullRequest(url) {
+    return this.execute(["pr", "close", url]);
+  }
+
   /** Write only the installer-selected workflow path on the setup branch. */
   writeWorkflow(repository, branch, content, sha, path = WORKFLOW_PATH) {
     return this.api(`repos/${repository}/contents/${path}`, "PUT", {
-      message: "chore(ci): install Codex GitHub Action",
+      message: setupCommitMessage(branch, path),
       content: Buffer.from(content).toString("base64"),
       branch,
       ...(sha ? { sha } : {}),
@@ -217,14 +346,13 @@ export class GitHubClient {
   }
 
   /** Open the reviewed workflow-pair setup as a draft pull request. */
-  async createPullRequest(repository, branch, base) {
-    const response = await this.api(`repos/${repository}/pulls`, "POST", {
-      title: "chore(ci): install Codex GitHub Action",
+  createPullRequest(repository, branch, base) {
+    return this.api(`repos/${repository}/pulls`, "POST", {
+      title: SETUP_TITLE,
       head: branch,
       base,
       draft: true,
       body: "## Summary\nAutomatically review trusted users' same-repository, non-draft pull requests when opened, updated, reopened or marked ready. Use `/codex` in issue titles/bodies, comments or reviews to ask questions and request implementations. Review and command jobs show progress and use the selected OpenAI model. A separate trusted maintenance workflow provisions and updates repository memory without a model call.\n\n| Mechanism | What changes |\n|---|---|\n| Automatic reviews | Post feedback with read-only code access; newer runs cancel older reviews for the same PR. |\n| Requested tasks | Answer questions or implement changes with write access when a trusted user asks. |\n| Repository memory | Automatically stage learnings, publish exact merged revisions and provision an isolated memory branch. |\n\n## Design decisions\n- **Trusted events.** Review and command triggers are restricted to the selected GitHub users; automatic reviews exclude drafts and fork PRs.\n- **Action revision.** The workflow pins the reviewed action commit.\n\n## Setup\nThe installer configures `OPENAI_API_KEY` or reuses the existing secret. Merge onto the default branch to enable automatic reviews, then try `/codex Summarise this issue. Do not change any files.` Automatic reviews call the selected model on qualifying PR events.\n\n## Verification\nGenerated by the guided installer. Check actual event delivery and task execution in this repository after merging.",
     });
-    return response.html_url;
   }
 }

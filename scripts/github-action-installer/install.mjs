@@ -1,8 +1,21 @@
 import { randomBytes } from "node:crypto";
 import {
+  createSetupBranch,
+  createSetupPullRequest,
+  rollbackSetup,
+  uploadSetupSecret,
+  writeSetupWorkflow,
+} from "./reconcile.mjs";
+import {
+  assertNoRemovedChecks,
+  needsValidationMigration,
+  selectInstallationSettings,
+} from "./settings.mjs";
+import {
   MANAGED_MARKER,
   WORKFLOW_PATH,
   MEMORY_WORKFLOW_PATH,
+  VALIDATION_ACTION_DIR,
   renderMemoryWorkflow,
   renderWorkflow,
   validateRepository,
@@ -22,7 +35,7 @@ async function installationRepository(client, repository) {
     throw new Error(
       "Create the repository's default branch before installing.",
     );
-  return { repository, defaultBranch };
+  return { repository, defaultBranch, repositoryId: metadata.id };
 }
 
 /** Reuse only matching installer PRs containing the two managed workflow paths. */
@@ -66,36 +79,62 @@ async function pendingInstallation(client, plan) {
   return undefined;
 }
 
+/** Require the installer marker before replacing an existing workflow. */
+function assertManagedWorkflow(current, path) {
+  if (current && !current.content.startsWith(MANAGED_MARKER))
+    throw new Error(
+      `An existing ${path} is not managed by this installer. It will not be overwritten.`,
+    );
+}
+
+/** Bind an update to a base that contains any required validation migration. */
+async function setupBase(client, plan, existing) {
+  const baseSha = await client.head(plan.repository, plan.defaultBranch);
+  if (!/^[a-f0-9]{40}$/i.test(baseSha))
+    throw new Error("GitHub did not return a valid default-branch commit.");
+  const validationMigration = needsValidationMigration(existing, plan.workflow);
+  if (
+    validationMigration &&
+    !(await client.hasValidationRecipe(plan.repository, baseSha))
+  ) {
+    throw new Error(
+      `This upgrade would replace existing inline validation. Move its checks to ${VALIDATION_ACTION_DIR}/action.yml on ${plan.defaultBranch}, then rerun the installer.`,
+    );
+  }
+  return { baseSha, validationMigration };
+}
+
 /** Plan both managed workflows without overwriting user-owned files. */
-export async function planInstallation(
-  client,
-  { repository, actors, runner, model, replaceSecret = false },
-) {
-  const resolved = await installationRepository(client, repository);
-  repository = resolved.repository;
-  const defaultBranch = resolved.defaultBranch;
-  const workflow = renderWorkflow({ repository, actors, runner, model });
-  const memoryWorkflow = renderMemoryWorkflow({ repository, actors });
+export async function planInstallation(client, options) {
+  const { repository, defaultBranch, repositoryId } =
+    await installationRepository(client, options.repository);
+  const { replaceSecret = false } = options;
   const existing = await client.workflow(repository, defaultBranch);
   const memoryExisting = await client.workflow(
     repository,
     defaultBranch,
     MEMORY_WORKFLOW_PATH,
   );
+  assertManagedWorkflow(existing, WORKFLOW_PATH);
+  assertManagedWorkflow(memoryExisting, MEMORY_WORKFLOW_PATH);
+  const existingContent = existing?.content;
+  const memoryContent = memoryExisting?.content;
+  const settings = await selectInstallationSettings(
+    existingContent,
+    memoryContent,
+    options,
+  );
+  const workflow = renderWorkflow({ repository, ...settings });
+  const memoryWorkflow = renderMemoryWorkflow({
+    repository,
+    actors: settings.actors,
+  });
+  assertNoRemovedChecks(existingContent, workflow, WORKFLOW_PATH);
+  assertNoRemovedChecks(memoryContent, memoryWorkflow, MEMORY_WORKFLOW_PATH);
   const installed = [
-    { path: WORKFLOW_PATH, current: existing, content: workflow },
-    {
-      path: MEMORY_WORKFLOW_PATH,
-      current: memoryExisting,
-      content: memoryWorkflow,
-    },
+    { current: existing, content: workflow },
+    { current: memoryExisting, content: memoryWorkflow },
   ];
-  for (const { path, current } of installed) {
-    if (current && !current.content.startsWith(MANAGED_MARKER))
-      throw new Error(
-        `An existing ${path} is not managed by this installer. It will not be overwritten.`,
-      );
-  }
   await client.verifyActionRevision();
   const secrets = await client.secrets(repository);
   const needsSecret =
@@ -104,9 +143,8 @@ export async function planInstallation(
   const plan = {
     repository,
     defaultBranch,
-    actors,
-    runner,
-    model,
+    repositoryId,
+    ...settings,
     workflow,
     workflowSha: existing?.sha,
     memoryWorkflow,
@@ -124,11 +162,25 @@ export async function planInstallation(
   if (plan.status === "configured") return plan;
 
   const pending = await pendingInstallation(client, plan);
-  if (pending) return pending;
-  const baseSha = await client.head(repository, defaultBranch);
-  if (!/^[a-f0-9]{40}$/i.test(baseSha))
-    throw new Error("GitHub did not return a valid default-branch commit.");
-  return { ...plan, baseSha };
+  const base = await setupBase(client, plan, existingContent);
+  return { ...(pending ?? plan), ...base };
+}
+
+/** Reuse a secret another installer or admin configured during setup. */
+async function needsSecretWrite(client, plan) {
+  return (
+    plan.needsSecret &&
+    (plan.replaceSecret ||
+      !(await client.secrets(plan.repository)).some(
+        (secret) => secret.name === "OPENAI_API_KEY",
+      ))
+  );
+}
+
+/** Validate key availability before creating any setup state. */
+function assertKey(apiKey) {
+  if (typeof apiKey !== "string" || !apiKey.trim())
+    throw new Error("An OpenAI API key is required for this repository.");
 }
 
 /** Apply the reviewed workflow pair and existing API-key setup in each repository. */
@@ -139,59 +191,74 @@ export async function applyInstallation(
 ) {
   const branch =
     branchName ??
-    `codex/install-github-action-${randomBytes(4).toString("hex")}`;
+    `codex/install-github-action-${randomBytes(16).toString("hex")}`;
   if (!/^codex\/install-github-action-[A-Za-z0-9-]+$/.test(branch))
     throw new Error(
       "Use an installer branch with the codex/install-github-action- prefix.",
     );
-  if (plan.needsSecret) {
-    // The review/key prompts may stay open while another admin configures a key.
-    const existing =
-      !plan.replaceSecret &&
-      (await client.secrets(plan.repository)).some(
-        (secret) => secret.name === "OPENAI_API_KEY",
-      );
-    if (!existing) {
-      if (typeof apiKey !== "string" || !apiKey.trim())
-        throw new Error("An OpenAI API key is required for this repository.");
-      await client.setSecret(plan.repository, apiKey);
-    }
-  }
-  if (["configured", "pending"].includes(plan.status))
+  const writeSecret = await needsSecretWrite(client, plan);
+  if (writeSecret) assertKey(apiKey);
+  if (["configured", "pending"].includes(plan.status)) {
+    if (writeSecret) await uploadSetupSecret(client, plan, apiKey);
     return {
       repository: plan.repository,
       status: plan.status,
       pullRequestUrl: plan.pullRequestUrl,
     };
+  }
 
   let step = "creating the setup branch";
+  let branchHead;
+  let pullRequestUrl;
   try {
-    await client.createBranch(plan.repository, branch, plan.baseSha);
+    branchHead = await createSetupBranch(client, plan, branch);
     step = "writing the workflow";
-    await client.writeWorkflow(
+    branchHead = await writeSetupWorkflow(
+      client,
       plan.repository,
       branch,
-      plan.workflow,
-      plan.workflowSha,
+      branchHead,
+      { path: WORKFLOW_PATH, content: plan.workflow, sha: plan.workflowSha },
     );
     step = "writing the memory maintenance workflow";
-    await client.writeWorkflow(
+    branchHead = await writeSetupWorkflow(
+      client,
       plan.repository,
       branch,
-      plan.memoryWorkflow,
-      plan.memoryWorkflowSha,
-      MEMORY_WORKFLOW_PATH,
+      branchHead,
+      {
+        path: MEMORY_WORKFLOW_PATH,
+        content: plan.memoryWorkflow,
+        sha: plan.memoryWorkflowSha,
+      },
     );
     step = "opening the setup PR";
-    const pullRequestUrl = await client.createPullRequest(
-      plan.repository,
+    pullRequestUrl = await createSetupPullRequest(
+      client,
+      plan,
       branch,
-      plan.defaultBranch,
+      branchHead,
     );
+    step = "uploading the repository secret";
+    if (writeSecret) await uploadSetupSecret(client, plan, apiKey);
     return { repository: plan.repository, status: "created", pullRequestUrl };
-  } catch {
-    throw new Error(
-      `Installation stopped while ${step}. Check branch ${branch} in ${plan.repository}; rerunning reuses matching open setup PRs and existing secrets.`,
-    );
+  } catch (error) {
+    const failure = `Installation stopped while ${step}.`;
+    if (error.unconfirmed)
+      throw new Error(
+        `${failure} GitHub could not confirm the write. Check branch ${branch} in ${plan.repository} and retry after GitHub is reachable.`,
+      );
+    if (!branchHead)
+      throw new Error(
+        `${failure} Check whether ${branch} already exists and try again.`,
+      );
+    try {
+      await rollbackSetup(client, plan, branch, branchHead, pullRequestUrl);
+    } catch {
+      throw new Error(
+        `${failure} Cleanup could not be confirmed. Check branch ${branch} in ${plan.repository}.`,
+      );
+    }
+    throw new Error(`${failure} The setup branch was removed.`);
   }
 }

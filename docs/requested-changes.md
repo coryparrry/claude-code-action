@@ -69,8 +69,9 @@ Pending or absent checks do not establish a passing result.
 Repository package installation and tests execute repository-controlled code. Run them
 in a separate job with `contents: read`, checkout `persist-credentials: false`, and no
 model key or write token. Do not grant these commands to the write-capable agent.
-The repository's Codex workflow implements this separation and appends the actual
-validation result to the existing tracking comment.
+The guided installer configures this separation for fresh installs and managed
+updates. Add your project's validation action to run its checks and report the
+result in the existing tracking comment. See the [installer guide](./installer.md#validate-changes-delivered-by-codex).
 
 The action exposes `head_sha`, recorded by this invocation’s successful push and confirmed against the remote branch through
 GitHub, and `comment_id` for reporting. Validate that

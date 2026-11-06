@@ -1,0 +1,13 @@
+name: Validate a delivered Codex change
+description: Install locked dependencies and run the action's tests and typecheck.
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: 1.4.2
+    - shell: bash
+      run: |
+        bun --no-env-file install --frozen-lockfile --ignore-scripts
+        bun --no-env-file test
+        bun --no-env-file ./node_modules/typescript/bin/tsc --noEmit

@@ -44,14 +44,13 @@ export class Terminal {
     return answer ? /^y(es)?$/i.test(answer) : defaultYes;
   }
 
+  /** Read a key only after the terminal has disabled input echo. */
   secret(question) {
     if (!this.interactive)
       throw new Error("Use --key-file or --use-env-key outside a terminal.");
-    this.output.write(question);
     emitKeypressEvents(this.input);
     const wasRaw = !!this.input.isRaw;
     this.input.setRawMode(true);
-    this.input.resume();
     return new Promise((resolve, reject) => {
       let value = "";
       const done = (error) => {
@@ -89,6 +88,8 @@ export class Terminal {
       };
       this.input.on("keypress", onKey);
       this.input.once("end", onEnd);
+      this.output.write(question);
+      this.input.resume();
     });
   }
 }

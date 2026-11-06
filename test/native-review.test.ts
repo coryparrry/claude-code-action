@@ -967,6 +967,7 @@ test.each([
   "invalid-output",
   "verifier-failure",
   "verifier-invalid",
+  "no-candidates",
   "all-rejected",
   "remembered",
   "memory-unavailable",
@@ -990,6 +991,12 @@ test.each([
             ]
           : undefined,
     });
+    const candidateOutput =
+      scenario === "no-candidates"
+        ? { ...review, findings: [] }
+        : scenario === "invalid-output"
+          ? {}
+          : review;
     const event = join(directory, "event.json");
     const output = join(directory, "output.txt");
     const preload = join(directory, "preload.ts");
@@ -1045,7 +1052,7 @@ test.each([
       if (verification && ${JSON.stringify(scenario)} === "verifier-failure") throw new Error("Verifier unavailable");
       const verifiedOutput = ${JSON.stringify(verifierOutput)};
       if (${JSON.stringify(scenario)} === "all-rejected") verifiedOutput.decisions[0].verdict = "rejected";
-      return { conclusion: "success", executionFile, numTurns: 1, readEvidence: [{ path: ".git/codex-review.diff", startLine: 1, endLine: 99 }, { path: ${JSON.stringify(finding.path)}, startLine: 1, endLine: 99 }], structuredOutput: verification ? (${JSON.stringify(scenario)} === "verifier-invalid" ? {} : verifiedOutput) : ${JSON.stringify(scenario === "invalid-output" ? {} : review)} };
+      return { conclusion: "success", executionFile, numTurns: 1, readEvidence: [{ path: ".git/codex-review.diff", startLine: 1, endLine: 99 }, { path: ${JSON.stringify(finding.path)}, startLine: 1, endLine: 99 }], structuredOutput: verification ? (${JSON.stringify(scenario)} === "verifier-invalid" ? {} : verifiedOutput) : ${JSON.stringify(candidateOutput)} };
     } }));
   `,
     );
@@ -1085,9 +1092,10 @@ test.each([
         new Response(child.stdout).text(),
         new Response(child.stderr).text(),
       ]);
-      const succeeded = ["success", "all-rejected", "remembered"].includes(
+      const silent = ["no-candidates", "all-rejected", "remembered"].includes(
         scenario,
       );
+      const succeeded = scenario === "success" || silent;
       expect({
         code,
         diagnostics: code === (succeeded ? 0 : 1) ? "" : stdout + stderr,
@@ -1096,8 +1104,20 @@ test.each([
       expect(
         [...actionOutput.matchAll(/conclusion<<[^\n]+\n([^\n]+)/g)].at(-1)?.[1],
       ).toBe(succeeded ? "success" : "failure");
-      expect(actionOutput.includes("review_url<<")).toBe(succeeded);
-      if (["invalid-output", "memory-unavailable"].includes(scenario)) {
+      expect(actionOutput.includes("review_url<<")).toBe(
+        scenario === "success",
+      );
+      if (silent) {
+        expect(stdout).toContain(
+          "No new verified findings. No GitHub review was posted.",
+        );
+        expect(actionOutput).toContain("execution_file<<");
+      }
+      if (
+        ["no-candidates", "invalid-output", "memory-unavailable"].includes(
+          scenario,
+        )
+      ) {
         expect(actionOutput).not.toContain("verification_file<<");
         expect(
           await readFile(
@@ -1112,15 +1132,14 @@ test.each([
           (request) =>
             request.method === "POST" && request.path.endsWith("/reviews"),
         ),
-      ).toHaveLength(
-        ["success", "rejected", "all-rejected", "remembered"].includes(scenario)
-          ? 1
-          : 0,
-      );
-      if (["all-rejected", "remembered"].includes(scenario))
-        expect(api.reviews[0].body).toContain("No new defects confirmed");
-      if (scenario === "all-rejected") expect(api.comments).toHaveLength(0);
-      if (scenario === "remembered") expect(api.comments).toHaveLength(1);
+      ).toHaveLength(["success", "rejected"].includes(scenario) ? 1 : 0);
+      if (silent) {
+        expect(api.reviews).toHaveLength(0);
+        expect(api.comments).toHaveLength(scenario === "remembered" ? 1 : 0);
+        expect(api.requests.some((request) => request.method === "PUT")).toBe(
+          false,
+        );
+      }
       if (scenario === "success")
         expect(api.comments[0].body).toContain("Confidence: high");
       expect(
@@ -1144,30 +1163,42 @@ test("verified follow-up reviews remember prior findings instead of posting new 
   expect(api.reviews[0].body).toContain("codex-action:verified-review:v1");
   const next = "f".repeat(40);
   api.setHead(next);
-  await publishReview(api.client, { ...target, head: next }, review, true);
-  expect(api.reviews).toHaveLength(2);
+  const originalBody = api.reviews[0].body;
+  await expect(
+    publishReview(api.client, { ...target, head: next }, review, true),
+  ).resolves.toBeUndefined();
+  expect(api.reviews).toHaveLength(1);
   expect(api.comments).toHaveLength(1);
-  expect(api.reviews[1].body).toContain(
-    "prior findings remain in their existing threads",
-  );
-  expect(api.reviews[0].body).toContain("Superseded by");
+  expect(api.reviews[0].body).toBe(originalBody);
 });
 
-test("old unverified same-head reviews are upgraded once without reflagging their findings", async () => {
+test("old unverified same-head reviews are replaced only when there is a new finding", async () => {
   const api = fixture();
   await publishReview(api.client, target, review);
   expect(
     (await loadReviewHistory(api.client, target, true)).reviewedHeads.has(head),
   ).toBe(false);
-  await publishReview(api.client, target, review, true);
-  expect(api.reviews).toHaveLength(2);
+  await expect(
+    publishReview(api.client, target, review, true),
+  ).resolves.toBeUndefined();
+  expect(api.reviews).toHaveLength(1);
   expect(api.comments).toHaveLength(1);
+  const withNewFinding = {
+    ...review,
+    findings: [
+      finding,
+      { ...finding, title: "Invalidate the expired cache entry" },
+    ],
+  };
+  await publishReview(api.client, target, withNewFinding, true);
+  expect(api.reviews).toHaveLength(2);
+  expect(api.comments).toHaveLength(2);
   expect(
     (await loadReviewHistory(api.client, target, true)).reviewedHeads.has(head),
   ).toBe(true);
-  await publishReview(api.client, target, review, true);
+  await publishReview(api.client, target, withNewFinding, true);
   expect(api.reviews).toHaveLength(2);
-  expect(api.comments).toHaveLength(1);
+  expect(api.comments).toHaveLength(2);
 });
 
 test("legacy review-body findings remain remembered after their overview is retired", async () => {
@@ -1185,8 +1216,19 @@ test("legacy review-body findings remain remembered after their overview is reti
       },
     ],
   });
-  await publishReview(api.client, target, review, true);
-  expect(api.comments).toHaveLength(0);
+  await publishReview(
+    api.client,
+    target,
+    {
+      ...review,
+      findings: [
+        finding,
+        { ...finding, title: "Invalidate the expired cache entry" },
+      ],
+    },
+    true,
+  );
+  expect(api.comments).toHaveLength(1);
   expect(api.reviews[0].body).toContain("codex-action:memory:v1:");
   expect(
     (await loadReviewHistory(api.client, target, true)).knownFindings?.has(
@@ -1196,7 +1238,7 @@ test("legacy review-body findings remain remembered after their overview is reti
   const next = "d".repeat(40);
   api.setHead(next);
   await publishReview(api.client, { ...target, head: next }, review, true);
-  expect(api.comments).toHaveLength(0);
+  expect(api.comments).toHaveLength(1);
   expect(
     (
       await loadReviewHistory(api.client, { ...target, head: next }, true)
@@ -1225,13 +1267,7 @@ test("native review publication atomically retains learning for a same-head retr
     paths: ["src/account.ts"],
     note: "Cache keys include the account ID.",
   };
-  await publishReview(
-    api.client,
-    target,
-    { ...review, findings: [] },
-    true,
-    learning,
-  );
+  await publishReview(api.client, target, review, true, learning);
   const history = await loadReviewHistory(api.client, target, true);
   expect(
     recoverRepositoryLearning(history.review!.body, {

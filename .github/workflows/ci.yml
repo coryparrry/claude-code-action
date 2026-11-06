@@ -26,6 +26,16 @@ jobs:
       - name: Run tests
         run: bun --no-env-file test
 
+      - name: Package installer preview
+        run: npm run pack:installer -- 0.0.0-preview "$RUNNER_TEMP"
+
+      - name: Upload installer preview
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: codex-action-installer
+          path: ${{ runner.temp }}/codex-action.tgz
+          if-no-files-found: error
+
   prettier:
     runs-on: ubuntu-latest
     steps:

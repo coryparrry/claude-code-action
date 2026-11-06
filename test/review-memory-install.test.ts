@@ -7,6 +7,7 @@ import {
 } from "../scripts/github-action-installer/install.mjs";
 import {
   MEMORY_WORKFLOW_PATH,
+  SETUP_TITLE,
   WORKFLOW_PATH,
   renderMemoryWorkflow,
   renderWorkflow,
@@ -66,7 +67,8 @@ function installerFixture() {
     verifyActionRevision: async () => {},
     secrets: async () => [{ name: "OPENAI_API_KEY" }],
     pullRequests: async () => [],
-    head: async () => "a".repeat(40),
+    head: async (_repository: string, branch: string) =>
+      branch === "main" ? "a".repeat(40) : undefined,
     createBranch: async () => {},
     writeWorkflow: async (
       repository: string,
@@ -77,9 +79,29 @@ function installerFixture() {
     ) => {
       writes.push({ repository, ref, path, content });
       files.set(key(repository, ref, path), { sha: "workflow-sha", content });
+      const memory = path === MEMORY_WORKFLOW_PATH;
+      return {
+        commit: {
+          sha: (memory ? "c" : "b").repeat(40),
+          parents: [{ sha: (memory ? "b" : "a").repeat(40) }],
+        },
+      };
     },
-    createPullRequest: async (repository: string) =>
-      `https://github.com/${repository}/pull/1`,
+    createPullRequest: async (
+      repository: string,
+      branch: string,
+      base: string,
+    ) => ({
+      title: SETUP_TITLE,
+      draft: true,
+      html_url: `https://github.com/${repository}/pull/1`,
+      head: {
+        ref: branch,
+        sha: "c".repeat(40),
+        repo: { full_name: repository },
+      },
+      base: { ref: base },
+    }),
   };
   return { client, files, writes, key };
 }

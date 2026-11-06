@@ -7,6 +7,7 @@
   },
   "scripts": {
     "install-github-app": "node scripts/install-github-app.mjs",
+    "pack:installer": "node scripts/pack-installer.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "install-hooks": "bun run scripts/install-hooks.sh",

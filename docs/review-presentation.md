@@ -33,10 +33,11 @@ patch, including renamed files and deleted lines. The publisher never moves an
 issue to unrelated code. A finding without a commentable location fails before
 submission with an explicit diagnostic; it does not become an aggregate list or
 silently disappear. Binary-only diffs cannot support line comments. A review
-with no findings submits just the summary.
+with no new verified findings succeeds without posting. The workflow reports
+the result in its logs and retains the inspection artifacts.
 
-Same-head reruns return the completed review URL. New reviewed heads get a new
-commit-specific review. Follow-ups receive the full latest bot-owned summary
+Same-head reruns return the completed review URL when a review was posted.
+A new head gets a commit-specific review only if it has new verified findings. Follow-ups receive the full latest bot-owned summary
 and its individual finding comments as untrusted reference data, rechecking
 findings that still apply. Duplicate IDs within one result are removed.
 
@@ -52,7 +53,7 @@ no approval, request-changes or merge capability. Use the action conclusion and
 `review_url` output to verify delivery.
 
 ```yaml
-- uses: coryparrry/claude-code-action@07d0a94badb76002d5e143806b32f96e0a9d2c6d
+- uses: coryparrry/claude-code-action@523e10f03742c9f390e3f16e521aea21b7f08333
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
     review_mode: "true"

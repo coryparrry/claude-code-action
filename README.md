@@ -4,7 +4,7 @@ A fork of [Anthropic's Claude Code Action](https://github.com/anthropics/claude-
 
 This is an independent adaptation, not an official OpenAI or Anthropic release. The upstream MIT copyright and license notices are retained in [LICENSE](LICENSE).
 
-Automatic reviews keep GitHub’s native review layout: a walkthrough-led summary with grouped changes, an optional flow diagram and expandable review details, plus inline comments only for new defects confirmed with high confidence by a separate verification pass. PR history provides durable memory so open and resolved findings are not posted again. See [verification and memory](docs/review-verification.md). See [review presentation](docs/review-presentation.md) for the format and named-bot setup.
+Automatic reviews post only when a separate verifier confirms a new finding. Published reviews use GitHub’s native layout: a walkthrough-led summary with grouped changes, an optional flow diagram and expandable review details, plus inline comments only for new defects confirmed with high confidence by a separate verification pass. PR history provides durable memory so open and resolved findings are not posted again. See [verification and memory](docs/review-verification.md). See [review presentation](docs/review-presentation.md) for the format and named-bot setup.
 
 Cross-PR repository learning is available through the [guided installer](docs/installer.md).
 It installs both workflows and automatically provisions an isolated memory branch
@@ -12,9 +12,20 @@ per repository, with no additional storage credentials. [Design and limits](docs
 
 ## Quickstart
 
-Use this repository as a GitHub Action in your workflow. No local installer is required.
+When the latest stable release includes `codex-action.tgz`, run this command
+from the GitHub repository you want to connect:
 
-The examples pin source commit `633c206996a8849aedeb77687369e1e7a31e3a37`, which includes verified native reviews, requested-change delivery and bounded repository learning. Existing installations can run the guided installer to update both workflows and enable automatic cross-PR memory. The manual examples below run reviews without the separate memory publisher.
+```bash
+npx --yes --allow-remote=all https://github.com/coryparrry/claude-code-action/releases/latest/download/codex-action.tgz install
+```
+
+The installer uses Node.js 20 or later and GitHub CLI. It detects the repository,
+sets up the OpenAI key, and opens a draft setup PR. Merge the PR to enable
+`/codex` and automatic reviews. [Installer guide](docs/installer.md)
+
+### Manual workflow setup
+
+The examples pin source commit `523e10f03742c9f390e3f16e521aea21b7f08333`, which includes verified native reviews, requested-change delivery and bounded repository learning. Existing installations can run the guided installer to update both workflows and enable automatic cross-PR memory. The manual examples below run reviews without the separate memory publisher.
 
 Add your existing OpenAI key as the repository Actions secret `OPENAI_API_KEY`. Save this workflow as `.github/workflows/codex.yml` in the repository where you want the action to operate. Replace `your-github-username` with the trusted user's login. The workflow must be on the default branch for `issue_comment` events.
 
@@ -60,7 +71,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: agent
-        uses: coryparrry/claude-code-action@633c206996a8849aedeb77687369e1e7a31e3a37
+        uses: coryparrry/claude-code-action@523e10f03742c9f390e3f16e521aea21b7f08333
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -106,7 +117,7 @@ jobs:
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
       - id: agent
-        uses: coryparrry/claude-code-action@633c206996a8849aedeb77687369e1e7a31e3a37
+        uses: coryparrry/claude-code-action@523e10f03742c9f390e3f16e521aea21b7f08333
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -143,8 +154,6 @@ must agree, including when the workflow pins an older action revision. Custom tr
 The action uses the workflow GitHub token. A repository-scoped `github_token` can be supplied when a custom bot or additional permissions are needed. Set `bot_name` to that token's comment author login for sticky comments. Changes pushed with the default workflow token follow GitHub's normal restrictions on triggering other workflows.
 
 For authentication alternatives and custom GitHub Apps, see the [setup guide](docs/setup.md).
-An optional [local installer](docs/installer.md) can propose a workflow PR; it is
-separate from using or releasing the action.
 
 ## Automated prompts
 
@@ -161,7 +170,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
-      - uses: coryparrry/claude-code-action@633c206996a8849aedeb77687369e1e7a31e3a37
+      - uses: coryparrry/claude-code-action@523e10f03742c9f390e3f16e521aea21b7f08333
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           codex_sandbox: read-only

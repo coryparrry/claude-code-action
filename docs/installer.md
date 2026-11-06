@@ -11,16 +11,26 @@ The reviewed runtime changes are included in that source pin. See the
 
 ## Guided installation
 
-From the cloned action repository:
+When the latest stable release includes `codex-action.tgz`, run this command
+from the GitHub repository you want to connect. Use Node.js 20 or later and
+GitHub CLI.
 
 ```bash
-npm run install-github-app
+npx --yes --allow-remote=all https://github.com/coryparrry/claude-code-action/releases/latest/download/codex-action.tgz install
 ```
 
-The wizard offers GitHub browser login when needed, lists up to 100 owned
-repositories and also accepts organization or collaborator repositories by
-`owner/repository` name. Select one or several repositories, choose Linux or
-macOS for Xcode tasks, then review the proposed setup before applying it.
+The wizard offers GitHub browser login when needed and uses GitHub CLI's selected
+repository for the current checkout. It shows the target before applying the
+setup. Outside a checkout, the wizard offers a repository picker. Use
+`--repo owner/repository` to select a different target or repeat it for multiple
+repositories. Choose Linux or macOS for Xcode tasks.
+
+The `--allow-remote=all` flag lets npm 12 fetch the GitHub release tarball for
+this command. The tarball contains the installer and has no npm dependencies.
+
+To try a build before release, download and unzip the `codex-action-installer`
+artifact from its CI run. From the repository you want to connect, run
+`npx --yes --package=/path/to/codex-action.tgz codex-action install`.
 
 Existing `OPENAI_API_KEY` repository secrets are reused. For missing secrets, the
 wizard asks whether to use an existing environment variable or `.env.local` key,
@@ -31,7 +41,7 @@ command arguments, workflow files or installer output.
 The installer verifies its pinned publisher action, then opens draft setup PRs containing both the review and memory-maintenance workflows. Review and merge them onto each repository's
 default branch. The generated workflow then automatically reviews same-repository,
 non-draft PRs opened, updated, reopened or marked ready by a selected trusted user.
-Each reviewed head gets one native GitHub review summary with a separate coloured inline comment for each finding at its actual diff location. Each issue has its own discussion and expandable evidence; there is no combined findings comment. Same-head reruns reuse the submitted review. They run with read/search tools and do not produce a task-completion tracking comment. The action publishes only validated output against the reviewed head; invalid output, a changed PR or rejected delivery fails the action. See [review presentation](./review-presentation.md) for details and named-bot authentication.
+A reviewed head gets a native GitHub review only when it has a new verified finding. That review includes a summary and a separate coloured inline comment for each finding at its actual diff location. Each issue has its own discussion and expandable evidence; there is no combined findings comment. Same-head reruns reuse the submitted review. They run with read/search tools and do not produce a task-completion tracking comment. The action publishes only validated output against the reviewed head; invalid output, a changed PR or rejected delivery fails the action. See [review presentation](./review-presentation.md) for details and named-bot authentication.
 A preparation step saves the PR's base-to-head patch inside `.git/` so reviews
 can inspect additions and deleted lines without granting the agent shell access.
 A newer review run cancels an older review for the same PR.
@@ -61,7 +71,52 @@ for seven days, including failed runs that produced a report. Reports can contai
 private prompts, repository content and tool output; access follows the
 repository's GitHub permissions.
 
-## Run from any directory
+## Validate changes delivered by `/codex`
+
+Fresh installs and managed workflow upgrades include separate validation and
+reporting jobs. When `/codex` pushes a change, the validation job checks out the
+exact pushed commit with a read-only token, no persisted Git credentials and no
+OpenAI key. It runs on the selected Linux or macOS runner. In the managed command
+job, Codex uses its file-edit and scoped Git tools for delivery. Shell execution
+is reserved for validation.
+
+Add a composite action at `.github/actions/codex-validate/action.yml` in the
+target repository. Define the setup and checks for that project in the action.
+The workflow loads the recipe from the PR's base commit or the workflow commit
+for issue and comment events. Its commands run from the delivered checkout.
+Merge changes to the recipe before a later delivery can use them. Put verifier
+scripts beside `action.yml` and invoke them through `GITHUB_ACTION_PATH`. The
+following example checks a file in the delivered checkout from a trusted script.
+
+```yaml
+name: Validate Codex change
+description: Verify the delivered project files.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: node "$GITHUB_ACTION_PATH/verify.mjs"
+```
+
+Save `verify.mjs` next to `action.yml` and adapt the assertion to your project.
+
+```js
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+assert.match(readFileSync("README.md", "utf8"), /^# \S/m);
+```
+
+Commands such as `npm test` delegate to scripts in the delivered checkout.
+Changes to those scripts, tests, or dependencies can affect the result. Keep
+checks that must stay fixed in the trusted action directory.
+
+The reporting job adds the result, the exact commit SHA and a link to the
+Actions run to the existing GitHub tracking comment. Without a project action,
+the workflow checks the checkout SHA and reports that project checks were
+skipped. A request that pushes no commit has no validation result.
+
+## Run from a source checkout
 
 Link the command once from this checkout:
 
@@ -71,6 +126,14 @@ npm link --ignore-scripts
 
 Then run `codex-action install` in any directory. Without linking, use
 `node /path/to/claude-code-action/scripts/install-github-app.mjs`.
+
+## Package the installer for a release
+
+From the release commit, run `npm run pack:installer -- VERSION OUTPUT_DIRECTORY`
+with the release version without its `v` prefix. Attach the resulting
+`codex-action.tgz` to the GitHub release before publishing. The quickstart URL
+downloads that asset from the latest stable release. For a pinned installer,
+replace `latest/download` with `download/vVERSION` in the command.
 
 ## Preview and automation
 
@@ -100,21 +163,40 @@ include completed `results`, so an earlier repository's setup is still visible.
 
 ## Existing setups and failures
 
-- Identical installed workflows and existing secrets are reused.
-- Rerun this installer to propose an update for an older managed workflow that
-  only enables commands. Merge the update PR to enable automatic reviews; local
-  installer changes do not alter an already installed workflow.
+- Identical installed workflows and existing secrets are reused. Upgrades keep
+  the installed runner, model, and trusted users unless you pass `--runner`,
+  `--model`, or `--actor`. If the workflow was edited and its settings are
+  ambiguous, the installer asks for the affected options explicitly.
+- Rerun the installer and merge its update PR to add validation and reporting
+  to an existing managed workflow. If an older workflow runs validation inline,
+  move its checks to `.github/actions/codex-validate/action.yml` on the default
+  branch before running the upgrade. The installer checks that file before
+  proposing a replacement and asks you to confirm the checks were moved.
+  For unattended upgrades, confirm with `--accept-validation-migration`.
+  The installer stops before writing if it would remove an extra job or replace
+  custom steps in an existing job. Move those checks into a separate workflow
+  or the trusted validation action on the default branch, then restore the
+  generated steps before rerunning the upgrade. This check recognizes the
+  managed steps from v1.1.0 and later generated workflows.
 - Matching open setup PRs are reused after checking that they contain only the
   installer workflow. PRs with different settings or extra changes are rejected.
 - Only workflows bearing the installer marker can be updated. An existing
   unmarked `.github/workflows/codex.yml` is preserved and installation stops.
 - The account needs repository write access and access to manage Actions secrets
   and workflow files. New browser logins request the `repo` and `workflow` scopes.
-  For an existing GitHub CLI login missing workflow access, run
-  `gh auth refresh --scopes workflow`.
-- If setup fails after uploading a secret or creating a branch, those completed
-  steps remain. Inspect the named branch before retrying. Rerunning reuses existing
-  secrets and matching open PRs; it never removes another branch or PR.
+  If GitHub reports that a classic CLI login lacks the `workflow` scope, the
+  wizard offers to refresh it before writing a secret or setup branch. In
+  automation, run `gh auth refresh --hostname github.com --scopes workflow`
+  beforehand or provide a token with workflow access.
+- The installer writes both workflows and opens a draft before uploading a new
+  key. If a response is lost, it reads back the ref, commit, draft or secret
+  metadata to confirm the write. After a confirmed failure, it closes its draft
+  and removes its branch only at the last confirmed commit. The installer
+  preserves the branch when a workflow write includes a concurrent commit.
+  If GitHub cannot confirm a write or cleanup, the installer reports the branch to inspect before
+  retrying. An existing secret is reused unless you request replacement. GitHub
+  cannot confirm the value of a replacement key after a lost response. In that
+  case the installer keeps the setup available to resume.
 - Repository or organization Actions policies must permit this action and its
   requested workflow permissions. The installer does not change those policies.
 

@@ -25,15 +25,16 @@ const HELP = `Codex GitHub Action installer
 Usage: codex-action [install|doctor|repos] [options]
        npm run install-github-app -- [options]
 
-install (default)  Guided repository, secret and workflow setup; opens draft PRs.
+install (default)  Set up the current repository and open a draft workflow PR.
 doctor            Check GitHub login and report setup requirements.
 repos             List up to 100 owned repositories accessible for setup.
 
 Options:
-  --repo OWNER/REPO    Repository to configure; repeat for multiple repositories.
+  --repo OWNER/REPO    Override the current repo; repeat for multiple repositories.
   --key-file PATH     Read OPENAI_API_KEY from an env file or a plain key file.
   --use-env-key       Explicitly use OPENAI_API_KEY from the environment.
   --replace-secret    Replace an existing repository API-key secret.
+  --accept-validation-migration  Confirm older inline checks were moved to the trusted action.
   --runner RUNNER     ubuntu-latest (default) or macos-latest for Xcode tasks.
   --model MODEL       OpenAI model (default: ${DEFAULT_MODEL}).
   --actor USER        Trusted trigger user; repeat (default: signed-in user).
@@ -48,6 +49,7 @@ Merge the setup PR onto the default branch to enable automatic PR reviews.
 Use ${DEFAULT_TRIGGER_PHRASE} in issues, PR comments or reviews to ask questions or request changes.
 `;
 
+/** Parse the installer's supported commands and flags. */
 function argumentsFor(argv) {
   try {
     const parsed = parseArgs({
@@ -58,6 +60,7 @@ function argumentsFor(argv) {
         "key-file": { type: "string" },
         "use-env-key": { type: "boolean" },
         "replace-secret": { type: "boolean" },
+        "accept-validation-migration": { type: "boolean" },
         runner: { type: "string" },
         model: { type: "string" },
         actor: { type: "string", multiple: true },
@@ -79,6 +82,7 @@ function argumentsFor(argv) {
   }
 }
 
+/** Prompt for a repository when running outside a GitHub checkout. */
 async function chooseRepositories(client, user, terminal) {
   const repositories = (await client.repositories(user.login)).filter(
     (repo) =>
@@ -107,6 +111,7 @@ async function chooseRepositories(client, user, terminal) {
   });
 }
 
+/** Select an API key through an explicit flag or a terminal prompt. */
 async function chooseKey(options, terminal) {
   if (options["key-file"]) return readKeyFile(resolve(options["key-file"]));
   if (options["use-env-key"]) return validateApiKey(process.env.OPENAI_API_KEY);
@@ -140,6 +145,38 @@ async function chooseKey(options, terminal) {
   return validateApiKey(await terminal.secret("OpenAI API key (hidden): "));
 }
 
+/** Pick a runner for a new installation. Existing installs keep their runner. */
+async function chooseRunner(terminal) {
+  const choice = await terminal.ask("Runner: 1 Linux, 2 macOS for Xcode [1]: ");
+  if (choice && !["1", "2"].includes(choice))
+    throw new Error("Choose runner 1 or 2.");
+  return choice === "2" ? "macos-latest" : "ubuntu-latest";
+}
+
+/** Confirm that a classic login can write workflows before applying any plans. */
+async function authorizeWorkflowWrites(client, terminal, options) {
+  if (!(await client.workflowScopeMissing())) return true;
+  const message =
+    "GitHub CLI needs workflow access. Run gh auth refresh --hostname github.com --scopes workflow or use a token with workflow access.";
+  if (!terminal.interactive || options.yes || options.json)
+    throw new Error(message);
+  if (
+    !(await terminal.confirm(
+      "Grant GitHub CLI permission to write workflows?",
+      true,
+    ))
+  )
+    return false;
+  try {
+    await client.refreshWorkflowScope();
+  } catch {
+    throw new Error(message);
+  }
+  if (await client.workflowScopeMissing()) throw new Error(message);
+  return true;
+}
+
+/** Plan the requested setup, confirm interactive changes and apply each plan. */
 export async function runCli(
   argv,
   { client = new GitHubClient(), terminal = new Terminal() } = {},
@@ -173,7 +210,7 @@ export async function runCli(
       model: DEFAULT_MODEL,
       authentication: authenticated ? "GitHub CLI" : "missing",
       nextStep: authenticated
-        ? "Run install to choose repositories."
+        ? "Run install from the repository you want to configure."
         : "Run gh auth login --web --scopes repo,workflow.",
     };
     if (!options.json) terminal.write(result.nextStep);
@@ -205,59 +242,69 @@ export async function runCli(
     (!terminal.interactive || options.yes || options.json)
   )
     throw new Error("Specify --repo for noninteractive installation.");
+  const current = options.repo ? undefined : await client.currentRepository();
   const repositories = [
     ...new Set(
       options.repo?.flatMap((value) =>
         value.split(",").map(validateRepository),
-      ) ?? (await chooseRepositories(client, user, terminal)),
+      ) ??
+        (current
+          ? [current]
+          : await chooseRepositories(client, user, terminal)),
     ),
   ];
-  let runner = options.runner ?? "ubuntu-latest";
-  if (
-    terminal.interactive &&
-    !options.yes &&
-    !options["dry-run"] &&
-    !options.runner
-  ) {
-    const choice = await terminal.ask(
-      "Runner: 1 Linux, 2 macOS for Xcode [1]: ",
-    );
-    if (choice && !["1", "2"].includes(choice))
-      throw new Error("Choose runner 1 or 2.");
-    runner = choice === "2" ? "macos-latest" : "ubuntu-latest";
-  }
-  const actors = options.actor ?? [user.login];
-  const model = options.model ?? DEFAULT_MODEL;
+  const selectRunner =
+    terminal.interactive && !options.yes && !options["dry-run"]
+      ? () => chooseRunner(terminal)
+      : undefined;
   const plans = [];
   for (const repository of repositories)
     plans.push(
       await planInstallation(client, {
         repository,
-        actors,
-        runner,
-        model,
+        actors: options.actor,
+        runner: options.runner,
+        model: options.model,
+        defaultActor: user.login,
+        selectRunner,
         replaceSecret: !!options["replace-secret"],
       }),
     );
   if (!options.json) {
     terminal.write(
-      `\nModel: ${model}; runner: ${runner}; trusted users: ${actors.join(", ")}`,
-    );
-    terminal.write(
       `Automatic reviews: trusted users' same-repository, non-draft PRs when opened or updated. Reviews use read-only code access; ${DEFAULT_TRIGGER_PHRASE} requests can implement changes. Both show progress.`,
     );
-    for (const plan of plans)
+    for (const plan of plans) {
       terminal.write(
-        `${plan.repository}: ${plan.status} workflow on ${plan.defaultBranch}; OPENAI_API_KEY: ${plan.needsSecret ? (plan.replaceSecret ? "replace" : "create") : "reuse"}`,
+        `${plan.repository}: ${plan.status} workflow on ${plan.defaultBranch}; OPENAI_API_KEY: ${plan.needsSecret ? (plan.replaceSecret ? "replace" : "create") : "reuse"}\n  Model: ${plan.model}; runner: ${plan.runner}; trusted users: ${plan.actors.join(", ")}`,
       );
+      if (plan.validationMigration)
+        terminal.write(
+          "  This upgrade replaces inline validation with the trusted project action.",
+        );
+    }
     terminal.write(
-      "Workflow changes are proposed in draft PRs. Existing workflows are preserved.",
+      "Review the workflow changes in the draft setup PR before merging.",
     );
   }
   if (options["dry-run"]) return emit({ dryRun: true, plans });
+  const migration = plans.some((plan) => plan.validationMigration);
+  if (migration && options.yes && !options["accept-validation-migration"])
+    throw new Error(
+      "Confirm the inline checks were moved to the trusted validation action with --accept-validation-migration.",
+    );
   if (
     !options.yes &&
-    !(await terminal.confirm("Apply this setup to the selected repositories?"))
+    !(await terminal.confirm(
+      migration
+        ? "Confirm the inline checks were moved to the trusted action and apply this setup?"
+        : "Apply this setup to the selected repositories?",
+    ))
+  )
+    return emit({ cancelled: true });
+  if (
+    plans.some(({ status }) => status === "new" || status === "update") &&
+    !(await authorizeWorkflowWrites(client, terminal, options))
   )
     return emit({ cancelled: true });
   const apiKey = plans.some((plan) => plan.needsSecret)
