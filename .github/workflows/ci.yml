@@ -92,7 +92,6 @@ jobs:
         run: bun --no-env-file scripts/verify-action-package.mjs
 
   action-boundaries:
-    name: action boundary - ${{ matrix.scenario }} (expected ${{ matrix.expected }})
     runs-on: ubuntu-24.04-firewall
     strategy:
       fail-fast: false
