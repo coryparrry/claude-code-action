@@ -510,6 +510,7 @@ test.each(["true", "false"])(
         prompt,
         options(model, {
           timeoutMs: 10000,
+          compatibilityArgs: `--mcp-config '${JSON.stringify({ mcpServers: { "github:issues": { command: "must-not-run" } } })}'`,
           mcpConfig: JSON.stringify({
             mcpServers: {
               github_issues: {

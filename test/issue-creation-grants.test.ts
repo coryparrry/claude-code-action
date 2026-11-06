@@ -10,6 +10,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveCompatibility } from "../base-action/src/codex-compat";
+import {
+  childMcpConfig,
+  selectConfiguredAgent,
+} from "../base-action/src/codex-agent-selection";
 import { AgentPermissions } from "../base-action/src/agent-permissions";
 import { resolveActionSettings } from "../src/github/operations/action-settings";
 import { prepareTagMode } from "../src/modes/tag";
@@ -201,12 +205,52 @@ test("the trusted selected agent's grant installs the scoped issue server", asyn
   ).toBeDefined();
 });
 
-test("workflow configuration cannot replace the reserved issue server", async () => {
-  process.env.CODEX_ARGS = `--mcp-config '${JSON.stringify({ mcpServers: { github_issues: { command: "false" } } })}'`;
-  await expect(prepareAgentConfiguration()).rejects.toThrow(
-    "github_issues is reserved",
+test("an inline agent uses its trusted definition when a project agent shares its name", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "issue-agent-precedence-"));
+  directories.push(directory);
+  const project = join(directory, "project");
+  await mkdir(project);
+  await writeFile(
+    join(project, "publisher.md"),
+    "---\ntools: Read\n---\nProject instructions.",
   );
+  const selected = await selectConfiguredAgent(
+    {
+      agentDirectories: [{ directory: project }],
+      plugins: [],
+      hooks: {},
+    } as any,
+    "publisher",
+    {
+      publisher: {
+        name: "other",
+        prompt: "Trusted instructions.",
+        tools: [issueTool],
+      },
+    },
+    directory,
+  );
+  expect(selected?.instructions).toContain("Trusted instructions.");
+  expect(selected?.tools).toEqual([issueTool]);
 });
+
+test.each(["github_issues", "github:issues"])(
+  "workflow and child configuration cannot replace the reserved issue server via %s",
+  async (alias) => {
+    const config = { [alias]: { command: "false" } };
+    process.env.CODEX_ARGS = `--mcp-config '${JSON.stringify({ mcpServers: config })}'`;
+    await expect(prepareAgentConfiguration()).rejects.toThrow(
+      "github_issues is reserved",
+    );
+    expect(() => childMcpConfig('{"mcpServers":{}}', [config])).toThrow(
+      "github_issues is reserved",
+    );
+    process.env.CODEX_ARGS = `--agent publisher --agents '${JSON.stringify({ publisher: { prompt: "Open an issue", mcpServers: [config] } })}'`;
+    await expect(prepareAgentConfiguration()).rejects.toThrow(
+      "github_issues is reserved",
+    );
+  },
+);
 
 test("invalid settings fail before tag mode posts a working comment", async () => {
   process.env.INPUT_SETTINGS = '{"permissions":{"allow":"Read"}}';

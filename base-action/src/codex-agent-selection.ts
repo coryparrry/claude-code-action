@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentConfiguration } from "./agent-configuration";
 import { agentDefinitions, catalog, stringList } from "./agent-markdown";
+import { assertNoIssueMcpServer } from "./mcp-names";
 import { parseHooks } from "./agent-hooks";
 
 export async function selectConfiguredAgent(
@@ -26,11 +27,11 @@ export async function selectConfiguredAgent(
         throw new Error("Configured agent requires a string prompt");
       await writeFile(
         join(root, `${agentName}.md`),
-        `---\n${JSON.stringify(metadata)}\n---\n${prompt}`,
+        `---\n${JSON.stringify({ ...metadata, name: agentName })}\n---\n${prompt}`,
         { mode: 0o600 },
       );
     }
-    configuration.agentDirectories.push({ directory: root });
+    configuration.agentDirectories.unshift({ directory: root });
   }
   if (!name) return;
   const selected = (await agentDefinitions(configuration)).find(
@@ -120,10 +121,7 @@ export function childMcpConfig(parent: string, requested: unknown): string {
         throw new Error(`Unknown agent MCP server: ${value}`);
       servers[value] = available[value];
     } else if (value && typeof value === "object" && !Array.isArray(value)) {
-      if (Object.hasOwn(value, "github_issues"))
-        throw new Error(
-          "github_issues is reserved for the repository-scoped action server",
-        );
+      assertNoIssueMcpServer(value);
       Object.assign(servers, value);
     } else
       throw new Error(

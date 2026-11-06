@@ -10,6 +10,7 @@ import {
 import Ajv from "ajv";
 import type { AgentToolEvent, AgentToolHookResult } from "./agent-tools";
 import { AgentPermissions } from "./agent-permissions";
+import { mcpServerNamespace } from "./mcp-names";
 import { boundMcpOutput } from "./agent-mcp-output";
 import { prepareMcpStdioCommand, scrubMcpEnvironment } from "./mcp-environment";
 
@@ -544,7 +545,7 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
       const listed = await bounded(() => server.listTools(), initTimeout);
       for (const mcpTool of listed) {
         const legacyName = `mcp__${serverName}__${mcpTool.name}`;
-        const name = `mcp__${serverName.replace(/:/g, "_")}__${mcpTool.name}`;
+        const name = `mcp__${mcpServerNamespace(serverName)}__${mcpTool.name}`;
         if (!/^[A-Za-z0-9_-]+$/.test(mcpTool.name) || name.length > 64)
           throw new Error(
             "MCP tool name cannot be represented as an OpenAI function name",

@@ -1,4 +1,5 @@
 import { issueCreationAllowed } from "./issue-creation-policy";
+import { assertNoIssueMcpServer } from "../../base-action/src/mcp-names";
 import { stringList } from "../../base-action/src/agent-markdown";
 import { resolveCompatibility } from "../../base-action/src/codex-compat";
 import { usesApiCommitSigning } from "../github/operations/commit-signing";
@@ -85,12 +86,7 @@ export async function resolveActionPermissions(settings: string) {
       permissionMode: process.env.PERMISSION_MODE || undefined,
     },
   );
-  if (
-    Object.hasOwn(JSON.parse(permission.mcpConfig).mcpServers, "github_issues")
-  )
-    throw new Error(
-      "github_issues is reserved for the repository-scoped action server",
-    );
+  assertNoIssueMcpServer(JSON.parse(permission.mcpConfig).mcpServers);
   const selected = permission.agentName
     ? permission.agentDefinitions?.[permission.agentName]
     : undefined;
@@ -98,6 +94,12 @@ export async function resolveActionPermissions(settings: string) {
     selected && typeof selected === "object"
       ? (selected as Record<string, unknown>)
       : undefined;
+  const servers = Array.isArray(agent?.mcpServers)
+    ? agent.mcpServers
+    : [agent?.mcpServers];
+  for (const entry of servers)
+    if (entry && typeof entry === "object" && !Array.isArray(entry))
+      assertNoIssueMcpServer(entry);
   return {
     allowedTools: [
       ...new Set([

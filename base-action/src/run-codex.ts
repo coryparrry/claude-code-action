@@ -25,6 +25,7 @@ import {
 } from "./codex-compat";
 import { workflowToolEnvironment } from "./codex-tool-environment";
 import { nativeModelSettings } from "./agent-native-controls";
+import { isIssueMcpServerName } from "./mcp-names";
 import { scrubMcpEnvironment } from "./mcp-environment";
 import { summarizeMcpToolOutput } from "./agent-mcp";
 import { createOpenAIAuthentication } from "./openai-auth";
@@ -441,8 +442,9 @@ export async function runCodex(
     const trustedIssues = JSON.parse(options.mcpConfig || '{"mcpServers":{}}')
       .mcpServers?.github_issues;
     const resolvedMcp = JSON.parse(compatibility.mcpConfig);
+    for (const name of Object.keys(resolvedMcp.mcpServers))
+      if (isIssueMcpServerName(name)) delete resolvedMcp.mcpServers[name];
     if (trustedIssues) resolvedMcp.mcpServers.github_issues = trustedIssues;
-    else delete resolvedMcp.mcpServers.github_issues;
     compatibility.mcpConfig = JSON.stringify(resolvedMcp);
     const selectedAgent = await selectConfiguredAgent(
       configuration,
