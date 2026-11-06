@@ -2,6 +2,12 @@ export const WORKFLOW_PATH = ".github/workflows/codex.yml";
 export const MEMORY_WORKFLOW_PATH = ".github/workflows/codex-memory.yml";
 export const VALIDATION_ACTION_DIR = ".github/actions/codex-validate";
 export const TRUSTED_VALIDATION_ACTION = `./.git/codex-validation/${VALIDATION_ACTION_DIR}`;
+export const SETUP_TITLE = "chore(ci): install Codex GitHub Action";
+
+/** Identify setup commits by attempt and workflow path for write reconciliation. */
+export function setupCommitMessage(branch, path) {
+  return `${SETUP_TITLE}\n\nSetup branch: ${branch}\nWorkflow: ${path}`;
+}
 export const MANAGED_MARKER = "# Managed by the Codex GitHub Action installer.";
 export const DEFAULT_ACTION_REF =
   "coryparrry/claude-code-action@633c206996a8849aedeb77687369e1e7a31e3a37";

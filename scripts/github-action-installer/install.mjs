@@ -1,5 +1,13 @@
 import { randomBytes } from "node:crypto";
 import {
+  createSetupBranch,
+  createSetupPullRequest,
+  rollbackSetup,
+  uploadSetupSecret,
+  writeSetupWorkflow,
+} from "./reconcile.mjs";
+import {
+  assertNoRemovedJobs,
   needsValidationMigration,
   selectInstallationSettings,
 } from "./settings.mjs";
@@ -109,9 +117,11 @@ export async function planInstallation(client, options) {
   );
   assertManagedWorkflow(existing, WORKFLOW_PATH);
   assertManagedWorkflow(memoryExisting, MEMORY_WORKFLOW_PATH);
+  const existingContent = existing?.content;
+  const memoryContent = memoryExisting?.content;
   const settings = await selectInstallationSettings(
-    existing?.content,
-    memoryExisting?.content,
+    existingContent,
+    memoryContent,
     options,
   );
   const workflow = renderWorkflow({ repository, ...settings });
@@ -119,6 +129,8 @@ export async function planInstallation(client, options) {
     repository,
     actors: settings.actors,
   });
+  assertNoRemovedJobs(existingContent, workflow, WORKFLOW_PATH);
+  assertNoRemovedJobs(memoryContent, memoryWorkflow, MEMORY_WORKFLOW_PATH);
   const installed = [
     { current: existing, content: workflow },
     { current: memoryExisting, content: memoryWorkflow },
@@ -150,7 +162,7 @@ export async function planInstallation(client, options) {
   if (plan.status === "configured") return plan;
 
   const pending = await pendingInstallation(client, plan);
-  const base = await setupBase(client, plan, existing?.content);
+  const base = await setupBase(client, plan, existingContent);
   return { ...(pending ?? plan), ...base };
 }
 
@@ -171,27 +183,6 @@ function assertKey(apiKey) {
     throw new Error("An OpenAI API key is required for this repository.");
 }
 
-/** Remove only the draft and branch created by this attempt at their expected head. */
-async function rollbackSetup(
-  client,
-  plan,
-  branch,
-  expectedHead,
-  pullRequestUrl,
-) {
-  let current;
-  try {
-    current = await client.head(plan.repository, branch);
-  } catch (error) {
-    if (error.notFound) return;
-    throw error;
-  }
-  if (current !== expectedHead)
-    throw new Error("The setup branch changed during installation.");
-  if (pullRequestUrl) await client.closePullRequest(pullRequestUrl);
-  await client.deleteBranch(plan.repositoryId, branch, expectedHead);
-}
-
 /** Apply the reviewed workflow pair and existing API-key setup in each repository. */
 export async function applyInstallation(
   client,
@@ -200,7 +191,7 @@ export async function applyInstallation(
 ) {
   const branch =
     branchName ??
-    `codex/install-github-action-${randomBytes(4).toString("hex")}`;
+    `codex/install-github-action-${randomBytes(16).toString("hex")}`;
   if (!/^codex\/install-github-action-[A-Za-z0-9-]+$/.test(branch))
     throw new Error(
       "Use an installer branch with the codex/install-github-action- prefix.",
@@ -208,7 +199,7 @@ export async function applyInstallation(
   const writeSecret = await needsSecretWrite(client, plan);
   if (writeSecret) assertKey(apiKey);
   if (["configured", "pending"].includes(plan.status)) {
-    if (writeSecret) await client.setSecret(plan.repository, apiKey);
+    if (writeSecret) await uploadSetupSecret(client, plan, apiKey);
     return {
       repository: plan.repository,
       status: plan.status,
@@ -220,38 +211,47 @@ export async function applyInstallation(
   let branchHead;
   let pullRequestUrl;
   try {
-    await client.createBranch(plan.repository, branch, plan.baseSha);
-    branchHead = plan.baseSha;
+    branchHead = await createSetupBranch(client, plan, branch);
     step = "writing the workflow";
-    const workflow = await client.writeWorkflow(
+    branchHead = await writeSetupWorkflow(
+      client,
       plan.repository,
       branch,
-      plan.workflow,
-      plan.workflowSha,
+      branchHead,
+      { path: WORKFLOW_PATH, content: plan.workflow, sha: plan.workflowSha },
     );
-    branchHead = workflow.commit.sha;
     step = "writing the memory maintenance workflow";
-    const memory = await client.writeWorkflow(
+    branchHead = await writeSetupWorkflow(
+      client,
       plan.repository,
       branch,
-      plan.memoryWorkflow,
-      plan.memoryWorkflowSha,
-      MEMORY_WORKFLOW_PATH,
+      branchHead,
+      {
+        path: MEMORY_WORKFLOW_PATH,
+        content: plan.memoryWorkflow,
+        sha: plan.memoryWorkflowSha,
+      },
     );
-    branchHead = memory.commit.sha;
     step = "opening the setup PR";
-    pullRequestUrl = await client.createPullRequest(
-      plan.repository,
+    pullRequestUrl = await createSetupPullRequest(
+      client,
+      plan,
       branch,
-      plan.defaultBranch,
+      branchHead,
     );
     step = "uploading the repository secret";
-    if (writeSecret && (await needsSecretWrite(client, plan)))
-      await client.setSecret(plan.repository, apiKey);
+    if (writeSecret) await uploadSetupSecret(client, plan, apiKey);
     return { repository: plan.repository, status: "created", pullRequestUrl };
-  } catch {
+  } catch (error) {
     const failure = `Installation stopped while ${step}.`;
-    if (!branchHead) throw new Error(failure);
+    if (error.unconfirmed)
+      throw new Error(
+        `${failure} GitHub could not confirm the write. Check branch ${branch} in ${plan.repository} and retry after GitHub is reachable.`,
+      );
+    if (!branchHead)
+      throw new Error(
+        `${failure} Check whether ${branch} already exists and try again.`,
+      );
     try {
       await rollbackSetup(client, plan, branch, branchHead, pullRequestUrl);
     } catch {

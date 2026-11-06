@@ -173,6 +173,9 @@ include completed `results`, so an earlier repository's setup is still visible.
   branch before running the upgrade. The installer checks that file before
   proposing a replacement and asks you to confirm the checks were moved.
   For unattended upgrades, confirm with `--accept-validation-migration`.
+  If either managed workflow contains extra jobs, the installer lists them and
+  stops before writing anything. Move standalone checks into a separate workflow
+  on the default branch before rerunning the upgrade.
 - Matching open setup PRs are reused after checking that they contain only the
   installer workflow. PRs with different settings or extra changes are rejected.
 - Only workflows bearing the installer marker can be updated. An existing
@@ -184,9 +187,13 @@ include completed `results`, so an earlier repository's setup is still visible.
   automation, run `gh auth refresh --hostname github.com --scopes workflow`
   beforehand or provide a token with workflow access.
 - The installer writes both workflows and opens a draft before uploading a new
-  key. If a setup step fails, it removes the draft and branch it created while
-  the branch still matches its last write. If GitHub rejects cleanup or the
-  branch has changed, the installer reports the branch to inspect before retrying.
+  key. If a response is lost, it reads back the ref, commit, draft or secret
+  metadata to confirm the write. After a confirmed failure, it closes its draft
+  and removes its branch only at the last confirmed commit. If GitHub cannot
+  confirm a write or cleanup, the installer reports the branch to inspect before
+  retrying. An existing secret is reused unless you request replacement. GitHub
+  cannot confirm the value of a replacement key after a lost response. In that
+  case the installer keeps the setup available to resume.
 - Repository or organization Actions policies must permit this action and its
   requested workflow permissions. The installer does not change those policies.
 

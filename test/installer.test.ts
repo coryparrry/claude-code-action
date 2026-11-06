@@ -18,6 +18,8 @@ import {
   DEFAULT_MODEL,
   REVIEW_DIFF_PATH,
   MANAGED_MARKER,
+  SETUP_TITLE,
+  setupCommitMessage,
   WORKFLOW_PATH,
   MEMORY_WORKFLOW_PATH,
   renderMemoryWorkflow,
@@ -103,6 +105,10 @@ function fakeClient(overrides: Record<string, any> = {}): {
       },
     ]),
   );
+  client.head = async (repository: string, branch: string) => {
+    calls.push(["head", repository, branch]);
+    return branch === "main" ? values.head : undefined;
+  };
   client.workflow = async (
     repository: string,
     ref: string,
@@ -683,6 +689,7 @@ describe("installation planning and application", () => {
       "pullRequests",
       "head",
       "secrets",
+      "head",
       "createBranch",
       "writeWorkflow",
       "writeWorkflow",
@@ -707,6 +714,7 @@ describe("installation planning and application", () => {
       "codex/install-github-action-test",
       plan.workflow,
       undefined,
+      WORKFLOW_PATH,
     ]);
   });
 
@@ -744,6 +752,7 @@ describe("installation planning and application", () => {
       "codex/install-github-action-test",
       plan.workflow,
       "legacy-workflow",
+      WORKFLOW_PATH,
     ]);
     expect(calls.some(([name]) => name === "setSecret")).toBe(false);
   });
@@ -967,6 +976,151 @@ describe("installation planning and application", () => {
     );
   });
 
+  test.each([WORKFLOW_PATH, MEMORY_WORKFLOW_PATH])(
+    "blocks an upgrade that would drop a separate check from %s",
+    async (path) => {
+      const command = renderWorkflow(defaultOptions);
+      const memory = renderMemoryWorkflow(defaultOptions);
+      const check =
+        '\n  "compatibility_check": # existing required check\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./check.sh\n';
+      const { client, calls } = fakeClient({
+        workflow: {
+          sha: "command",
+          content: command + (path === WORKFLOW_PATH ? check : ""),
+        },
+        memoryWorkflow: {
+          sha: "memory",
+          content: memory + (path === MEMORY_WORKFLOW_PATH ? check : ""),
+        },
+        hasValidationRecipe: true,
+      });
+      await expect(planInstallation(client, defaultOptions)).rejects.toThrow(
+        `would remove jobs from ${path}: compatibility_check`,
+      );
+      expect(calls.map(([name]) => name)).toEqual([
+        "repository",
+        "workflow",
+        "workflow",
+      ]);
+    },
+  );
+
+  test.each(["continue", "reject secret", "secret read unavailable"])(
+    "reconciles applied writes with lost responses and handles %s",
+    async (outcome) => {
+      const { client } = fakeClient();
+      const plan = await planInstallation(client, defaultOptions);
+      const branch = "codex/install-github-action-lost-response";
+      const url = "https://github.com/octo/demo/pull/9";
+      const lost = Object.assign(new Error("connection reset"), {
+        uncertain: true,
+      });
+      let head: string | undefined;
+      let draft = false;
+      let secret = false;
+      let writes = 0;
+      let secretWrites = 0;
+      const files = new Map<string, string>();
+      const commits = new Map<string, object>();
+      client.head = async () => head;
+      client.createBranch = async () => {
+        head = plan.baseSha;
+        throw lost;
+      };
+      client.writeWorkflow = async (
+        _repo: string,
+        _branch: string,
+        content: string,
+        _sha: string,
+        path: string,
+      ) => {
+        const parent = head;
+        const newHead = String(++writes).repeat(40);
+        head = newHead;
+        files.set(`${newHead}:${path}`, content);
+        commits.set(newHead, {
+          parents: [{ sha: parent }],
+          commit: { message: setupCommitMessage(branch, path) },
+          files: [{ filename: path }],
+        });
+        throw lost;
+      };
+      client.workflow = async (_repo: string, sha: string, path: string) => ({
+        content: files.get(`${sha}:${path}`),
+      });
+      client.commit = async (_repo: string, sha: string) => commits.get(sha);
+      client.createPullRequest = async () => {
+        draft = true;
+        throw lost;
+      };
+      client.setupPullRequest = async () =>
+        draft
+          ? {
+              title: SETUP_TITLE,
+              draft,
+              head: { sha: head },
+              html_url: url,
+            }
+          : undefined;
+      client.setSecret = async () => {
+        secretWrites++;
+        if (outcome === "reject secret") throw new Error("HTTP 403");
+        secret = true;
+        throw lost;
+      };
+      client.secrets = async () => {
+        if (secret && outcome === "secret read unavailable") throw lost;
+        return secret ? [{ name: "OPENAI_API_KEY" }] : [];
+      };
+      client.pullRequest = async () => ({
+        state: draft ? "OPEN" : "CLOSED",
+        isDraft: draft,
+        isCrossRepository: false,
+        headRefName: branch,
+        headRefOid: head,
+        baseRefName: "main",
+      });
+      client.closePullRequest = async (closed: string) => {
+        expect(closed).toBe(url);
+        draft = false;
+        throw lost;
+      };
+      client.deleteBranch = async (
+        _id: string,
+        ref: string,
+        expected: string,
+      ) => {
+        expect(ref).toBe(branch);
+        expect(expected).toBe(head ?? "missing branch head");
+        head = undefined;
+        throw lost;
+      };
+      const result = applyInstallation(client, plan, {
+        apiKey: "sk-test",
+        branchName: branch,
+      });
+      if (outcome === "continue") {
+        await expect(result).resolves.toMatchObject({
+          status: "created",
+          pullRequestUrl: url,
+        });
+      } else {
+        await expect(result).rejects.toThrow(
+          outcome === "reject secret"
+            ? "The setup branch was removed"
+            : `GitHub could not confirm the write. Check branch ${branch}`,
+        );
+      }
+      expect(writes).toBe(2);
+      expect(secretWrites).toBe(1);
+      expect({ head }).toEqual({
+        head: outcome === "reject secret" ? undefined : "2".repeat(40),
+      });
+      expect(draft).toBe(outcome !== "reject secret");
+      expect(secret).toBe(outcome !== "reject secret");
+    },
+  );
+
   test.each(["command workflow", "memory workflow", "draft PR", "secret"])(
     "rolls back a failed setup at the %s stage",
     async (stage) => {
@@ -992,6 +1146,15 @@ describe("installation planning and application", () => {
         draft = true;
         return "https://github.com/octo/demo/pull/9";
       };
+      const branchName = "codex/install-github-action-rejected-write";
+      client.pullRequest = async () => ({
+        state: "OPEN",
+        isDraft: draft,
+        isCrossRepository: false,
+        headRefName: branchName,
+        headRefOid: branchHead,
+        baseRefName: "main",
+      });
       client.closePullRequest = async () => {
         draft = false;
       };
@@ -1009,7 +1172,7 @@ describe("installation planning and application", () => {
         throw new Error("secret rejected");
       };
       await expect(
-        applyInstallation(client, plan, { apiKey: "sk-test" }),
+        applyInstallation(client, plan, { apiKey: "sk-test", branchName }),
       ).rejects.toThrow("The setup branch was removed");
       expect(branchHead).toBeUndefined();
       expect(draft).toBe(false);
@@ -1017,10 +1180,57 @@ describe("installation planning and application", () => {
     },
   );
 
+  test("keeps a setup PR marked ready while the secret write was rejected", async () => {
+    const { client, calls } = fakeClient();
+    const plan = await planInstallation(client, defaultOptions);
+    let created = false;
+    client.createBranch = async () => {
+      created = true;
+    };
+    client.head = async () => (created ? "b".repeat(40) : undefined);
+    client.setSecret = async () => {
+      throw new Error("HTTP 403");
+    };
+    client.pullRequest = async () => ({ state: "OPEN", isDraft: false });
+    await expect(
+      applyInstallation(client, plan, { apiKey: "sk-test" }),
+    ).rejects.toThrow("Cleanup could not be confirmed");
+    expect(
+      calls.some(([name]) =>
+        ["closePullRequest", "deleteBranch"].includes(name),
+      ),
+    ).toBe(false);
+  });
+
+  test("keeps the setup draft when a requested secret replacement cannot be confirmed", async () => {
+    const { client, calls } = fakeClient({
+      secrets: [{ name: "OPENAI_API_KEY" }],
+    });
+    const plan = await planInstallation(client, {
+      ...defaultOptions,
+      replaceSecret: true,
+    });
+    client.setSecret = async () => {
+      throw Object.assign(new Error("connection reset"), { uncertain: true });
+    };
+    await expect(
+      applyInstallation(client, plan, { apiKey: "sk-test" }),
+    ).rejects.toThrow("GitHub could not confirm the write");
+    expect(
+      calls.some(([name]) =>
+        ["closePullRequest", "deleteBranch"].includes(name),
+      ),
+    ).toBe(false);
+  });
+
   test("keeps a setup branch that changed before rollback", async () => {
     const { client, calls } = fakeClient();
     const plan = await planInstallation(client, defaultOptions);
-    client.head = async () => "c".repeat(40);
+    let created = false;
+    client.createBranch = async () => {
+      created = true;
+    };
+    client.head = async () => (created ? "c".repeat(40) : undefined);
     client.writeWorkflow = async () => {
       throw new Error("write rejected");
     };
@@ -1492,7 +1702,10 @@ if (args[0] === 'secret' && args[1] === 'list') return json([]);
 if (args[0] === 'pr' && args[1] === 'list') return json([]);
 if (args[0] === 'api' && args[1].includes('/contents/review-memory/action.yml')) { process.stdout.write(JSON.stringify({type:'file'})); process.exit(0); }
 if (args[0] === 'api' && args[1].includes('/contents/') && !args.includes('PUT')) { process.stderr.write('HTTP 404 Not Found'); process.exit(1); }
-if (args[0] === 'api' && args[1].includes('/git/ref/heads/')) return json({ object: { sha: '0123456789abcdef0123456789abcdef01234567' } });
+if (args[0] === 'api' && args[1].includes('/git/ref/heads/')) {
+  if (!args[1].endsWith('/main')) { process.stderr.write('HTTP 404 Not Found'); process.exit(1); }
+  return json({ object: { sha: '0123456789abcdef0123456789abcdef01234567' } });
+}
 if (args[0] === 'api' && args.includes('--method') && args.includes('POST')) {
   if (args[1].includes('/pulls')) return json({ html_url: 'https://github.com/octo/demo/pull/9' });
   return json({ ok: true });

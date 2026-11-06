@@ -26,6 +26,40 @@ export function needsValidationMigration(content = "", proposed) {
   return !!installed && installed !== validationJob(proposed);
 }
 
+/** Read job IDs in the managed mapping, refusing layouts the installer cannot compare. */
+function managedJobNames(content, path) {
+  const header = /^jobs:[ \t]*(?:#[^\r\n]*)?\r?$/m.exec(content);
+  const section =
+    header &&
+    content.slice(header.index + header[0].length).split(/^[^\s#]/m, 1)[0];
+  const entries = section?.match(/^ {2}[^\s#].*$/gm) ?? [];
+  const names = entries.map((line) => {
+    const key =
+      /^ {2}(?:([\w-]+)|"([\w-]+)"|'([\w-]+)'):[ \t]*(?:#[^\r\n]*)?\r?$/.exec(
+        line,
+      );
+    return key?.slice(1).find(Boolean);
+  });
+  if (!names.length || names.some((name) => !name))
+    throw new Error(
+      `Could not safely read the job list in ${path}. Move custom jobs to a separate workflow before upgrading.`,
+    );
+  return names;
+}
+
+/** Protect jobs in either managed workflow that the installer would remove. */
+export function assertNoRemovedJobs(existing, proposed, path) {
+  if (!existing) return;
+  const proposedJobs = new Set(managedJobNames(proposed, path));
+  const removed = managedJobNames(existing, path).filter(
+    (name) => !proposedJobs.has(name),
+  );
+  if (removed.length)
+    throw new Error(
+      `This upgrade would remove jobs from ${path}: ${removed.join(", ")}. Move them to a separate workflow or the trusted validation action before upgrading.`,
+    );
+}
+
 /** Read only the generated options in one managed job. */
 function jobSettings(content, job) {
   const command = managedJob(content, job);

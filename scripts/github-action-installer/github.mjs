@@ -3,6 +3,8 @@ import {
   WORKFLOW_PATH,
   DEFAULT_ACTION_REF,
   VALIDATION_ACTION_DIR,
+  SETUP_TITLE,
+  setupCommitMessage,
 } from "./workflow.mjs";
 
 function runGh(args, { input, inherit = false } = {}) {
@@ -25,6 +27,7 @@ export class GitHubClient {
     this.run = run;
   }
 
+  /** Run GitHub CLI without exposing diagnostics, classifying failures for read-back. */
   async execute(args, options = {}) {
     let result;
     try {
@@ -39,18 +42,24 @@ export class GitHubClient {
       const error = new Error(
         "GitHub request failed. Check your login, repository access and network connection.",
       );
-      error.notFound = /HTTP 404|Not Found/i.test(result.stderr ?? "");
+      error.notFound = /\bHTTP 404\b/i.test(result.stderr ?? "");
+      // A transport failure or a server error may arrive after GitHub committed the write.
+      error.uncertain = !/\bHTTP 4(?!08)\d\d\b/i.test(result.stderr ?? "");
       throw error;
     }
     return result.stdout ?? "";
   }
 
+  /** Parse structured output, marking incomplete receipts as uncertain. */
   async json(args, options) {
     const output = await this.execute(args, options);
     try {
       return JSON.parse(output);
     } catch {
-      throw new Error("GitHub CLI returned an invalid response.");
+      throw Object.assign(
+        new Error("GitHub CLI returned an invalid response."),
+        { uncertain: true },
+      );
     }
   }
 
@@ -250,6 +259,28 @@ export class GitHubClient {
     return response.object.sha;
   }
 
+  /** Read the commit behind a setup ref after an uncertain workflow write. */
+  commit(repository, sha) {
+    return this.api(`repos/${repository}/commits/${sha}`);
+  }
+
+  /** Look up the exact open setup PR for one repository, ref, and base. */
+  async setupPullRequest(repository, base, branch) {
+    const [owner] = repository.split("/");
+    const query = new URLSearchParams({
+      state: "open",
+      head: `${owner}:${branch}`,
+      base,
+    });
+    const pulls = await this.api(`repos/${repository}/pulls?${query}`);
+    return pulls.find(
+      (pull) =>
+        pull.head?.repo?.full_name === repository &&
+        pull.head.ref === branch &&
+        pull.base?.ref === base,
+    );
+  }
+
   async setSecret(repository, apiKey) {
     await this.execute(
       ["secret", "set", "OPENAI_API_KEY", "--repo", repository],
@@ -288,6 +319,17 @@ export class GitHubClient {
       throw new Error("GitHub did not confirm branch cleanup.");
   }
 
+  /** Read the recorded setup PR even if its draft, head or base has changed. */
+  pullRequest(url) {
+    return this.json([
+      "pr",
+      "view",
+      url,
+      "--json",
+      "state,isDraft,headRefName,headRefOid,baseRefName,isCrossRepository",
+    ]);
+  }
+
   /** Close the draft created by this setup attempt. */
   closePullRequest(url) {
     return this.execute(["pr", "close", url]);
@@ -296,7 +338,7 @@ export class GitHubClient {
   /** Write only the installer-selected workflow path on the setup branch. */
   writeWorkflow(repository, branch, content, sha, path = WORKFLOW_PATH) {
     return this.api(`repos/${repository}/contents/${path}`, "PUT", {
-      message: "chore(ci): install Codex GitHub Action",
+      message: setupCommitMessage(branch, path),
       content: Buffer.from(content).toString("base64"),
       branch,
       ...(sha ? { sha } : {}),
@@ -306,7 +348,7 @@ export class GitHubClient {
   /** Open the reviewed workflow-pair setup as a draft pull request. */
   async createPullRequest(repository, branch, base) {
     const response = await this.api(`repos/${repository}/pulls`, "POST", {
-      title: "chore(ci): install Codex GitHub Action",
+      title: SETUP_TITLE,
       head: branch,
       base,
       draft: true,

@@ -66,7 +66,8 @@ function installerFixture() {
     verifyActionRevision: async () => {},
     secrets: async () => [{ name: "OPENAI_API_KEY" }],
     pullRequests: async () => [],
-    head: async () => "a".repeat(40),
+    head: async (_repository: string, branch: string) =>
+      branch === "main" ? "a".repeat(40) : undefined,
     createBranch: async () => {},
     writeWorkflow: async (
       repository: string,
