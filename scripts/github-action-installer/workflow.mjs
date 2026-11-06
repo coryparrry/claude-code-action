@@ -63,14 +63,19 @@ on:
   pull_request_review:
     types: [submitted]
 
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-  actions: read
+permissions: {}
 
 jobs:
   codex:
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+    outputs:
+      head_sha: \${{ steps.agent.outputs.head_sha }}
+      comment_id: \${{ steps.agent.outputs.comment_id }}
+      comment_type: \${{ steps.agent.outputs.comment_type }}
     if: >-
       github.repository == '${repository}' &&
       (!github.event.pull_request ||
@@ -99,6 +104,10 @@ jobs:
           codex_model: ${JSON.stringify(model)}
 ${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_turns: "30"
           track_progress: "true"
+          disallowed_tools: Bash,PowerShell
+          append_system_prompt: |
+            For requested changes, inspect the diff, commit and push using the scoped Git tools.
+            Leave test execution to the separate read-only validation job and report validation as pending after delivery.
       - name: Save execution report
         if: \${{ always() && steps.agent.outputs.execution_file != '' }}
         uses: actions/upload-artifact@v4
@@ -109,6 +118,83 @@ ${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_t
             \${{ steps.agent.outputs.verification_file }}
           if-no-files-found: error
           retention-days: 7
+
+  validate_change:
+    needs: codex
+    if: always() && needs.codex.outputs.head_sha != ''
+    permissions:
+      contents: read
+    runs-on: ${runner}
+    timeout-minutes: 15
+    outputs:
+      configured: \${{ steps.verify.outputs.configured }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: \${{ needs.codex.outputs.head_sha }}
+          persist-credentials: false
+      - name: Verify delivered commit
+        id: verify
+        shell: bash
+        env:
+          HEAD_SHA: \${{ needs.codex.outputs.head_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          echo "Checked out delivered commit $HEAD_SHA"
+          if [ -f .github/actions/codex-validate/action.yml ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Project validation skipped. Add .github/actions/codex-validate/action.yml to configure it."
+          fi
+      - name: Run project validation
+        if: steps.verify.outputs.configured == 'true'
+        uses: ./.github/actions/codex-validate
+
+  report_validation:
+    needs: [codex, validate_change]
+    if: always() && needs.codex.outputs.head_sha != '' && needs.codex.outputs.comment_id != ''
+    permissions:
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Append validation to the existing tracking comment
+        env:
+          GH_TOKEN: \${{ github.token }}
+          API_URL: \${{ github.api_url }}
+          REPOSITORY: \${{ github.repository }}
+          COMMENT_ID: \${{ needs.codex.outputs.comment_id }}
+          COMMENT_TYPE: \${{ needs.codex.outputs.comment_type }}
+          HEAD_SHA: \${{ needs.codex.outputs.head_sha }}
+          VALIDATION_RESULT: \${{ needs.validate_change.result }}
+          VALIDATION_CONFIGURED: \${{ needs.validate_change.outputs.configured }}
+          RUN_URL: \${{ github.server_url }}/\${{ github.repository }}/actions/runs/\${{ github.run_id }}/attempts/\${{ github.run_attempt }}
+        run: |
+          node --input-type=module <<'NODE'
+          const { API_URL, REPOSITORY, COMMENT_ID, COMMENT_TYPE, HEAD_SHA, VALIDATION_RESULT, VALIDATION_CONFIGURED, RUN_URL, GH_TOKEN } = process.env;
+          if (!/^\\d+$/.test(COMMENT_ID) || !/^[a-f0-9]{40}$/.test(HEAD_SHA)) throw new Error('Invalid delivery metadata');
+          if (!['issue', 'review'].includes(COMMENT_TYPE)) throw new Error('Invalid tracking comment type');
+          const resource = COMMENT_TYPE === 'review' ? 'pulls/comments' : 'issues/comments';
+          const url = \`\${API_URL}/repos/\${REPOSITORY}/\${resource}/\${COMMENT_ID}\`;
+          const headers = { Authorization: \`Bearer \${GH_TOKEN}\`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' };
+          const response = await fetch(url, { headers });
+          if (!response.ok) throw new Error(\`Comment read failed: \${response.status}\`);
+          const comment = await response.json();
+          const marker = \`<!-- codex-validation:\${HEAD_SHA} -->\`;
+          const endMarker = '<!-- /codex-validation -->';
+          const status = VALIDATION_RESULT === 'success' && VALIDATION_CONFIGURED !== 'true'
+            ? 'skipped (project checks are not configured)'
+            : VALIDATION_RESULT;
+          const section = \`\${marker}\\nValidation for \\\`\${HEAD_SHA}\\\`: **\${status}**. [View checks](\${RUN_URL}).\\n\${endMarker}\`;
+          const start = comment.body.indexOf(marker);
+          const end = start < 0 ? -1 : comment.body.indexOf(endMarker, start);
+          const body = start >= 0 && end >= 0 ? comment.body.slice(0, start) + section + comment.body.slice(end + endMarker.length) : \`\${comment.body}\\n\\n\${section}\`;
+          if (body !== comment.body) {
+            const update = await fetch(url, { method: 'PATCH', headers, body: JSON.stringify({ body }) });
+            if (!update.ok) throw new Error(\`Comment update failed: \${update.status}\`);
+          }
+          NODE
 
   codex_review:
     if: >-

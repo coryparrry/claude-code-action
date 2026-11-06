@@ -61,6 +61,36 @@ for seven days, including failed runs that produced a report. Reports can contai
 private prompts, repository content and tool output; access follows the
 repository's GitHub permissions.
 
+## Validate changes delivered by `/codex`
+
+Fresh installs and managed workflow upgrades include separate validation and
+reporting jobs. When `/codex` pushes a change, the validation job checks out the
+exact pushed commit with a read-only token, no persisted Git credentials and no
+OpenAI key. It runs on the selected Linux or macOS runner. In the managed command
+job, Codex uses its file-edit and scoped Git tools for delivery. Shell execution
+is reserved for validation.
+
+Add a composite action at `.github/actions/codex-validate/action.yml` in the
+target repository. Define the setup and checks for that project in the action.
+For a project with an npm lockfile, for example:
+
+```yaml
+name: Validate Codex change
+description: Install locked dependencies and run project tests.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        npm ci
+        npm test
+```
+
+The reporting job adds the result, the exact commit SHA and a link to the
+Actions run to the existing GitHub tracking comment. Without a project action,
+the workflow checks the checkout SHA and reports that project checks were
+skipped. A request that pushes no commit has no validation result.
+
 ## Run from any directory
 
 Link the command once from this checkout:
@@ -101,9 +131,9 @@ include completed `results`, so an earlier repository's setup is still visible.
 ## Existing setups and failures
 
 - Identical installed workflows and existing secrets are reused.
-- Rerun this installer to propose an update for an older managed workflow that
-  only enables commands. Merge the update PR to enable automatic reviews; local
-  installer changes do not alter an already installed workflow.
+- Rerun the installer and merge its update PR to add validation and reporting
+  to an existing managed workflow. Move any custom checks embedded in an older
+  workflow to the repository's composite action before merging the update.
 - Matching open setup PRs are reused after checking that they contain only the
   installer workflow. PRs with different settings or extra changes are rejected.
 - Only workflows bearing the installer marker can be updated. An existing

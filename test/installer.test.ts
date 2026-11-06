@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 import {
   DEFAULT_ACTION_REF,
   DEFAULT_MODEL,
@@ -294,7 +294,8 @@ describe("guided GitHub Action workflow", () => {
     expect(source.startsWith(MANAGED_MARKER)).toBe(true);
     expect(actionMetadata.inputs.trigger_phrase.default).toBe("/codex");
     expect(actionMetadata.inputs.codex_args).toBeDefined();
-    expect(workflow.permissions).toEqual({
+    expect(workflow.permissions).toEqual({});
+    expect(job.permissions).toEqual({
       actions: "read",
       contents: "write",
       issues: "write",
@@ -335,7 +336,7 @@ describe("guided GitHub Action workflow", () => {
   test("uses Terra 6.1 Max in both generated jobs", () => {
     expect(DEFAULT_MODEL).toBe("gpt-6.1-terra");
     const workflow = parse(renderWorkflow(defaultOptions));
-    expect(workflow.permissions.actions).toBe("read");
+    expect(workflow.jobs.codex.permissions.actions).toBe("read");
     for (const name of ["codex", "codex_review"]) {
       const step = workflow.jobs[name].steps.find(
         (step: any) => step.uses === DEFAULT_ACTION_REF,
@@ -467,7 +468,7 @@ describe("guided GitHub Action workflow", () => {
     ).toBe(false);
     expect(actionStep(command).with.prompt).toBeUndefined();
     expect(actionStep(command).with.track_progress).toBe("true");
-    expect(workflow.permissions.contents).toBe("write");
+    expect(command.permissions.contents).toBe("write");
 
     const reviewCondition = String(review.if);
     expect(reviewCondition).toContain("github.actor == 'trusted-user'");
@@ -587,7 +588,8 @@ describe("installation planning and application", () => {
     });
     const plan = await planInstallation(client, defaultOptions);
     expect(plan.repository).toBe("renamed/project");
-    for (const job of Object.values(parse(plan.workflow).jobs) as any[]) {
+    const { jobs } = parse(plan.workflow);
+    for (const job of [jobs.codex, jobs.codex_review]) {
       expect(job.if).toContain("github.repository == 'renamed/project'");
       expect(job.if).not.toContain("github.repository == 'octo/demo'");
     }
@@ -698,6 +700,44 @@ describe("installation planning and application", () => {
       plan.workflow,
       undefined,
     ]);
+  });
+
+  test("upgrades a managed two-job workflow to include validation and reporting", async () => {
+    const previous = parse(renderWorkflow(defaultOptions));
+    delete previous.jobs.validate_change;
+    delete previous.jobs.report_validation;
+    const { client, calls } = fakeClient({
+      workflow: {
+        sha: "legacy-workflow",
+        content: MANAGED_MARKER + "\n" + stringify(previous),
+      },
+      memoryWorkflow: {
+        sha: "existing-memory",
+        content: renderMemoryWorkflow(defaultOptions),
+      },
+      secrets: [{ name: "OPENAI_API_KEY" }],
+    });
+    const plan = await planInstallation(client, defaultOptions);
+    expect(plan).toMatchObject({
+      status: "update",
+      needsSecret: false,
+      workflowSha: "legacy-workflow",
+    });
+    const { jobs } = parse(plan.workflow);
+    expect(jobs.validate_change.needs).toBe("codex");
+    expect(jobs.report_validation.needs).toEqual(["codex", "validate_change"]);
+    const result = await applyInstallation(client, plan, {
+      branchName: "codex/install-github-action-test",
+    });
+    expect(result.status).toBe("created");
+    expect(calls).toContainEqual([
+      "writeWorkflow",
+      "octo/demo",
+      "codex/install-github-action-test",
+      plan.workflow,
+      "legacy-workflow",
+    ]);
+    expect(calls.some(([name]) => name === "setSecret")).toBe(false);
   });
 
   test("reuses a matching pending setup PR without creating another branch or PR", async () => {
