@@ -17,7 +17,7 @@ export function isActionCreatedIssueOpening(context: GitHubContext): boolean {
   return (
     isIssuesEvent(context) &&
     context.eventAction === "opened" &&
-    !!context.payload.issue.body?.includes(ACTION_CREATED_ISSUE_MARKER)
+    !!context.payload.issue?.body?.includes(ACTION_CREATED_ISSUE_MARKER)
   );
 }
 

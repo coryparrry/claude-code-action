@@ -39,6 +39,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
+      - run: bun --no-env-file install --frozen-lockfile
       - name: Create an issue through the actual command action
         id: creator
         uses: coryparrry/claude-code-action@457fccfa4dc4f0ffee4977d77bfaca684cd7b5ef
