@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import * as core from "@actions/core";
+import { ACTION_CREATED_ISSUE_MARKER } from "../issue-origin";
 import {
   isIssuesEvent,
   isIssuesAssignedEvent,
@@ -9,12 +10,24 @@ import {
   isPullRequestReviewEvent,
   isPullRequestReviewCommentEvent,
 } from "../context";
-import type { ParsedGitHubContext } from "../context";
+import type { GitHubContext, ParsedGitHubContext } from "../context";
 
+/** Prevent an issue created by this action from initiating a new command. */
+export function isActionCreatedIssueOpening(context: GitHubContext): boolean {
+  return (
+    isIssuesEvent(context) &&
+    context.eventAction === "opened" &&
+    !!context.payload.issue.body?.includes(ACTION_CREATED_ISSUE_MARKER)
+  );
+}
+
+/** Check command, assignee and label triggers for a GitHub entity event. */
 export function checkContainsTrigger(context: ParsedGitHubContext): boolean {
   const {
     inputs: { assigneeTrigger, labelTrigger, triggerPhrase, prompt },
   } = context;
+
+  if (isActionCreatedIssueOpening(context)) return false;
 
   // If prompt is provided, always trigger
   if (prompt) {

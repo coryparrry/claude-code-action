@@ -1,3 +1,4 @@
+import { resolveActionSettings } from "../../github/operations/action-settings";
 import { prepareAgentPrHead } from "../../github/operations/prepare-agent-head";
 import { usesApiCommitSigning } from "../../github/operations/commit-signing";
 import { mkdir, rm, writeFile } from "fs/promises";
@@ -30,6 +31,7 @@ export async function prepareAgentMode({
 }) {
   // Check if actor is human (prevents bot-triggered loops)
   await checkHumanActor(octokit.rest, context);
+  const settings = await resolveActionSettings(context, octokit.rest);
 
   // Configure git authentication for agent mode (same as tag mode)
   // SSH signing takes precedence if provided
@@ -131,6 +133,7 @@ export async function prepareAgentMode({
     claudeCommentId: undefined, // No tracking comment in agent mode
     allowedTools,
     mode: "agent",
+    settings,
     context,
   });
 
@@ -155,6 +158,7 @@ export async function prepareAgentMode({
       claudeBranch: claudeBranch,
     },
     mcpConfig: ourMcpConfig,
+    settings,
     claudeArgs,
   };
 }

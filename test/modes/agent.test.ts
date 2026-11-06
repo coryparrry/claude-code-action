@@ -104,6 +104,7 @@ describe("Agent Mode", () => {
         claudeBranch: undefined,
       },
       mcpConfig: expect.any(String),
+      settings: process.env.INPUT_SETTINGS ?? "",
       claudeArgs: "--model gpt-5.4 --max-turns 10",
     });
 

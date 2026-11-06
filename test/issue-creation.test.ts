@@ -1,3 +1,5 @@
+import { ACTION_CREATED_ISSUE_MARKER } from "../src/github/issue-origin";
+import { checkContainsTrigger } from "../src/github/validation/trigger";
 import { afterEach, expect, test } from "bun:test";
 import { Octokit } from "@octokit/rest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -327,7 +329,23 @@ test("literal Markdown, accessible image descriptions and fenced examples surviv
     { owner: "owner", repo: "repo" },
     { title: "Reproduction", body },
   );
-  expect(calls[0]!.body).toBe(body);
+  expect(calls[0]!.body).toBe(`${ACTION_CREATED_ISSUE_MARKER}\n\n${body}`);
+  const context = createMockContext({
+    eventName: "issues",
+    eventAction: "opened",
+    inputs: { triggerPhrase: "/codex", prompt: "Explicit command" },
+    payload: {
+      issue: { body: calls[0]!.body, title: "/codex Do not run" },
+    } as any,
+  });
+  expect(checkContainsTrigger(context)).toBe(false);
+  expect(
+    checkContainsTrigger({
+      ...context,
+      inputs: { ...context.inputs, prompt: "" },
+      payload: { issue: { body, title: "/codex Do run" } } as any,
+    }),
+  ).toBe(true);
 });
 
 test("cleanup finds confirmed fixtures with changed titles or bodies without touching another author's issue", () => {

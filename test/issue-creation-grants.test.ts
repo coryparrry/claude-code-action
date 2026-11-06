@@ -1,9 +1,17 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveCompatibility } from "../base-action/src/codex-compat";
 import { AgentPermissions } from "../base-action/src/agent-permissions";
+import { resolveActionSettings } from "../src/github/operations/action-settings";
 import { prepareTagMode } from "../src/modes/tag";
 import * as mcp from "../src/mcp/install-mcp-server";
 import * as actor from "../src/github/validation/actor";
@@ -82,7 +90,10 @@ function interactiveContext() {
 }
 
 /** Exercise actual tag grant construction while isolating unrelated GitHub and Git work. */
-async function prepareTagFixture() {
+async function prepareTagFixture(
+  context = interactiveContext(),
+  octokit = {} as any,
+) {
   const spies = [
     spyOn(actor, "checkHumanActor").mockResolvedValue(undefined),
     spyOn(createInitial, "createInitialComment").mockResolvedValue({
@@ -102,8 +113,8 @@ async function prepareTagFixture() {
   ];
   try {
     return await prepareTagMode({
-      context: interactiveContext(),
-      octokit: {} as any,
+      context,
+      octokit,
       githubToken: "fixture-token",
     });
   } finally {
@@ -211,4 +222,118 @@ test("settings-only scoped grants install the server without authorizing an unsc
     allowedTools: permission.allowedTools,
   });
   expect(() => policy.assertTool(issueTool)).toThrow("without approval");
+});
+
+test.each(["pull_request", "issue_comment"] as const)(
+  "tag and runtime ignore workspace grants for a PR %s event",
+  async (eventName) => {
+    const workspace = await mkdtemp(join(tmpdir(), "issue-pr-settings-"));
+    directories.push(workspace);
+    process.env.GITHUB_WORKSPACE = workspace;
+    process.env.INPUT_SETTINGS = join(workspace, "settings.json");
+    await writeFile(
+      process.env.INPUT_SETTINGS,
+      JSON.stringify({ permissions: { allow: ["*"] } }),
+    );
+
+    const base = "a".repeat(40);
+    const context = createMockContext({
+      eventName,
+      eventAction: eventName === "pull_request" ? "opened" : "created",
+      isPR: true,
+      inputs: { prompt: "Review this change", trackProgress: true },
+      payload: (eventName === "pull_request"
+        ? { pull_request: { base: { sha: base } } }
+        : interactiveContext().payload) as any,
+    });
+    const requested: unknown[] = [];
+    const pullRequests: unknown[] = [];
+    const settings = JSON.stringify({ permissions: { allow: ["Read"] } });
+    const prepared = await prepareTagFixture(context, {
+      rest: {
+        pulls: {
+          /** Resolve the base commit for PR comment events that do not carry it. */
+          async get(request: unknown) {
+            pullRequests.push(request);
+            return { data: { base: { sha: base } } };
+          },
+        },
+        repos: {
+          /** Supply settings from the exact requested base SHA. */
+          async getContent(request: unknown) {
+            requested.push(request);
+            return {
+              data: {
+                type: "file",
+                encoding: "base64",
+                content: Buffer.from(settings).toString("base64"),
+              },
+            };
+          },
+        },
+      },
+    });
+    expect(requested).toEqual([
+      {
+        owner: context.repository.owner,
+        repo: context.repository.repo,
+        path: "settings.json",
+        ref: base,
+      },
+    ]);
+    expect(pullRequests).toEqual(
+      eventName === "issue_comment"
+        ? [
+            {
+              owner: context.repository.owner,
+              repo: context.repository.repo,
+              pull_number: context.entityNumber,
+            },
+          ]
+        : [],
+    );
+    const runtime = await resolveCompatibility(
+      prepared.claudeArgs,
+      prepared.settings,
+      prepared.mcpConfig,
+    );
+    expect(runtime.allowedTools).toContain("Read");
+    expect(runtime.allowedTools).not.toContain("*");
+    expect(runtime.allowedTools).not.toContain(issueTool);
+    const config = await mcp.prepareMcpConfig({
+      context,
+      settings: prepared.settings,
+      allowedTools: [],
+      githubToken: "fixture-token",
+      owner: context.repository.owner,
+      repo: context.repository.repo,
+      branch: "fixture",
+      baseBranch: "main",
+      mode: "tag",
+    });
+    expect(JSON.parse(config).mcpServers.github_issues).toBeUndefined();
+  },
+);
+
+test("an external settings alias cannot traverse a PR symlink to choose another external file", async () => {
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), "issue-settings-alias-")),
+  );
+  directories.push(root);
+  const workspace = join(root, "workspace");
+  await mkdir(workspace);
+  process.env.GITHUB_WORKSPACE = workspace;
+  const external = join(root, "external.json");
+  const alias = join(root, "workflow-alias.json");
+  const fromPR = join(workspace, "settings.json");
+  await writeFile(external, '{"permissions":{"allow":["*"]}}');
+  await symlink(fromPR, alias);
+  await symlink(external, fromPR);
+  await expect(
+    resolveActionSettings(
+      createMockContext({ eventName: "pull_request", isPR: true }),
+      {} as any,
+      alias,
+    ),
+  ).rejects.toThrow("require a direct file path");
 });

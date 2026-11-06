@@ -58,7 +58,10 @@ import {
 import { detectMode } from "../modes/detector";
 import { prepareTagMode } from "../modes/tag";
 import { prepareAgentMode } from "../modes/agent";
-import { checkContainsTrigger } from "../github/validation/trigger";
+import {
+  checkContainsTrigger,
+  isActionCreatedIssueOpening,
+} from "../github/validation/trigger";
 import {
   getReviewSourceMappings,
   restoreConfigFromBase,
@@ -153,6 +156,11 @@ async function run() {
     // Phase 1: Prepare
     const actionInputsPresent = collectActionInputsPresence();
     context = parseGitHubContext();
+    if (isActionCreatedIssueOpening(context)) {
+      console.log("Action-created issue opening skipped");
+      core.setOutput("contains_trigger", "false");
+      return;
+    }
     if (nativeReview) {
       if (!isPullRequestEvent(context) || context.inputs.trackProgress)
         throw new Error(
@@ -359,7 +367,7 @@ async function run() {
       ...actionRuntimeOptions(process.env),
       showFullOutput: process.env.INPUT_SHOW_FULL_OUTPUT,
       compatibilityArgs: prepareResult.claudeArgs,
-      settings: process.env.INPUT_SETTINGS,
+      settings: prepareResult.settings,
       plugins: process.env.INPUT_PLUGINS,
       pluginMarketplaces: process.env.INPUT_PLUGIN_MARKETPLACES,
       githubEnvironment: context.inputs.allowedNonWriteUsers

@@ -16,12 +16,14 @@ label/assignment automation and agent mode must explicitly opt in, for example:
 codex_args: --allowedTools mcp__github_issues__create_issue
 ```
 
-Explicit `settings.permissions.allow` grants in JSON or settings files also install the tool. Scoped rules remain scoped and do not become unrestricted grants. Deleted comments and requests whose author differs from the checked actor cannot install the tool.
+Explicit `settings.permissions.allow` grants in JSON or settings files also install the tool. For a PR, repository settings files come from its base commit. Scoped rules remain scoped and do not become unrestricted grants. Deleted comments and requests whose author differs from the checked actor cannot install the tool.
 
 Runtime-compatible namespace and wildcard grants, including
 `mcp__github_issues__*`, also work. The tool takes title, body and optional labels;
 the model cannot select an owner or repository. It uses the action-owned token
 and existing dependencies, with no Docker requirement.
+
+An invisible origin marker prevents issue openings from triggering another Codex run, including when a human-owned token creates the issue. Subsequent comments can still start a command. The marker shares the issue body’s size budget.
 
 Issue bodies retain literal Markdown, accessible image descriptions, HTML
 attributes and fenced reproductions. Secret-format redaction and the runtime's registered-credential redactor apply before publication, after any hook changes.

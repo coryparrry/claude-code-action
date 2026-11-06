@@ -1,3 +1,4 @@
+import { resolveActionSettings } from "../../github/operations/action-settings";
 import { issueCreationGrants } from "../../mcp/issue-creation-policy";
 import { resolveCompatibility } from "../../../base-action/src/codex-compat";
 import { usesApiCommitSigning } from "../../github/operations/commit-signing";
@@ -47,6 +48,7 @@ export async function prepareTagMode({
 
   // Check if actor is human
   await checkHumanActor(octokit.rest, context);
+  const settings = await resolveActionSettings(context, octokit.rest);
 
   // Create initial tracking comment
   const commentData = await createInitialComment(octokit.rest, context);
@@ -132,7 +134,7 @@ export async function prepareTagMode({
     process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "";
   const userPermissions = await resolveCompatibility(
     userClaudeArgs,
-    process.env.INPUT_SETTINGS || "",
+    settings,
     '{"mcpServers":{}}',
     [],
     { allowedTools: process.env.ALLOWED_TOOLS || undefined },
@@ -186,6 +188,7 @@ export async function prepareTagMode({
     commentType: commentData.commentType,
     allowedTools: Array.from(new Set(tagModeTools)),
     mode: "tag",
+    settings,
     context,
   });
 
@@ -218,6 +221,7 @@ export async function prepareTagMode({
     commentId,
     branchInfo,
     mcpConfig: ourMcpConfig,
+    settings,
     claudeArgs: claudeArgs.trim(),
   };
 }

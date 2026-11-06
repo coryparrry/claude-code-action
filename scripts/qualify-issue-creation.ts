@@ -1,6 +1,7 @@
 /** Verify issue creation against GitHub; never execute this live harness locally. */
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { ACTION_CREATED_ISSUE_MARKER } from "../src/github/issue-origin";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -84,6 +85,56 @@ export function selectQualificationIssues(
   );
 }
 
+/** Replay a published issue as a human-authored opening, without supplying any credentials. */
+async function assertOpeningIsSkipped(issue: {
+  number: number;
+  title: string;
+  body: string;
+}) {
+  const temp = await mkdtemp(join(process.env.RUNNER_TEMP!, "issue-opening-"));
+  try {
+    const payload = join(temp, "event.json");
+    const actor = "qualification-human";
+    await writeFile(
+      payload,
+      JSON.stringify({
+        action: "opened",
+        issue: { ...issue, user: { login: actor, type: "User" } },
+        sender: { login: actor, type: "User" },
+      }),
+    );
+    const child = Bun.spawn({
+      cmd: [
+        process.execPath,
+        "--no-env-file",
+        join(import.meta.dir, "../src/entrypoints/run.ts"),
+      ],
+      env: {
+        PATH: process.env.PATH!,
+        GITHUB_REPOSITORY: repository,
+        GITHUB_EVENT_NAME: "issues",
+        GITHUB_EVENT_PATH: payload,
+        GITHUB_ACTOR: actor,
+        GITHUB_RUN_ID: process.env.GITHUB_RUN_ID!,
+        RUNNER_TEMP: temp,
+        PROMPT: "This opening must not trigger the action",
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [status, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    assert.equal(status, 0, stderr);
+    assert.match(stdout, /Action-created issue opening skipped/);
+    assert.match(stdout, /contains_trigger::false/);
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+}
+
 if (import.meta.main) {
   assert.equal(process.env.GITHUB_ACTIONS, "true");
   if (mode === "denied") {
@@ -109,9 +160,11 @@ if (import.meta.main) {
       });
       assert.equal(result.isError, true);
       assert.match(JSON.stringify(result), /issues: write/);
-      assert.equal(
-        (await issues()).length,
-        0,
+      const recentIssues = await api(
+        "issues?state=all&sort=created&direction=desc&per_page=100",
+      );
+      assert.ok(
+        !recentIssues.some((issue: { title: string }) => issue.title === title),
         "A read-only token must not create an issue",
       );
       console.log("Live GitHub permission denial passed");
@@ -150,14 +203,19 @@ if (import.meta.main) {
       assert.deepEqual(submitted, JSON.parse(calls[1].input.arguments));
     // Failure delivery is independent of model-added explanatory prose. Verify the
     // stored body against the real tool input; normal creation remains exact.
-    const matches = await issues(false, success ? body : submitted.body);
+    const prefix = `${ACTION_CREATED_ISSUE_MARKER}\n\n`;
+    const matches = await issues(
+      false,
+      prefix + (success ? body : submitted.body),
+    );
     assert.equal(
       matches.length,
       1,
       "Identical tool calls must create exactly one actual issue",
     );
     const issue = matches[0];
-    assert.equal(issue.body, submitted.body);
+    assert.equal(issue.body, prefix + submitted.body);
+    if (success) await assertOpeningIsSkipped(issue);
     assert.equal(issue.user.login, "github-actions[bot]");
     assert.ok(
       issue.html_url.startsWith(`https://github.com/${repository}/issues/`),
@@ -210,6 +268,7 @@ if (import.meta.main) {
           toolCalls: calls.length,
           actualIssues: matches.length,
           headUnchanged: true,
+          openingSkipped: success || undefined,
         },
         null,
         2,

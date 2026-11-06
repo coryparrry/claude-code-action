@@ -20,6 +20,7 @@ type PrepareConfigParams = {
   claudeCommentId?: string;
   commentType?: "issue" | "review";
   allowedTools: string[];
+  settings?: string;
   mode: AutoDetectedMode;
   context: GitHubContext;
 };
@@ -89,7 +90,7 @@ export async function prepareMcpConfig(
   try {
     const permission = await resolveCompatibility(
       process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "",
-      process.env.INPUT_SETTINGS || "",
+      params.settings ?? process.env.INPUT_SETTINGS ?? "",
       '{"mcpServers":{}}',
       [],
       {

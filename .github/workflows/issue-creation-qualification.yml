@@ -14,7 +14,7 @@ permissions:
 
 env:
   ISSUE_TEST_TITLE: "Release test: issue creation ${{ github.run_id }}"
-  ISSUE_TEST_BODY: "Automated issue creation release qualification. Nonce: ${{ github.run_id }}-${{ github.run_attempt }}."
+  ISSUE_TEST_BODY: "Automated issue creation release qualification. Nonce: ${{ github.run_id }}-${{ github.run_attempt }}. Literal command example: /codex show true and false."
 
 jobs:
   create:

@@ -10,6 +10,7 @@ import {
   type ModelSettings,
 } from "@openai/agents";
 import Ajv from "ajv";
+import { normalizeGitHubAppPrivateKey } from "./github-app-key";
 import { randomUUID } from "node:crypto";
 import { readFile, realpath, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir, homedir } from "node:os";
@@ -204,9 +205,13 @@ export async function runCodex(
   for (const [name, value] of Object.entries(process.env))
     if (
       value &&
+      name !== "GITHUB_TOKEN_PROVIDED" &&
       /key|token|secret|password|credential|authorization/i.test(name)
-    )
+    ) {
       secrets.add(value);
+      if (name === "GITHUB_APP_PRIVATE_KEY")
+        secrets.add(normalizeGitHubAppPrivateKey(value));
+    }
   const register = (value: string) => {
     if (value) {
       secrets.add(value);

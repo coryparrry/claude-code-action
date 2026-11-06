@@ -5,6 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { Octokit } from "@octokit/rest";
 import { z } from "zod";
 import { recordCreatedIssue } from "../github/operations/issue-creation-receipts";
+import { ACTION_CREATED_ISSUE_MARKER } from "../github/issue-origin";
 import { GITHUB_API_URL } from "../github/api/config";
 import { redactSecrets } from "../github/utils/sanitizer";
 
@@ -43,7 +44,7 @@ export async function createRepositoryIssue(
   const payload = issueInputSchema.parse({
     ...parsed,
     title: redactSecrets(parsed.title).trim(),
-    body: redactSecrets(parsed.body),
+    body: `${ACTION_CREATED_ISSUE_MARKER}\n\n${redactSecrets(parsed.body)}`,
     labels: parsed.labels?.map((label) => redactSecrets(label)),
   });
   const result = await client.rest.issues.create({

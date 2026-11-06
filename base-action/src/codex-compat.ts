@@ -207,6 +207,16 @@ function settingValue(value: unknown): string {
   throw new Error("Unsupported Codex setting value");
 }
 
+/** Match the settings input's file-path form, alongside inline JSON and TOML. */
+export function isSettingsFile(raw: string): boolean {
+  return (
+    !!raw.trim() &&
+    !raw.trim().startsWith("{") &&
+    !raw.includes("=") &&
+    !raw.includes("\n")
+  );
+}
+
 /** Supported legacy options retain their meaning; unsupported controls fail closed. */
 export async function resolveCompatibility(
   raw: string,
@@ -231,11 +241,7 @@ export async function resolveCompatibility(
   };
   if (settingsRaw.trim()) {
     let content = settingsRaw;
-    if (
-      !settingsRaw.trim().startsWith("{") &&
-      !settingsRaw.includes("=") &&
-      !settingsRaw.includes("\n")
-    )
+    if (isSettingsFile(settingsRaw))
       content = await readFile(settingsRaw, "utf8");
     let settings: unknown;
     try {

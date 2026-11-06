@@ -21,7 +21,10 @@ import {
 import { detectMode } from "../modes/detector";
 import { prepareTagMode } from "../modes/tag";
 import { prepareAgentMode } from "../modes/agent";
-import { checkContainsTrigger } from "../github/validation/trigger";
+import {
+  checkContainsTrigger,
+  isActionCreatedIssueOpening,
+} from "../github/validation/trigger";
 import { collectActionInputsPresence } from "./collect-inputs";
 
 async function run() {
@@ -30,6 +33,11 @@ async function run() {
 
     // Parse GitHub context first to enable mode detection
     const context = parseGitHubContext();
+    if (isActionCreatedIssueOpening(context)) {
+      console.log("Action-created issue opening skipped");
+      core.setOutput("contains_trigger", "false");
+      return;
+    }
 
     // Auto-detect mode based on context
     const modeName = detectMode(context);
