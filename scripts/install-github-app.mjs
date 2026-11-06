@@ -143,6 +143,37 @@ async function chooseKey(options, terminal) {
   return validateApiKey(await terminal.secret("OpenAI API key (hidden): "));
 }
 
+/** Pick a runner for a new installation. Existing installs keep their runner. */
+async function chooseRunner(terminal) {
+  const choice = await terminal.ask("Runner: 1 Linux, 2 macOS for Xcode [1]: ");
+  if (choice && !["1", "2"].includes(choice))
+    throw new Error("Choose runner 1 or 2.");
+  return choice === "2" ? "macos-latest" : "ubuntu-latest";
+}
+
+/** Confirm that a classic login can write workflows before applying any plans. */
+async function authorizeWorkflowWrites(client, terminal, options) {
+  if (!(await client.workflowScopeMissing())) return true;
+  const message =
+    "GitHub CLI needs workflow access. Run gh auth refresh --hostname github.com --scopes workflow or use a token with workflow access.";
+  if (!terminal.interactive || options.yes || options.json)
+    throw new Error(message);
+  if (
+    !(await terminal.confirm(
+      "Grant GitHub CLI permission to write workflows?",
+      true,
+    ))
+  )
+    return false;
+  try {
+    await client.refreshWorkflowScope();
+  } catch {
+    throw new Error(message);
+  }
+  if (await client.workflowScopeMissing()) throw new Error(message);
+  return true;
+}
+
 /** Plan the requested setup, confirm interactive changes and apply each plan. */
 export async function runCli(
   argv,
@@ -220,52 +251,44 @@ export async function runCli(
           : await chooseRepositories(client, user, terminal)),
     ),
   ];
-  let runner = options.runner ?? "ubuntu-latest";
-  if (
-    terminal.interactive &&
-    !options.yes &&
-    !options["dry-run"] &&
-    !options.runner
-  ) {
-    const choice = await terminal.ask(
-      "Runner: 1 Linux, 2 macOS for Xcode [1]: ",
-    );
-    if (choice && !["1", "2"].includes(choice))
-      throw new Error("Choose runner 1 or 2.");
-    runner = choice === "2" ? "macos-latest" : "ubuntu-latest";
-  }
-  const actors = options.actor ?? [user.login];
-  const model = options.model ?? DEFAULT_MODEL;
+  const selectRunner =
+    terminal.interactive && !options.yes && !options["dry-run"]
+      ? () => chooseRunner(terminal)
+      : undefined;
   const plans = [];
   for (const repository of repositories)
     plans.push(
       await planInstallation(client, {
         repository,
-        actors,
-        runner,
-        model,
+        actors: options.actor,
+        runner: options.runner,
+        model: options.model,
+        defaultActor: user.login,
+        selectRunner,
         replaceSecret: !!options["replace-secret"],
       }),
     );
   if (!options.json) {
     terminal.write(
-      `\nModel: ${model}; runner: ${runner}; trusted users: ${actors.join(", ")}`,
-    );
-    terminal.write(
       `Automatic reviews: trusted users' same-repository, non-draft PRs when opened or updated. Reviews use read-only code access; ${DEFAULT_TRIGGER_PHRASE} requests can implement changes. Both show progress.`,
     );
     for (const plan of plans)
       terminal.write(
-        `${plan.repository}: ${plan.status} workflow on ${plan.defaultBranch}; OPENAI_API_KEY: ${plan.needsSecret ? (plan.replaceSecret ? "replace" : "create") : "reuse"}`,
+        `${plan.repository}: ${plan.status} workflow on ${plan.defaultBranch}; OPENAI_API_KEY: ${plan.needsSecret ? (plan.replaceSecret ? "replace" : "create") : "reuse"}\n  Model: ${plan.model}; runner: ${plan.runner}; trusted users: ${plan.actors.join(", ")}`,
       );
     terminal.write(
-      "Workflow changes are proposed in draft PRs. Existing workflows are preserved.",
+      "Review the workflow changes in the draft setup PR before merging.",
     );
   }
   if (options["dry-run"]) return emit({ dryRun: true, plans });
   if (
     !options.yes &&
     !(await terminal.confirm("Apply this setup to the selected repositories?"))
+  )
+    return emit({ cancelled: true });
+  if (
+    plans.some(({ status }) => status === "new" || status === "update") &&
+    !(await authorizeWorkflowWrites(client, terminal, options))
   )
     return emit({ cancelled: true });
   const apiKey = plans.some((plan) => plan.needsSecret)

@@ -16,6 +16,7 @@ const installerFiles = [
   "scripts/github-action-installer/github.mjs",
   "scripts/github-action-installer/install.mjs",
   "scripts/github-action-installer/keys.mjs",
+  "scripts/github-action-installer/settings.mjs",
   "scripts/github-action-installer/terminal.mjs",
   "scripts/github-action-installer/workflow.mjs",
 ];

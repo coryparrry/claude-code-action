@@ -88,6 +88,25 @@ export class GitHubClient {
     return this.api("user");
   }
 
+  /** Check classic OAuth scopes without exposing the credential or response. */
+  async workflowScopeMissing() {
+    const response = await this.execute(["api", "user", "--include"]);
+    const headers = response.split(/\r?\n\r?\n/, 1)[0];
+    const scopes = headers.match(/^x-oauth-scopes:[ \t]*([^\r\n]*)/im)?.[1];
+    return (
+      !!scopes?.trim() &&
+      !scopes.split(",").some((scope) => scope.trim() === "workflow")
+    );
+  }
+
+  /** Request the workflow scope for the current GitHub CLI login. */
+  refreshWorkflowScope() {
+    return this.execute(
+      ["auth", "refresh", "--hostname", "github.com", "--scopes", "workflow"],
+      { inherit: true },
+    );
+  }
+
   repositories(login) {
     return this.json([
       "repo",

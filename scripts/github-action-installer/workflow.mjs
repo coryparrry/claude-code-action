@@ -129,9 +129,18 @@ ${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_t
     outputs:
       configured: \${{ steps.verify.outputs.configured }}
     steps:
-      - uses: actions/checkout@v6
+      - name: Check out delivered commit
+        uses: actions/checkout@v6
         with:
           ref: \${{ needs.codex.outputs.head_sha }}
+          persist-credentials: false
+      - name: Check out trusted validation recipe
+        uses: actions/checkout@v6
+        with:
+          ref: \${{ github.event.pull_request.base.sha || github.workflow_sha }}
+          path: .git/codex-validation
+          sparse-checkout: .github/actions/codex-validate
+          sparse-checkout-cone-mode: false
           persist-credentials: false
       - name: Verify delivered commit
         id: verify
@@ -141,15 +150,25 @@ ${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_t
         run: |
           test "$(git rev-parse HEAD)" = "$HEAD_SHA"
           echo "Checked out delivered commit $HEAD_SHA"
-          if [ -f .github/actions/codex-validate/action.yml ]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "Project validation skipped. Add .github/actions/codex-validate/action.yml to configure it."
-          fi
+          recipe=.github/actions/codex-validate/action.yml
+          entry=$(git -C .git/codex-validation ls-tree HEAD -- "$recipe")
+          case "\${entry%% *}" in
+            100644|100755)
+              test -f ".git/codex-validation/$recipe"
+              echo "configured=true" >> "$GITHUB_OUTPUT"
+              ;;
+            '')
+              echo "configured=false" >> "$GITHUB_OUTPUT"
+              echo "Project validation skipped. Add $recipe to the trusted base to configure it."
+              ;;
+            *)
+              echo "The trusted validation action.yml must be a regular file."
+              exit 1
+              ;;
+          esac
       - name: Run project validation
         if: steps.verify.outputs.configured == 'true'
-        uses: ./.github/actions/codex-validate
+        uses: ./.git/codex-validation/.github/actions/codex-validate
 
   report_validation:
     needs: [codex, validate_change]

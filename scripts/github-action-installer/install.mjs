@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { selectInstallationSettings } from "./settings.mjs";
 import {
   MANAGED_MARKER,
   WORKFLOW_PATH,
@@ -66,36 +67,43 @@ async function pendingInstallation(client, plan) {
   return undefined;
 }
 
+/** Require the installer marker before replacing an existing workflow. */
+function assertManagedWorkflow(current, path) {
+  if (current && !current.content.startsWith(MANAGED_MARKER))
+    throw new Error(
+      `An existing ${path} is not managed by this installer. It will not be overwritten.`,
+    );
+}
+
 /** Plan both managed workflows without overwriting user-owned files. */
-export async function planInstallation(
-  client,
-  { repository, actors, runner, model, replaceSecret = false },
-) {
-  const resolved = await installationRepository(client, repository);
-  repository = resolved.repository;
-  const defaultBranch = resolved.defaultBranch;
-  const workflow = renderWorkflow({ repository, actors, runner, model });
-  const memoryWorkflow = renderMemoryWorkflow({ repository, actors });
+export async function planInstallation(client, options) {
+  const { repository, defaultBranch } = await installationRepository(
+    client,
+    options.repository,
+  );
+  const { replaceSecret = false } = options;
   const existing = await client.workflow(repository, defaultBranch);
   const memoryExisting = await client.workflow(
     repository,
     defaultBranch,
     MEMORY_WORKFLOW_PATH,
   );
+  assertManagedWorkflow(existing, WORKFLOW_PATH);
+  assertManagedWorkflow(memoryExisting, MEMORY_WORKFLOW_PATH);
+  const settings = await selectInstallationSettings(
+    existing?.content,
+    memoryExisting?.content,
+    options,
+  );
+  const workflow = renderWorkflow({ repository, ...settings });
+  const memoryWorkflow = renderMemoryWorkflow({
+    repository,
+    actors: settings.actors,
+  });
   const installed = [
-    { path: WORKFLOW_PATH, current: existing, content: workflow },
-    {
-      path: MEMORY_WORKFLOW_PATH,
-      current: memoryExisting,
-      content: memoryWorkflow,
-    },
+    { current: existing, content: workflow },
+    { current: memoryExisting, content: memoryWorkflow },
   ];
-  for (const { path, current } of installed) {
-    if (current && !current.content.startsWith(MANAGED_MARKER))
-      throw new Error(
-        `An existing ${path} is not managed by this installer. It will not be overwritten.`,
-      );
-  }
   await client.verifyActionRevision();
   const secrets = await client.secrets(repository);
   const needsSecret =
@@ -104,9 +112,7 @@ export async function planInstallation(
   const plan = {
     repository,
     defaultBranch,
-    actors,
-    runner,
-    model,
+    ...settings,
     workflow,
     workflowSha: existing?.sha,
     memoryWorkflow,

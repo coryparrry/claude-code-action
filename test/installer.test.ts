@@ -80,6 +80,7 @@ function fakeClient(overrides: Record<string, any> = {}): {
   const calls: any[][] = [];
   const values = {
     repository: repository(),
+    workflowScopeMissing: false,
     secrets: [],
     workflow: null,
     memoryWorkflow: null,
@@ -1142,6 +1143,122 @@ describe("installer interaction guards", () => {
     expect(calls.some(([name]) => name === "setSecret")).toBe(false);
   });
 
+  test("retains the managed settings and changes only explicit overrides", async () => {
+    const previous = {
+      repository: "octo/demo",
+      actors: ["owner", "teammate"],
+      runner: "macos-latest",
+      model: "gpt-5.4",
+    };
+    const workflow = { sha: "installed", content: renderWorkflow(previous) };
+    const memoryWorkflow = {
+      sha: "memory",
+      content: renderMemoryWorkflow(previous),
+    };
+    const { client } = fakeClient({
+      authenticated: true,
+      user: { login: "installer-admin" },
+      currentRepository: previous.repository,
+      secrets: [{ name: "OPENAI_API_KEY" }],
+      workflow,
+      memoryWorkflow,
+    });
+    const { terminal, prompts } = interactiveTerminalSpy();
+    const unchanged = await runCli(["--dry-run"], { client, terminal } as any);
+    expect(unchanged).toMatchObject({
+      plans: [{ ...previous, status: "configured" }],
+    });
+    const override = await runCli(["--dry-run", "--model", "gpt-5.4-mini"], {
+      client,
+      terminal,
+    } as any);
+    expect(override).toMatchObject({
+      plans: [{ ...previous, model: "gpt-5.4-mini", status: "update" }],
+    });
+    expect(prompts.join("\n")).toContain("trusted users: owner, teammate");
+    workflow.content = workflow.content.replaceAll(
+      `contains(fromJSON('["owner","teammate"]'), github.actor)`,
+      "github.actor == 'owner' || github.actor == 'teammate'",
+    );
+    await expect(
+      runCli(["--dry-run"], { client, terminal } as any),
+    ).rejects.toThrow("--actor");
+    const explicit = await runCli(
+      ["--dry-run", "--actor", "owner", "--actor", "teammate"],
+      { client, terminal } as any,
+    );
+    expect(explicit).toMatchObject({
+      plans: [{ ...previous, status: "update" }],
+    });
+    workflow.content = renderWorkflow(previous);
+    memoryWorkflow.content = renderMemoryWorkflow({
+      ...previous,
+      actors: ["owner"],
+    });
+    await expect(
+      runCli(["--dry-run"], { client, terminal } as any),
+    ).rejects.toThrow("--actor");
+  });
+
+  test("preserves publisher actors when only the memory workflow exists", async () => {
+    const actors = ["owner", "teammate"];
+    const { client } = fakeClient({
+      memoryWorkflow: {
+        sha: "memory",
+        content: renderMemoryWorkflow({ repository: "octo/demo", actors }),
+      },
+    });
+    await expect(
+      planInstallation(client, {
+        repository: "octo/demo",
+        defaultActor: "installer-admin",
+      }),
+    ).resolves.toMatchObject({ actors, status: "update" });
+  });
+
+  test("refreshes a missing workflow scope before prompting for a key or writing", async () => {
+    const { client, calls } = fakeClient({
+      authenticated: true,
+      user: { login: "alice" },
+      currentRepository: "octo/demo",
+      secrets: [{ name: "OPENAI_API_KEY" }],
+    });
+    let missing = true;
+    client.workflowScopeMissing = async () => {
+      calls.push(["workflowScopeMissing"]);
+      return missing;
+    };
+    client.refreshWorkflowScope = async () => {
+      calls.push(["refreshWorkflowScope"]);
+      missing = false;
+    };
+    const { terminal, prompts } = interactiveTerminalSpy();
+    await expect(
+      runCli([], { client, terminal } as any),
+    ).resolves.toMatchObject({
+      results: [{ status: "created" }],
+    });
+    expect(prompts).toContain(
+      "Grant GitHub CLI permission to write workflows?",
+    );
+    expect(
+      calls
+        .map(([name]) => name)
+        .filter((name) =>
+          [
+            "workflowScopeMissing",
+            "refreshWorkflowScope",
+            "createBranch",
+          ].includes(name),
+        ),
+    ).toEqual([
+      "workflowScopeMissing",
+      "refreshWorkflowScope",
+      "workflowScopeMissing",
+      "createBranch",
+    ]);
+  });
+
   test("JSON install never prompts for a key even when a terminal is interactive", async () => {
     const { client, calls } = fakeClient({
       authenticated: true,
@@ -1200,7 +1317,11 @@ const input = fs.readFileSync(0, 'utf8');
 fs.appendFileSync(process.env.INSTALLER_GH_EVENT_LOG, JSON.stringify({ args, input }) + '\\n');
 const json = value => process.stdout.write(JSON.stringify(value));
 if (args[0] === 'auth' && args[1] === 'status') process.exit(0);
-if (args[0] === 'api' && args[1] === 'user') return json({ login: 'alice' });
+if (args[0] === 'api' && args[1] === 'user') {
+  if (args.includes('--include') && process.env.INSTALLER_GH_OAUTH_SCOPES !== undefined)
+    process.stdout.write('HTTP/2.0 200 OK\\nX-Oauth-Scopes: ' + process.env.INSTALLER_GH_OAUTH_SCOPES + '\\n\\n');
+  return json({ login: 'alice' });
+}
 if (args[0] === 'repo' && args[1] === 'view') return json({ nameWithOwner: 'octo/demo', defaultBranchRef: { name: 'main' }, viewerPermission: 'ADMIN', isArchived: false, url: 'https://github.com/octo/demo' });
 if (args[0] === 'secret' && args[1] === 'list') return json([]);
 if (args[0] === 'pr' && args[1] === 'list') return json([]);
@@ -1329,6 +1450,36 @@ process.exit(2);
           ({ args }) =>
             args.includes("--method") &&
             ["POST", "PUT"].some((verb) => args.includes(verb)),
+        ),
+      ).toBe(false);
+    });
+  });
+
+  test("a classic login without workflow scope stops before any setup writes", async () => {
+    await withFakeGh(async ({ eventLog, invoke }) => {
+      const result = invoke(
+        [
+          "--repo",
+          "octo/demo",
+          "--yes",
+          "--json",
+          "--key-file",
+          "missing-key-file",
+        ],
+        { INSTALLER_GH_OAUTH_SCOPES: "repo, read:org" },
+      );
+      expect(result.status).toBe(1);
+      expect(JSON.parse(result.stderr).error.message).toContain(
+        "--scopes workflow",
+      );
+      const events = (await readFile(eventLog, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(events.some(({ args }) => args.includes("--include"))).toBe(true);
+      expect(
+        events.some(({ args }) =>
+          ["set", "PUT", "POST"].some((verb) => args.includes(verb)),
         ),
       ).toBe(false);
     });

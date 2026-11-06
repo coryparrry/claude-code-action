@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { readFile, rm } from "node:fs/promises";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { parse } from "yaml";
 import { renderWorkflow } from "../scripts/github-action-installer/workflow.mjs";
 import {
@@ -100,15 +103,24 @@ test("repository validation executes without write credentials or model secrets"
   });
   expect(JSON.stringify(validation)).not.toContain("secrets.");
   expect(JSON.stringify(validation)).not.toContain("github.token");
-  expect(validation.steps[1].env).toEqual({
+  expect(validation.steps[1].with).toMatchObject({
+    ref: "${{ github.event.pull_request.base.sha || github.workflow_sha }}",
+    path: ".git/codex-validation",
+    "sparse-checkout": ".github/actions/codex-validate",
+    "persist-credentials": false,
+  });
+  expect(validation.steps[2].env).toEqual({
     HEAD_SHA: "${{ needs.codex.outputs.head_sha }}",
   });
-  expect(validation.steps[1].run).toContain(
+  expect(validation.steps[2].run).toContain(
     'test "$(git rev-parse HEAD)" = "$HEAD_SHA"',
   );
-  expect(validation.steps[2]).toMatchObject({
+  expect(validation.steps[2].run).toContain(
+    "git -C .git/codex-validation ls-tree HEAD",
+  );
+  expect(validation.steps[3]).toMatchObject({
     if: "steps.verify.outputs.configured == 'true'",
-    uses: "./.github/actions/codex-validate",
+    uses: "./.git/codex-validation/.github/actions/codex-validate",
   });
   const projectAction = parse(
     await readFile(
@@ -136,6 +148,63 @@ test("repository validation executes without write credentials or model secrets"
   });
   expect(JSON.stringify(report)).not.toContain("actions/checkout");
   expect(JSON.stringify(report)).not.toContain("OPENAI_API_KEY");
+});
+
+test("a delivered commit cannot substitute its own passing validation recipe", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "codex-validation-recipe-"));
+  /** Run Git only within the disposable fixture checkout. */
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: directory, encoding: "utf8" }).trim();
+  const recipe = ".github/actions/codex-validate/action.yml";
+  const action =
+    "name: Fixture\nruns:\n  using: composite\n  steps:\n    - shell: bash\n      run: ";
+  try {
+    git("init", "-qb", "main");
+    git("config", "user.name", "Fixture");
+    git("config", "user.email", "fixture@example.invalid");
+    await mkdir(join(directory, ".github/actions/codex-validate"), {
+      recursive: true,
+    });
+    await writeFile(join(directory, recipe), `${action}exit 1\n`);
+    git("add", ".");
+    git("commit", "-qm", "Trusted recipe rejects the fixture");
+    git("switch", "-qc", "codex/delivery");
+    await writeFile(join(directory, recipe), `${action}exit 0\n`);
+    git("commit", "-qam", "Delivered candidate replaces the recipe");
+    git(
+      "clone",
+      "-q",
+      "--single-branch",
+      "--branch",
+      "main",
+      ".",
+      ".git/codex-validation",
+    );
+    const workflow = parse(
+      renderWorkflow({ repository: "owner/repo", actors: ["owner"] }),
+    );
+    const [, , verify, validate] = workflow.jobs.validate_change.steps;
+    const outputs = join(directory, ".git/outputs");
+    execFileSync("bash", ["-e", "-o", "pipefail", "-c", verify.run], {
+      cwd: directory,
+      env: {
+        ...process.env,
+        HEAD_SHA: git("rev-parse", "HEAD"),
+        GITHUB_OUTPUT: outputs,
+      },
+    });
+    expect(await readFile(outputs, "utf8")).toBe("configured=true\n");
+    const selected = parse(
+      await readFile(join(directory, validate.uses, "action.yml"), "utf8"),
+    );
+    expect(
+      spawnSync("bash", ["-e", "-c", selected.runs.steps[0].run], {
+        cwd: directory,
+      }).status,
+    ).toBe(1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("validation reporting updates the existing section after a same-commit retry", async () => {

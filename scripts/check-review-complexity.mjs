@@ -11,6 +11,7 @@ const files = [
   "src/review/repository-learning.ts",
   "scripts/github-action-installer/workflow.mjs",
   "scripts/github-action-installer/install.mjs",
+  "scripts/github-action-installer/settings.mjs",
   "scripts/github-action-installer/github.mjs",
 ];
 const functions = new Set([
