@@ -42,7 +42,7 @@ jobs:
       - run: bun --no-env-file install --frozen-lockfile
       - name: Create an issue through the actual command action
         id: creator
-        uses: coryparrry/claude-code-action@457fccfa4dc4f0ffee4977d77bfaca684cd7b5ef
+        uses: coryparrry/claude-code-action@aea3682ce4a3f9f68533a1934fc71345ee56fe1e
         with:
           github_token: ${{ github.token }}
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -78,7 +78,7 @@ jobs:
       - name: Exercise expected agent failure after confirmed creation
         id: creator_failure
         continue-on-error: true
-        uses: coryparrry/claude-code-action@457fccfa4dc4f0ffee4977d77bfaca684cd7b5ef
+        uses: coryparrry/claude-code-action@aea3682ce4a3f9f68533a1934fc71345ee56fe1e
         with:
           github_token: ${{ github.token }}
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
