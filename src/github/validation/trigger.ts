@@ -17,7 +17,12 @@ export function isActionCreatedIssueOpening(context: GitHubContext): boolean {
   return (
     isIssuesEvent(context) &&
     context.eventAction === "opened" &&
-    !!context.payload.issue?.body?.includes(ACTION_CREATED_ISSUE_MARKER)
+    context.payload.issue?.user?.type === "Bot" &&
+    context.payload.issue.user.login === context.actor &&
+    context.payload.issue.user.login === context.inputs.botName &&
+    !!context.payload.issue.body?.startsWith(
+      `${ACTION_CREATED_ISSUE_MARKER}\n\n`,
+    )
   );
 }
 

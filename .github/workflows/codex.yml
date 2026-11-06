@@ -37,7 +37,6 @@ jobs:
         (github.event_name == 'pull_request_review' &&
           contains(github.event.review.body, '/codex')) ||
         (github.event_name == 'issues' &&
-          !contains(github.event.issue.body, '<!-- codex-action:created-issue:v1 -->') &&
           (contains(github.event.issue.body, '/codex') ||
            contains(github.event.issue.title, '/codex')))
       )

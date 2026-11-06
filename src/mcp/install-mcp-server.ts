@@ -1,4 +1,5 @@
 import { issueCreationAllowed } from "./issue-creation-policy";
+import { stringList } from "../../base-action/src/agent-markdown";
 import { resolveCompatibility } from "../../base-action/src/codex-compat";
 import { usesApiCommitSigning } from "../github/operations/commit-signing";
 import * as core from "@actions/core";
@@ -21,6 +22,7 @@ type PrepareConfigParams = {
   commentType?: "issue" | "review";
   allowedTools: string[];
   settings?: string;
+  resolvedPermissions?: Awaited<ReturnType<typeof resolveActionPermissions>>;
   mode: AutoDetectedMode;
   context: GitHubContext;
 };
@@ -71,6 +73,46 @@ async function checkActionsReadPermission(
   }
 }
 
+/** Resolve trusted workflow grants once for checkout preparation and MCP setup. */
+export async function resolveActionPermissions(settings: string) {
+  const permission = await resolveCompatibility(
+    process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "",
+    settings,
+    '{"mcpServers":{}}',
+    [],
+    {
+      allowedTools: process.env.ALLOWED_TOOLS || undefined,
+      permissionMode: process.env.PERMISSION_MODE || undefined,
+    },
+  );
+  if (
+    Object.hasOwn(JSON.parse(permission.mcpConfig).mcpServers, "github_issues")
+  )
+    throw new Error(
+      "github_issues is reserved for the repository-scoped action server",
+    );
+  const selected = permission.agentName
+    ? permission.agentDefinitions?.[permission.agentName]
+    : undefined;
+  const agent =
+    selected && typeof selected === "object"
+      ? (selected as Record<string, unknown>)
+      : undefined;
+  return {
+    allowedTools: [
+      ...new Set([
+        ...(permission.allowedTools ?? []),
+        ...(stringList(agent?.tools, "Agent tools") ?? []),
+      ]),
+    ],
+    planning:
+      agent?.permissionMode === "plan" ||
+      ["plan", "readonly", "read-only"].includes(
+        permission.permissionMode || "",
+      ),
+  };
+}
+
 /** Configure scoped GitHub MCP servers and preserve ancestry for signed replacement work. */
 export async function prepareMcpConfig(
   params: PrepareConfigParams,
@@ -88,22 +130,14 @@ export async function prepareMcpConfig(
     mode,
   } = params;
   try {
-    const permission = await resolveCompatibility(
-      process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "",
-      params.settings ?? process.env.INPUT_SETTINGS ?? "",
-      '{"mcpServers":{}}',
-      [],
-      {
-        allowedTools: process.env.ALLOWED_TOOLS || undefined,
-        permissionMode: process.env.PERMISSION_MODE || undefined,
-      },
-    );
+    const { allowedTools: resolved, planning } =
+      params.resolvedPermissions ??
+      (await resolveActionPermissions(
+        params.settings ?? process.env.INPUT_SETTINGS ?? "",
+      ));
     const allowedToolsList = [
-      ...new Set([...(allowedTools || []), ...(permission.allowedTools || [])]),
+      ...new Set([...(allowedTools || []), ...resolved]),
     ];
-    const planning = ["plan", "readonly", "read-only"].includes(
-      permission.permissionMode || "",
-    );
 
     // Detect if we're in agent mode (explicit prompt provided)
     const isAgentMode = mode === "agent";

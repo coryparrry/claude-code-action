@@ -333,9 +333,18 @@ test("literal Markdown, accessible image descriptions and fenced examples surviv
   const context = createMockContext({
     eventName: "issues",
     eventAction: "opened",
-    inputs: { triggerPhrase: "/codex", prompt: "Explicit command" },
+    actor: "github-actions[bot]",
+    inputs: {
+      triggerPhrase: "/codex",
+      prompt: "Explicit command",
+      botName: "github-actions[bot]",
+    },
     payload: {
-      issue: { body: calls[0]!.body, title: "/codex Do not run" },
+      issue: {
+        body: calls[0]!.body,
+        title: "/codex Do not run",
+        user: { login: "github-actions[bot]", type: "Bot" },
+      },
     } as any,
   });
   expect(checkContainsTrigger(context)).toBe(false);
@@ -343,7 +352,14 @@ test("literal Markdown, accessible image descriptions and fenced examples surviv
     checkContainsTrigger({
       ...context,
       inputs: { ...context.inputs, prompt: "" },
-      payload: { issue: { body, title: "/codex Do run" } } as any,
+      actor: "human",
+      payload: {
+        issue: {
+          body: calls[0]!.body,
+          title: "/codex Do run",
+          user: { login: "human", type: "User" },
+        },
+      } as any,
     }),
   ).toBe(true);
 });

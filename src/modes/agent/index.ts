@@ -2,8 +2,10 @@ import { resolveActionSettings } from "../../github/operations/action-settings";
 import { prepareAgentPrHead } from "../../github/operations/prepare-agent-head";
 import { usesApiCommitSigning } from "../../github/operations/commit-signing";
 import { mkdir, rm, writeFile } from "fs/promises";
-import { prepareMcpConfig } from "../../mcp/install-mcp-server";
-import { parseAllowedTools } from "./parse-tools";
+import {
+  prepareMcpConfig,
+  resolveActionPermissions,
+} from "../../mcp/install-mcp-server";
 import {
   configureGitAuth,
   replaceCheckoutCredentials,
@@ -32,6 +34,7 @@ export async function prepareAgentMode({
   // Check if actor is human (prevents bot-triggered loops)
   await checkHumanActor(octokit.rest, context);
   const settings = await resolveActionSettings(context, octokit.rest);
+  const resolvedPermissions = await resolveActionPermissions(settings);
 
   // Configure git authentication for agent mode (same as tag mode)
   // SSH signing takes precedence if provided
@@ -96,10 +99,7 @@ export async function prepareAgentMode({
   // Parse allowed tools from codex_args or the claude_args compatibility alias.
   const userClaudeArgs =
     process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "";
-  const allowedTools = parseAllowedTools(
-    userClaudeArgs,
-    process.env.ALLOWED_TOOLS,
-  );
+  const { allowedTools, planning } = resolvedPermissions;
 
   // Check for branch info from environment variables (useful for auto-fix workflows)
   const claudeBranch = process.env.CODEX_BRANCH || undefined;
@@ -115,6 +115,7 @@ export async function prepareAgentMode({
 
   if (
     process.env.CODEX_SANDBOX !== "read-only" &&
+    !planning &&
     allowedTools.some((tool) =>
       /^mcp__github_git(?:$|__(?:push|commit_files|delete_files|\*)(?:\(|$))/.test(
         tool,
@@ -134,6 +135,7 @@ export async function prepareAgentMode({
     allowedTools,
     mode: "agent",
     settings,
+    resolvedPermissions,
     context,
   });
 

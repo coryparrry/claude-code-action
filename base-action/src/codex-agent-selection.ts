@@ -119,9 +119,13 @@ export function childMcpConfig(parent: string, requested: unknown): string {
       if (!Object.hasOwn(available, value))
         throw new Error(`Unknown agent MCP server: ${value}`);
       servers[value] = available[value];
-    } else if (value && typeof value === "object" && !Array.isArray(value))
+    } else if (value && typeof value === "object" && !Array.isArray(value)) {
+      if (Object.hasOwn(value, "github_issues"))
+        throw new Error(
+          "github_issues is reserved for the repository-scoped action server",
+        );
       Object.assign(servers, value);
-    else
+    } else
       throw new Error(
         "Agent MCP servers must contain references or server configuration objects",
       );

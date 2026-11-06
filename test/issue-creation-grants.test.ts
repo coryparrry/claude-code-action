@@ -194,6 +194,41 @@ test.each(["settings", "file"] as const)(
   },
 );
 
+test("the trusted selected agent's grant installs the scoped issue server", async () => {
+  process.env.CODEX_ARGS = `--agent publisher --agents '${JSON.stringify({ publisher: { prompt: "Open the requested issue", tools: [issueTool] } })}'`;
+  expect(
+    (await prepareAgentConfiguration()).mcpServers.github_issues,
+  ).toBeDefined();
+});
+
+test("workflow configuration cannot replace the reserved issue server", async () => {
+  process.env.CODEX_ARGS = `--mcp-config '${JSON.stringify({ mcpServers: { github_issues: { command: "false" } } })}'`;
+  await expect(prepareAgentConfiguration()).rejects.toThrow(
+    "github_issues is reserved",
+  );
+});
+
+test("invalid settings fail before tag mode posts a working comment", async () => {
+  process.env.INPUT_SETTINGS = '{"permissions":{"allow":"Read"}}';
+  const checkActor = spyOn(actor, "checkHumanActor").mockResolvedValue(
+    undefined,
+  );
+  const createComment = spyOn(createInitial, "createInitialComment");
+  try {
+    await expect(
+      prepareTagMode({
+        context: interactiveContext(),
+        octokit: {} as any,
+        githubToken: "fixture",
+      }),
+    ).rejects.toThrow("permissions.allow");
+    expect(createComment).not.toHaveBeenCalled();
+  } finally {
+    checkActor.mockRestore();
+    createComment.mockRestore();
+  }
+});
+
 test.each(["plan", "readonly", "read-only"])(
   "settings-based %s permission mode prevents issue-server installation",
   async (defaultMode) => {

@@ -8,7 +8,8 @@ import {
   mock,
 } from "bun:test";
 import { prepareAgentMode } from "../../src/modes/agent";
-import { createMockAutomationContext } from "../mockContext";
+import { createMockAutomationContext, createMockContext } from "../mockContext";
+import * as prHead from "../../src/github/operations/prepare-agent-head";
 import * as core from "@actions/core";
 import * as gitConfig from "../../src/github/operations/git-config";
 
@@ -49,6 +50,38 @@ describe("Agent Mode", () => {
 
   test("prepareAgentMode is exported as a function", () => {
     expect(typeof prepareAgentMode).toBe("function");
+  });
+
+  test("settings-only writable Git grants prepare the actual PR head", async () => {
+    const originalSettings = process.env.INPUT_SETTINGS;
+    process.env.INPUT_SETTINGS = JSON.stringify({
+      permissions: { allow: ["mcp__github_git__push"] },
+    });
+    const prepareHead = spyOn(prHead, "prepareAgentPrHead").mockImplementation(
+      () => {},
+    );
+    try {
+      const context = createMockContext({ eventName: "pull_request" });
+      const result = await prepareAgentMode({
+        context,
+        octokit: {
+          rest: {
+            users: {
+              getByUsername: mock(async () => ({ data: { type: "User" } })),
+            },
+          },
+        } as any,
+        githubToken: "fixture",
+      });
+      expect(prepareHead).toHaveBeenCalledWith(context);
+      expect(
+        JSON.parse(result.mcpConfig).mcpServers.github_git.env.GIT_READ_ONLY,
+      ).toBe("false");
+    } finally {
+      prepareHead.mockRestore();
+      if (originalSettings === undefined) delete process.env.INPUT_SETTINGS;
+      else process.env.INPUT_SETTINGS = originalSettings;
+    }
   });
 
   test("prepare passes through claude_args", async () => {

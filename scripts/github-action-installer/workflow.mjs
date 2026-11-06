@@ -99,7 +99,6 @@ jobs:
         (github.event_name == 'pull_request_review' &&
           contains(github.event.review.body, '${DEFAULT_TRIGGER_PHRASE}')) ||
         (github.event_name == 'issues' &&
-          !contains(github.event.issue.body, '<!-- codex-action:created-issue:v1 -->') &&
           (contains(github.event.issue.body, '${DEFAULT_TRIGGER_PHRASE}') ||
            contains(github.event.issue.title, '${DEFAULT_TRIGGER_PHRASE}')))
       )

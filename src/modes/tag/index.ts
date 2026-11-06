@@ -1,6 +1,5 @@
 import { resolveActionSettings } from "../../github/operations/action-settings";
 import { issueCreationGrants } from "../../mcp/issue-creation-policy";
-import { resolveCompatibility } from "../../../base-action/src/codex-compat";
 import { usesApiCommitSigning } from "../../github/operations/commit-signing";
 import { checkHumanActor } from "../../github/validation/actor";
 import { createInitialComment } from "../../github/operations/comments/create-initial";
@@ -10,7 +9,10 @@ import {
   replaceCheckoutCredentials,
   setupSshSigning,
 } from "../../github/operations/git-config";
-import { prepareMcpConfig } from "../../mcp/install-mcp-server";
+import {
+  prepareMcpConfig,
+  resolveActionPermissions,
+} from "../../mcp/install-mcp-server";
 import {
   fetchGitHubData,
   resolveTriggerTimestamp,
@@ -49,6 +51,8 @@ export async function prepareTagMode({
   // Check if actor is human
   await checkHumanActor(octokit.rest, context);
   const settings = await resolveActionSettings(context, octokit.rest);
+  const resolvedPermissions = await resolveActionPermissions(settings);
+  const userAllowedTools = resolvedPermissions.allowedTools;
 
   // Create initial tracking comment
   const commentData = await createInitialComment(octokit.rest, context);
@@ -132,14 +136,6 @@ export async function prepareTagMode({
 
   const userClaudeArgs =
     process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "";
-  const userPermissions = await resolveCompatibility(
-    userClaudeArgs,
-    settings,
-    '{"mcpServers":{}}',
-    [],
-    { allowedTools: process.env.ALLOWED_TOOLS || undefined },
-  );
-  const userAllowedTools = userPermissions.allowedTools ?? [];
   const userAllowedMCPTools = userAllowedTools.filter(
     (tool) => tool === "mcp__github" || tool.startsWith("mcp__github_"),
   );
@@ -189,6 +185,7 @@ export async function prepareTagMode({
     allowedTools: Array.from(new Set(tagModeTools)),
     mode: "tag",
     settings,
+    resolvedPermissions,
     context,
   });
 

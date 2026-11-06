@@ -480,12 +480,12 @@ describe("guided GitHub Action workflow", () => {
       true,
     );
 
-    const generatedIssue = commandEvent("issues");
-    generatedIssue.event.issue.title = "/codex do not run";
-    generatedIssue.event.issue.body =
+    const quotedMarker = commandEvent("issues");
+    quotedMarker.event.issue.title = "/codex do run";
+    quotedMarker.event.issue.body =
       "<!-- codex-action:created-issue:v1 -->\n\n/codex example";
-    expect(evaluateWorkflowCondition(commandCondition, generatedIssue)).toBe(
-      false,
+    expect(evaluateWorkflowCondition(commandCondition, quotedMarker)).toBe(
+      true,
     );
 
     const commentOverIssueBodyEvent = commandEvent("issue_comment");

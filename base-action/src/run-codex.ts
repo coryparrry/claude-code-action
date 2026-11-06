@@ -437,6 +437,13 @@ export async function runCodex(
       options.defaultAllowedTools,
       direct,
     );
+    // Repository-scoped issue grants must always resolve to the action-owned server.
+    const trustedIssues = JSON.parse(options.mcpConfig || '{"mcpServers":{}}')
+      .mcpServers?.github_issues;
+    const resolvedMcp = JSON.parse(compatibility.mcpConfig);
+    if (trustedIssues) resolvedMcp.mcpServers.github_issues = trustedIssues;
+    else delete resolvedMcp.mcpServers.github_issues;
+    compatibility.mcpConfig = JSON.stringify(resolvedMcp);
     const selectedAgent = await selectConfiguredAgent(
       configuration,
       compatibility.agentName,

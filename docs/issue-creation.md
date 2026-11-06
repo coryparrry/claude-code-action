@@ -23,7 +23,11 @@ Runtime-compatible namespace and wildcard grants, including
 the model cannot select an owner or repository. It uses the action-owned token
 and existing dependencies, with no Docker requirement.
 
-An invisible origin marker prevents issue openings from triggering another Codex run, including when a human-owned token creates the issue. Subsequent comments can still start a command. The marker shares the issue body’s size budget.
+An invisible origin marker suppresses openings authored by the configured bot.
+GitHub identifies the author independently of the issue body. Human-authored
+openings follow the workflow’s normal triggers, including when automation uses
+a human-owned token. Subsequent comments can still start a command. The marker
+shares the issue body’s size budget.
 
 Issue bodies retain literal Markdown, accessible image descriptions, HTML
 attributes and fenced reproductions. Secret-format redaction and the runtime's registered-credential redactor apply before publication, after any hook changes.
