@@ -332,6 +332,12 @@ async function components() {
     skill && task,
     "Configured components must execute, not just list their catalogs",
   );
+  assert.ok(
+    outcome.outputs
+      .get(skill.id)
+      ?.includes("Use the Task tool with subagent_type checker."),
+    "Skill must return the configured instructions",
+  );
   const childResult = outcome.outputs.get(task.id)!;
   assert.ok(childResult.includes(nonce));
   const taskId = childResult.match(/\[Task ID: ([0-9a-f-]+)\]/)?.[1];
