@@ -7,7 +7,7 @@ import {
   writeSetupWorkflow,
 } from "./reconcile.mjs";
 import {
-  assertNoRemovedJobs,
+  assertNoRemovedChecks,
   needsValidationMigration,
   selectInstallationSettings,
 } from "./settings.mjs";
@@ -129,8 +129,8 @@ export async function planInstallation(client, options) {
     repository,
     actors: settings.actors,
   });
-  assertNoRemovedJobs(existingContent, workflow, WORKFLOW_PATH);
-  assertNoRemovedJobs(memoryContent, memoryWorkflow, MEMORY_WORKFLOW_PATH);
+  assertNoRemovedChecks(existingContent, workflow, WORKFLOW_PATH);
+  assertNoRemovedChecks(memoryContent, memoryWorkflow, MEMORY_WORKFLOW_PATH);
   const installed = [
     { current: existing, content: workflow },
     { current: memoryExisting, content: memoryWorkflow },

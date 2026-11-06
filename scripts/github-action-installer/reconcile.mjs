@@ -112,20 +112,42 @@ export function writeSetupWorkflow(
         sha,
         path,
       );
-      const head = result?.commit?.sha;
-      return receipt(/^[a-f0-9]{40}$/i.test(head) && head);
+      const commit = result?.commit;
+      const head = receipt(/^[a-f0-9]{40}$/i.test(commit?.sha) && commit.sha);
+      const parents = receipt(Array.isArray(commit.parents) && commit.parents);
+      if (parents.length !== 1 || parents[0].sha !== previousHead)
+        throw new Error("The setup branch changed during installation.");
+      return head;
     },
     () => workflowHead(client, repository, branch, previousHead, path, content),
   );
 }
 
-/** Recover a lost draft receipt by checking the exact setup head. */
+/** Accept only a draft on the planned refs and exact setup commit. */
+function setupDraftUrl(pull, plan, branch, head) {
+  receipt(pull?.html_url);
+  if (
+    pull.title !== SETUP_TITLE ||
+    pull.draft !== true ||
+    pull.head?.repo?.full_name !== plan.repository ||
+    pull.head.ref !== branch ||
+    pull.head.sha !== head ||
+    pull.base?.ref !== plan.defaultBranch
+  )
+    throw unconfirmedWrite();
+  return pull.html_url;
+}
+
+/** Open a draft at the reviewed commit and reconcile a lost response. */
 export function createSetupPullRequest(client, plan, branch, head) {
   const { repository, defaultBranch } = plan;
   return confirmedWrite(
     async () =>
-      receipt(
+      setupDraftUrl(
         await client.createPullRequest(repository, branch, defaultBranch),
+        plan,
+        branch,
+        head,
       ),
     async () => {
       const pull = await client.setupPullRequest(
@@ -133,10 +155,7 @@ export function createSetupPullRequest(client, plan, branch, head) {
         defaultBranch,
         branch,
       );
-      if (!pull) return undefined;
-      if (pull.title === SETUP_TITLE && pull.draft && pull.head.sha === head)
-        return receipt(pull.html_url);
-      throw new Error("The setup PR changed during installation.");
+      return pull ? setupDraftUrl(pull, plan, branch, head) : undefined;
     },
   );
 }

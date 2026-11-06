@@ -14,6 +14,10 @@ export const DEFAULT_ACTION_REF =
 export const DEFAULT_MODEL = "gpt-6.1-terra";
 export const DEFAULT_TRIGGER_PHRASE = "/codex";
 export const REVIEW_DIFF_PATH = ".git/codex-review.diff";
+export const COMMAND_DELIVERY_POLICY = `          disallowed_tools: Bash,PowerShell
+          append_system_prompt: |
+            For requested changes, inspect the diff, commit and push using the scoped Git tools.
+            Leave test execution to the separate read-only validation job and report validation as pending after delivery.`;
 export const AUTOMATIC_REVIEW_PROMPT = `Review this pull request for code quality, bugs, security and performance issues.
 Read the prepared patch in ${REVIEW_DIFF_PATH} first; it includes removed lines as well as additions.
 Use the repository and PR context. Return actionable findings and a concise summary together.
@@ -112,10 +116,7 @@ jobs:
           codex_model: ${JSON.stringify(model)}
 ${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_turns: "30"
           track_progress: "true"
-          disallowed_tools: Bash,PowerShell
-          append_system_prompt: |
-            For requested changes, inspect the diff, commit and push using the scoped Git tools.
-            Leave test execution to the separate read-only validation job and report validation as pending after delivery.
+${COMMAND_DELIVERY_POLICY}
       - name: Save execution report
         if: \${{ always() && steps.agent.outputs.execution_file != '' }}
         uses: actions/upload-artifact@v4

@@ -1,4 +1,4 @@
-import { DEFAULT_MODEL } from "./workflow.mjs";
+import { COMMAND_DELIVERY_POLICY, DEFAULT_MODEL } from "./workflow.mjs";
 
 /** Read a top-level job from the installer-generated workflow format. */
 function managedJob(content, job) {
@@ -47,17 +47,54 @@ function managedJobNames(content, path) {
   return names;
 }
 
-/** Protect jobs in either managed workflow that the installer would remove. */
-export function assertNoRemovedJobs(existing, proposed, path) {
+/** Compare generated steps, allowing supported inputs and the old command policy. */
+function managedSteps(content, job) {
+  const steps = managedJob(content, job)
+    ?.replace(/\r\n/g, "\n")
+    .split(/^    steps:[ \t]*$/m)[1]
+    ?.trimEnd();
+  if (!steps) return undefined;
+  if (job === "memory")
+    return steps
+      .replace(
+        /^(      - uses: coryparrry\/claude-code-action\/review-memory@)[a-f0-9]{40}$/m,
+        "$1",
+      )
+      .replace(
+        /^          trusted_actors: "[\w,-]+"$/m,
+        "          trusted_actors:",
+      );
+  if (job === "report_validation") return steps;
+  return steps
+    .replace(
+      /^(        uses: coryparrry\/claude-code-action@)[a-f0-9]{40}$/m,
+      "$1",
+    )
+    .replace(
+      /^          codex_model: ["']?[\w.-]+["']?\n(?:          codex_effort: max\n)?/m,
+      "",
+    )
+    .replace(`${COMMAND_DELIVERY_POLICY}\n`, "");
+}
+
+/** Stop before replacing custom jobs or checks in either managed workflow. */
+export function assertNoRemovedChecks(existing, proposed, path) {
   if (!existing) return;
   const proposedJobs = new Set(managedJobNames(proposed, path));
-  const removed = managedJobNames(existing, path).filter(
-    (name) => !proposedJobs.has(name),
-  );
+  const installedJobs = managedJobNames(existing, path);
+  const removed = installedJobs.filter((name) => !proposedJobs.has(name));
   if (removed.length)
     throw new Error(
       `This upgrade would remove jobs from ${path}: ${removed.join(", ")}. Move them to a separate workflow or the trusted validation action before upgrading.`,
     );
+  for (const job of installedJobs) {
+    if (job === "validate_change") continue; // The validation migration handles this job.
+    const current = managedSteps(existing, job);
+    if (!current || current !== managedSteps(proposed, job))
+      throw new Error(
+        `This upgrade would replace custom steps in job ${job} in ${path}. Move the checks to a separate workflow or the trusted validation action, restore the generated steps, and rerun the installer.`,
+      );
+  }
 }
 
 /** Read only the generated options in one managed job. */

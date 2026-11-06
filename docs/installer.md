@@ -173,9 +173,11 @@ include completed `results`, so an earlier repository's setup is still visible.
   branch before running the upgrade. The installer checks that file before
   proposing a replacement and asks you to confirm the checks were moved.
   For unattended upgrades, confirm with `--accept-validation-migration`.
-  If either managed workflow contains extra jobs, the installer lists them and
-  stops before writing anything. Move standalone checks into a separate workflow
-  on the default branch before rerunning the upgrade.
+  The installer stops before writing if it would remove an extra job or replace
+  custom steps in an existing job. Move those checks into a separate workflow
+  or the trusted validation action on the default branch, then restore the
+  generated steps before rerunning the upgrade. This check recognizes the
+  managed steps from v1.1.0 and later generated workflows.
 - Matching open setup PRs are reused after checking that they contain only the
   installer workflow. PRs with different settings or extra changes are rejected.
 - Only workflows bearing the installer marker can be updated. An existing
@@ -189,8 +191,9 @@ include completed `results`, so an earlier repository's setup is still visible.
 - The installer writes both workflows and opens a draft before uploading a new
   key. If a response is lost, it reads back the ref, commit, draft or secret
   metadata to confirm the write. After a confirmed failure, it closes its draft
-  and removes its branch only at the last confirmed commit. If GitHub cannot
-  confirm a write or cleanup, the installer reports the branch to inspect before
+  and removes its branch only at the last confirmed commit. The installer
+  preserves the branch when a workflow write includes a concurrent commit.
+  If GitHub cannot confirm a write or cleanup, the installer reports the branch to inspect before
   retrying. An existing secret is reused unless you request replacement. GitHub
   cannot confirm the value of a replacement key after a lost response. In that
   case the installer keeps the setup available to resume.

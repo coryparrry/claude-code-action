@@ -12,8 +12,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import { parse, stringify } from "yaml";
+import { parse } from "yaml";
 import {
+  COMMAND_DELIVERY_POLICY,
   DEFAULT_ACTION_REF,
   DEFAULT_MODEL,
   REVIEW_DIFF_PATH,
@@ -75,6 +76,23 @@ function repository(overrides: Record<string, any> = {}) {
   };
 }
 
+/** Return GitHub's draft identity and the head observed when it was opened. */
+function setupDraft(
+  repository: string,
+  branch: string,
+  base: string,
+  sha: string,
+  html_url = "https://github.com/octo/demo/pull/9",
+) {
+  return {
+    title: SETUP_TITLE,
+    draft: true,
+    html_url,
+    head: { ref: branch, sha, repo: { full_name: repository } },
+    base: { ref: base },
+  };
+}
+
 /** Record installer API calls and return configurable repository fixtures. */
 function fakeClient(overrides: Record<string, any> = {}): {
   client: Record<string, any>;
@@ -124,6 +142,7 @@ function fakeClient(overrides: Record<string, any> = {}): {
       ? values.memoryWorkflow
       : values.workflow;
   };
+  let setupHead = values.head;
   for (const name of [
     "verifyActionRevision",
     "setSecret",
@@ -135,8 +154,20 @@ function fakeClient(overrides: Record<string, any> = {}): {
   ]) {
     client[name] = async (...args: any[]) => {
       calls.push([name, ...args]);
-      if (name === "createPullRequest") return values.pullRequestUrl;
-      if (name === "writeWorkflow") return { commit: { sha: "b".repeat(40) } };
+      if (name === "createPullRequest")
+        return setupDraft(
+          args[0],
+          args[1],
+          args[2],
+          setupHead,
+          values.pullRequestUrl,
+        );
+      if (name === "createBranch") setupHead = args[2];
+      if (name === "writeWorkflow") {
+        const parent = setupHead;
+        setupHead = (args[4] === MEMORY_WORKFLOW_PATH ? "c" : "b").repeat(40);
+        return { commit: { sha: setupHead, parents: [{ sha: parent }] } };
+      }
     };
   }
   return { client, calls };
@@ -719,13 +750,13 @@ describe("installation planning and application", () => {
   });
 
   test("upgrades a managed two-job workflow to include validation and reporting", async () => {
-    const previous = parse(renderWorkflow(defaultOptions));
-    delete previous.jobs.validate_change;
-    delete previous.jobs.report_validation;
+    const previous = renderWorkflow(defaultOptions)
+      .replace(/^  validate_change:\n[\s\S]*?(?=^  codex_review:)/m, "")
+      .replace(`${COMMAND_DELIVERY_POLICY}\n`, "");
     const { client, calls } = fakeClient({
       workflow: {
         sha: "legacy-workflow",
-        content: MANAGED_MARKER + "\n" + stringify(previous),
+        content: previous,
       },
       memoryWorkflow: {
         sha: "existing-memory",
@@ -1005,6 +1036,47 @@ describe("installation planning and application", () => {
     },
   );
 
+  test.each([
+    [WORKFLOW_PATH, "codex", "      - name: Save execution report"],
+    [WORKFLOW_PATH, "codex_review", "      - name: Prepare PR diff"],
+    [WORKFLOW_PATH, "report_validation", "      - name: Append validation"],
+    [MEMORY_WORKFLOW_PATH, "memory", "      - uses:"],
+  ])(
+    "blocks an upgrade that would replace checks in %s job %s",
+    async (path, job, marker) => {
+      const insert = `      - name: Required check
+        run: ./project-check.sh
+`;
+      const command = renderWorkflow(defaultOptions);
+      const memory = renderMemoryWorkflow(defaultOptions);
+      const { client, calls } = fakeClient({
+        workflow: {
+          sha: "command",
+          content:
+            path === WORKFLOW_PATH
+              ? command.replace(marker, insert + marker)
+              : command,
+        },
+        memoryWorkflow: {
+          sha: "memory",
+          content:
+            path === MEMORY_WORKFLOW_PATH
+              ? memory.replace(marker, insert + marker)
+              : memory,
+        },
+        hasValidationRecipe: true,
+      });
+      await expect(planInstallation(client, defaultOptions)).rejects.toThrow(
+        `would replace custom steps in job ${job} in ${path}`,
+      );
+      expect(calls.map(([name]) => name)).toEqual([
+        "repository",
+        "workflow",
+        "workflow",
+      ]);
+    },
+  );
+
   test.each(["continue", "reject secret", "secret read unavailable"])(
     "reconciles applied writes with lost responses and handles %s",
     async (outcome) => {
@@ -1054,14 +1126,7 @@ describe("installation planning and application", () => {
         throw lost;
       };
       client.setupPullRequest = async () =>
-        draft
-          ? {
-              title: SETUP_TITLE,
-              draft,
-              head: { sha: head },
-              html_url: url,
-            }
-          : undefined;
+        draft ? setupDraft("octo/demo", branch, "main", head!, url) : undefined;
       client.setSecret = async () => {
         secretWrites++;
         if (outcome === "reject secret") throw new Error("HTTP 403");
@@ -1138,13 +1203,18 @@ describe("installation planning and application", () => {
         writes++;
         if (stage === (writes === 1 ? "command workflow" : "memory workflow"))
           throw new Error("write rejected");
+        const parent = branchHead;
         branchHead = String(writes).repeat(40);
-        return { commit: { sha: branchHead } };
+        return { commit: { sha: branchHead, parents: [{ sha: parent }] } };
       };
-      client.createPullRequest = async () => {
+      client.createPullRequest = async (
+        repository: string,
+        branch: string,
+        base: string,
+      ) => {
         if (stage === "draft PR") throw new Error("PR rejected");
         draft = true;
-        return "https://github.com/octo/demo/pull/9";
+        return setupDraft(repository, branch, base, branchHead!);
       };
       const branchName = "codex/install-github-action-rejected-write";
       client.pullRequest = async () => ({
@@ -1187,7 +1257,7 @@ describe("installation planning and application", () => {
     client.createBranch = async () => {
       created = true;
     };
-    client.head = async () => (created ? "b".repeat(40) : undefined);
+    client.head = async () => (created ? "c".repeat(40) : undefined);
     client.setSecret = async () => {
       throw new Error("HTTP 403");
     };
@@ -1219,6 +1289,68 @@ describe("installation planning and application", () => {
     expect(
       calls.some(([name]) =>
         ["closePullRequest", "deleteBranch"].includes(name),
+      ),
+    ).toBe(false);
+  });
+
+  test.each([WORKFLOW_PATH, MEMORY_WORKFLOW_PATH])(
+    "preserves a concurrent commit when GitHub writes %s on top of it",
+    async (concurrentPath) => {
+      const { client, calls } = fakeClient();
+      const plan = await planInstallation(client, defaultOptions);
+      const concurrent = "f".repeat(40);
+      const commits = new Map<string, string>();
+      const written: string[] = [];
+      let head: string | undefined;
+      client.head = async () => head;
+      client.createBranch = async () => {
+        head = plan.baseSha;
+      };
+      client.writeWorkflow = async (
+        _repo: string,
+        _branch: string,
+        _content: string,
+        _sha: string,
+        path: string,
+      ) => {
+        written.push(path);
+        if (path === concurrentPath) {
+          commits.set(concurrent, head!);
+          head = concurrent;
+        }
+        const parent = head!;
+        const sha = (path === WORKFLOW_PATH ? "b" : "c").repeat(40);
+        commits.set(sha, parent);
+        head = sha;
+        return { commit: { sha, parents: [{ sha: parent }] } };
+      };
+      await expect(
+        applyInstallation(client, plan, { apiKey: "sk-test" }),
+      ).rejects.toThrow("Cleanup could not be confirmed");
+      expect(written.at(-1)).toBe(concurrentPath);
+      expect(commits.get(head!)).toBe(concurrent);
+      expect(
+        calls.some(([name]) =>
+          ["createPullRequest", "setSecret", "deleteBranch"].includes(name),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  test("preserves a draft with a concurrent commit without uploading a secret", async () => {
+    const { client, calls } = fakeClient();
+    const plan = await planInstallation(client, defaultOptions);
+    client.createPullRequest = async (
+      repository: string,
+      branch: string,
+      base: string,
+    ) => setupDraft(repository, branch, base, "f".repeat(40));
+    await expect(
+      applyInstallation(client, plan, { apiKey: "sk-test" }),
+    ).rejects.toThrow("GitHub could not confirm the write");
+    expect(
+      calls.some(([name]) =>
+        ["setSecret", "closePullRequest", "deleteBranch"].includes(name),
       ),
     ).toBe(false);
   });
@@ -1707,10 +1839,25 @@ if (args[0] === 'api' && args[1].includes('/git/ref/heads/')) {
   return json({ object: { sha: '0123456789abcdef0123456789abcdef01234567' } });
 }
 if (args[0] === 'api' && args.includes('--method') && args.includes('POST')) {
-  if (args[1].includes('/pulls')) return json({ html_url: 'https://github.com/octo/demo/pull/9' });
+  if (args[1].includes('/pulls')) {
+    const draft = JSON.parse(input);
+    return json({
+      title: draft.title,
+      draft: true,
+      html_url: 'https://github.com/octo/demo/pull/9',
+      head: { ref: draft.head, sha: 'c'.repeat(40), repo: { full_name: 'octo/demo' } },
+      base: { ref: draft.base },
+    });
+  }
   return json({ ok: true });
 }
-if (args[0] === 'api' && args.includes('--method') && args.includes('PUT')) return json({ commit: { sha: 'b'.repeat(40) } });
+if (args[0] === 'api' && args.includes('--method') && args.includes('PUT')) {
+  const memory = args[1].endsWith('/codex-memory.yml');
+  return json({ commit: {
+    sha: (memory ? 'c' : 'b').repeat(40),
+    parents: [{ sha: memory ? 'b'.repeat(40) : '0123456789abcdef0123456789abcdef01234567' }],
+  } });
+}
 if (args[0] === 'secret' && args[1] === 'set') process.exit(0);
 process.stderr.write('Unexpected fake gh request');
 process.exit(2);
