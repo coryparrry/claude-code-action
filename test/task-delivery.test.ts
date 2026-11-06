@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFile, rm } from "node:fs/promises";
 import { parse } from "yaml";
+import { renderWorkflow } from "../scripts/github-action-installer/workflow.mjs";
 import {
   deliveredHead,
   initializeDeliveryReceipt,
@@ -67,20 +68,31 @@ test("delivery requires this invocation's successful push and the matching remot
 });
 
 test("repository validation executes without write credentials or model secrets", async () => {
-  const workflow = parse(
-    await readFile(
-      new URL("../.github/workflows/codex.yml", import.meta.url),
-      "utf8",
-    ),
+  const installed = await readFile(
+    new URL("../.github/workflows/codex.yml", import.meta.url),
+    "utf8",
   );
+  expect(installed).toBe(
+    renderWorkflow({
+      repository: "coryparrry/claude-code-action",
+      actors: ["coryparrry"],
+    }),
+  );
+  const workflow = parse(installed);
   expect(workflow.permissions).toEqual({});
   const write = workflow.jobs.codex;
-  expect(
-    write.steps.find((step: { id?: string }) => step.id === "agent").with
-      .allowed_tools,
-  ).toBeUndefined();
+  const agent = write.steps.find(
+    (step: { id?: string }) => step.id === "agent",
+  );
+  expect(agent.with.allowed_tools).toBeUndefined();
+  expect(agent.with.disallowed_tools).toBe("Bash,PowerShell");
+  expect(write.outputs).toEqual({
+    head_sha: "${{ steps.agent.outputs.head_sha }}",
+    comment_id: "${{ steps.agent.outputs.comment_id }}",
+    comment_type: "${{ steps.agent.outputs.comment_type }}",
+  });
   const validation = workflow.jobs.validate_change;
-  expect(validation.if).toContain("always()");
+  expect(validation.if).toBe("always() && needs.codex.outputs.head_sha != ''");
   expect(validation.permissions).toEqual({ contents: "read" });
   expect(validation.steps[0].with).toMatchObject({
     ref: "${{ needs.codex.outputs.head_sha }}",
@@ -88,16 +100,36 @@ test("repository validation executes without write credentials or model secrets"
   });
   expect(JSON.stringify(validation)).not.toContain("secrets.");
   expect(JSON.stringify(validation)).not.toContain("github.token");
-  expect(
-    validation.steps
-      .filter((step: { run?: string }) => step.run)
-      .map((step: { run: string }) => step.run),
-  ).toEqual([
+  expect(validation.steps[1].env).toEqual({
+    HEAD_SHA: "${{ needs.codex.outputs.head_sha }}",
+  });
+  expect(validation.steps[1].run).toContain(
+    'test "$(git rev-parse HEAD)" = "$HEAD_SHA"',
+  );
+  expect(validation.steps[2]).toMatchObject({
+    if: "steps.verify.outputs.configured == 'true'",
+    uses: "./.github/actions/codex-validate",
+  });
+  const projectAction = parse(
+    await readFile(
+      new URL("../.github/actions/codex-validate/action.yml", import.meta.url),
+      "utf8",
+    ),
+  );
+  expect(projectAction.runs.steps[1].run.trim().split("\n")).toEqual([
     "bun --no-env-file install --frozen-lockfile",
     "bun --no-env-file test",
     "bun --no-env-file run typecheck",
   ]);
   const report = workflow.jobs.report_validation;
+  expect(report.needs).toEqual(["codex", "validate_change"]);
+  expect(report.if).toBe(
+    "always() && needs.codex.outputs.head_sha != '' && needs.codex.outputs.comment_id != ''",
+  );
+  expect(report.steps[0].env).toMatchObject({
+    VALIDATION_RESULT: "${{ needs.validate_change.result }}",
+    VALIDATION_CONFIGURED: "${{ needs.validate_change.outputs.configured }}",
+  });
   expect(report.permissions).toEqual({
     issues: "write",
     "pull-requests": "write",
@@ -146,6 +178,7 @@ test("validation reporting updates the existing section after a same-commit retr
     COMMENT_TYPE: "issue",
     HEAD_SHA: "a".repeat(40),
     VALIDATION_RESULT: "failure",
+    VALIDATION_CONFIGURED: "true",
     RUN_URL: "https://github.com/owner/repo/actions/runs/1/attempts/1",
     GH_TOKEN: "fixture",
   };
@@ -160,4 +193,14 @@ test("validation reporting updates the existing section after a same-commit retr
   expect(body.match(/codex-validation:/g)).toHaveLength(1);
   await execute({ env }, fetch);
   expect(requests).toHaveLength(2);
+
+  env.VALIDATION_CONFIGURED = "false";
+  await execute({ env }, fetch);
+  expect(body).toContain("**skipped (project checks are not configured)**");
+  expect(body).toStartWith("Original implementation result");
+  expect(requests).toHaveLength(3);
+  await expect(
+    execute({ env: { ...env, HEAD_SHA: "main" } }, fetch),
+  ).rejects.toThrow("Invalid delivery metadata");
+  expect(requests).toHaveLength(3);
 });

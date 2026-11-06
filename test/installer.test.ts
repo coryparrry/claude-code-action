@@ -376,6 +376,7 @@ describe("guided GitHub Action workflow", () => {
       'contains(fromJSON(\'["alice","bob-2"]\'), github.actor)',
     );
     expect(workflow.jobs.codex["runs-on"]).toBe("macos-latest");
+    expect(workflow.jobs.validate_change["runs-on"]).toBe("macos-latest");
     expect(
       workflow.jobs.codex.steps.some(
         (step: any) => step.uses === DEFAULT_ACTION_REF,
