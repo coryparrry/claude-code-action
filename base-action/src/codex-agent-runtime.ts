@@ -69,6 +69,7 @@ export type AgentRuntimeOptions = {
   signal: AbortSignal;
   maxTurns?: number;
   mcpConfig: string;
+  reserveIssueMcpServer?: boolean;
   mcpEnvironment: Record<string, string>;
   toolEnvironment: Record<string, string>;
   trustedEnvironmentKeys: string[];
@@ -533,7 +534,11 @@ async function buildContext(
       {
         ...options,
         getModel: () => childModel,
-        mcpConfig: childMcpConfig(options.mcpConfig, request.mcpServers),
+        mcpConfig: childMcpConfig(
+          options.mcpConfig,
+          request.mcpServers,
+          options.reserveIssueMcpServer,
+        ),
         setModel: (model) => {
           childModel = options.resolveModel(model);
         },

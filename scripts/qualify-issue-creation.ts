@@ -85,8 +85,8 @@ export function selectQualificationIssues(
   );
 }
 
-/** Replay a published issue as a human-authored opening, without supplying any credentials. */
-async function assertOpeningIsSkipped(issue: {
+/** Replay a published bot-owned opening without supplying any credentials. */
+export async function assertOpeningIsSkipped(issue: {
   number: number;
   title: string;
   body: string;
@@ -94,13 +94,13 @@ async function assertOpeningIsSkipped(issue: {
   const temp = await mkdtemp(join(process.env.RUNNER_TEMP!, "issue-opening-"));
   try {
     const payload = join(temp, "event.json");
-    const actor = "qualification-human";
+    const actor = "github-actions[bot]";
     await writeFile(
       payload,
       JSON.stringify({
         action: "opened",
-        issue: { ...issue, user: { login: actor, type: "User" } },
-        sender: { login: actor, type: "User" },
+        issue: { ...issue, user: { login: actor, type: "Bot" } },
+        sender: { login: actor, type: "Bot" },
       }),
     );
     const child = Bun.spawn({
@@ -111,10 +111,11 @@ async function assertOpeningIsSkipped(issue: {
       ],
       env: {
         PATH: process.env.PATH!,
-        GITHUB_REPOSITORY: repository,
+        GITHUB_REPOSITORY: process.env.GITHUB_REPOSITORY!,
         GITHUB_EVENT_NAME: "issues",
         GITHUB_EVENT_PATH: payload,
         GITHUB_ACTOR: actor,
+        BOT_NAME: actor,
         GITHUB_RUN_ID: process.env.GITHUB_RUN_ID!,
         RUNNER_TEMP: temp,
         PROMPT: "This opening must not trigger the action",

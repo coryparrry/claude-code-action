@@ -242,9 +242,12 @@ test.each(["github_issues", "github:issues"])(
     await expect(prepareAgentConfiguration()).rejects.toThrow(
       "github_issues is reserved",
     );
-    expect(() => childMcpConfig('{"mcpServers":{}}', [config])).toThrow(
+    expect(() => childMcpConfig('{"mcpServers":{}}', [config], true)).toThrow(
       "github_issues is reserved",
     );
+    expect(
+      JSON.parse(childMcpConfig('{"mcpServers":{}}', [config])).mcpServers,
+    ).toEqual(config);
     process.env.CODEX_ARGS = `--agent publisher --agents '${JSON.stringify({ publisher: { prompt: "Open an issue", mcpServers: [config] } })}'`;
     await expect(prepareAgentConfiguration()).rejects.toThrow(
       "github_issues is reserved",

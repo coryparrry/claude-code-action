@@ -33,8 +33,13 @@ export async function prepareAgentMode({
 }) {
   // Check if actor is human (prevents bot-triggered loops)
   await checkHumanActor(octokit.rest, context);
-  const settings = await resolveActionSettings(context, octokit.rest);
-  const resolvedPermissions = await resolveActionPermissions(settings);
+  const nativeReview = process.env.REVIEW_MODE === "true";
+  const settings = nativeReview
+    ? "{}"
+    : await resolveActionSettings(context, octokit.rest);
+  const resolvedPermissions = nativeReview
+    ? { allowedTools: [], planning: true }
+    : await resolveActionPermissions(settings);
 
   // Configure git authentication for agent mode (same as tag mode)
   // SSH signing takes precedence if provided
@@ -125,19 +130,21 @@ export async function prepareAgentMode({
     prepareAgentPrHead(context);
 
   // Get our GitHub MCP servers config
-  const ourMcpConfig = await prepareMcpConfig({
-    githubToken,
-    owner: context.repository.owner,
-    repo: context.repository.repo,
-    branch: currentBranch,
-    baseBranch: baseBranch,
-    claudeCommentId: undefined, // No tracking comment in agent mode
-    allowedTools,
-    mode: "agent",
-    settings,
-    resolvedPermissions,
-    context,
-  });
+  const ourMcpConfig = nativeReview
+    ? '{"mcpServers":{}}'
+    : await prepareMcpConfig({
+        githubToken,
+        owner: context.repository.owner,
+        repo: context.repository.repo,
+        branch: currentBranch,
+        baseBranch: baseBranch,
+        claudeCommentId: undefined, // No tracking comment in agent mode
+        allowedTools,
+        mode: "agent",
+        settings,
+        resolvedPermissions,
+        context,
+      });
 
   // Build final claude_args with multiple --mcp-config flags
   let claudeArgs = "";

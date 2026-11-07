@@ -20,7 +20,10 @@ import {
   initializeIssueReceipts,
   readCreatedIssues,
 } from "../src/github/operations/issue-creation-receipts";
-import { selectQualificationIssues } from "../scripts/qualify-issue-creation";
+import {
+  assertOpeningIsSkipped,
+  selectQualificationIssues,
+} from "../scripts/qualify-issue-creation";
 import { prepareMcpConfig } from "../src/mcp/install-mcp-server";
 import { AgentPermissions } from "../base-action/src/agent-permissions";
 import { createMockContext } from "./mockContext";
@@ -500,4 +503,20 @@ test("only live author-matching comment requests get the default creation tool",
   expect(
     issueCreationAllowed({ ...context, payload: {} as any }, "tag", []),
   ).toBe(false);
+});
+
+test("qualification replays an actual configured-bot opening without credentials", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "issue-opening-replay-"));
+  process.env.RUNNER_TEMP = directory;
+  process.env.GITHUB_REPOSITORY = "owner/repo";
+  process.env.GITHUB_RUN_ID = "fixture";
+  try {
+    await assertOpeningIsSkipped({
+      number: 1,
+      title: "/codex fixture",
+      body: `${ACTION_CREATED_ISSUE_MARKER}\n\nReplay only`,
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

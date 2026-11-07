@@ -111,7 +111,12 @@ export async function selectConfiguredAgent(
   };
 }
 
-export function childMcpConfig(parent: string, requested: unknown): string {
+/** Select child servers while preserving the main action's reserved namespace. */
+export function childMcpConfig(
+  parent: string,
+  requested: unknown,
+  reserveIssueMcpServer = false,
+): string {
   if (requested === undefined) return parent;
   const available = JSON.parse(parent).mcpServers as Record<string, unknown>;
   const servers: Record<string, unknown> = {};
@@ -121,7 +126,7 @@ export function childMcpConfig(parent: string, requested: unknown): string {
         throw new Error(`Unknown agent MCP server: ${value}`);
       servers[value] = available[value];
     } else if (value && typeof value === "object" && !Array.isArray(value)) {
-      assertNoIssueMcpServer(value);
+      if (reserveIssueMcpServer) assertNoIssueMcpServer(value);
       Object.assign(servers, value);
     } else
       throw new Error(

@@ -510,6 +510,7 @@ test.each(["true", "false"])(
         prompt,
         options(model, {
           timeoutMs: 10000,
+          reserveIssueMcpServer: true,
           compatibilityArgs: `--mcp-config '${JSON.stringify({ mcpServers: { "github:issues": { command: "must-not-run" } } })}'`,
           mcpConfig: JSON.stringify({
             mcpServers: {
@@ -542,5 +543,45 @@ test.each(["true", "false"])(
     } finally {
       http.stop(true);
     }
+  },
+);
+
+test.each(["args", "settings", "direct"] as const)(
+  "standalone runtime retains caller-owned github_issues servers from %s",
+  async (source) => {
+    const server = join(directory, "standalone-mcp.cjs");
+    await writeFile(
+      server,
+      String.raw`const readline = require("node:readline");
+readline.createInterface({input:process.stdin}).on("line",line=>{
+  const message=JSON.parse(line);
+  if(message.id===undefined)return;
+  const result=message.method==="initialize"
+    ? {protocolVersion:"2024-11-05",capabilities:{tools:{}},serverInfo:{name:"standalone",version:"1"}}
+    : message.method==="tools/list"
+      ? {tools:[{name:"proof",description:"Return a standalone proof",inputSchema:{type:"object",properties:{},additionalProperties:false}}]}
+      : {content:[{type:"text",text:"standalone proof"}]};
+  process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:message.id,result})+"\n");
+});
+`,
+    );
+    const config = JSON.stringify({
+      mcpServers: { github_issues: { command: "node", args: [server] } },
+    });
+    const model = new ScriptedModel([
+      call("mcp__github_issues__proof", {}),
+      message(),
+    ]);
+    const extra =
+      source === "args"
+        ? { compatibilityArgs: `--mcp-config '${config}'` }
+        : source === "settings"
+          ? { settings: config }
+          : { mcpConfig: config };
+    const result = await runCodex(prompt, options(model, extra));
+    expect(result.conclusion).toBe("success");
+    expect(JSON.stringify(model.requests[1]?.input)).toContain(
+      "standalone proof",
+    );
   },
 );

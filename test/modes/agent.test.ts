@@ -52,6 +52,40 @@ describe("Agent Mode", () => {
     expect(typeof prepareAgentMode).toBe("function");
   });
 
+  test("native review preparation ignores settings introduced only on the PR head", async () => {
+    const environment = { ...process.env };
+    process.env.REVIEW_MODE = "true";
+    process.env.INPUT_SETTINGS = "new-settings.json";
+    process.env.CODEX_ARGS = "--allowedTools mcp__github_git__push";
+    const getContent = mock(async () => {
+      throw new Error("404 at PR base");
+    });
+    const prepareHead = spyOn(prHead, "prepareAgentPrHead").mockImplementation(
+      () => {},
+    );
+    try {
+      const prepared = await prepareAgentMode({
+        context: createMockContext({ eventName: "pull_request" }),
+        octokit: {
+          rest: {
+            users: {
+              getByUsername: mock(async () => ({ data: { type: "User" } })),
+            },
+            repos: { getContent },
+          },
+        } as any,
+        githubToken: "fixture",
+      });
+      expect(getContent).not.toHaveBeenCalled();
+      expect(prepareHead).not.toHaveBeenCalled();
+      expect(prepared.settings).toBe("{}");
+      expect(JSON.parse(prepared.mcpConfig)).toEqual({ mcpServers: {} });
+    } finally {
+      process.env = environment;
+      prepareHead.mockRestore();
+    }
+  });
+
   test("settings-only writable Git grants prepare the actual PR head", async () => {
     const originalSettings = process.env.INPUT_SETTINGS;
     process.env.INPUT_SETTINGS = JSON.stringify({

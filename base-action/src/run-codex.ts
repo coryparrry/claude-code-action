@@ -71,6 +71,8 @@ export type CodexOptions = Omit<
   "model" | "fallbackModel"
 > & {
   mcpConfig: string;
+  /** Protect the main action's automatically authorized repository issue server. */
+  reserveIssueMcpServer?: boolean;
   compatibilityArgs?: string;
   defaultAllowedTools?: string[];
   settings?: string;
@@ -438,14 +440,16 @@ export async function runCodex(
       options.defaultAllowedTools,
       direct,
     );
-    // Repository-scoped issue grants must always resolve to the action-owned server.
-    const trustedIssues = JSON.parse(options.mcpConfig || '{"mcpServers":{}}')
-      .mcpServers?.github_issues;
-    const resolvedMcp = JSON.parse(compatibility.mcpConfig);
-    for (const name of Object.keys(resolvedMcp.mcpServers))
-      if (isIssueMcpServerName(name)) delete resolvedMcp.mcpServers[name];
-    if (trustedIssues) resolvedMcp.mcpServers.github_issues = trustedIssues;
-    compatibility.mcpConfig = JSON.stringify(resolvedMcp);
+    if (options.reserveIssueMcpServer) {
+      // Repository-scoped issue grants must always resolve to the action-owned server.
+      const trustedIssues = JSON.parse(options.mcpConfig || '{"mcpServers":{}}')
+        .mcpServers?.github_issues;
+      const resolvedMcp = JSON.parse(compatibility.mcpConfig);
+      for (const name of Object.keys(resolvedMcp.mcpServers))
+        if (isIssueMcpServerName(name)) delete resolvedMcp.mcpServers[name];
+      if (trustedIssues) resolvedMcp.mcpServers.github_issues = trustedIssues;
+      compatibility.mcpConfig = JSON.stringify(resolvedMcp);
+    }
     const selectedAgent = await selectConfiguredAgent(
       configuration,
       compatibility.agentName,
@@ -456,6 +460,7 @@ export async function runCodex(
       compatibility.mcpConfig = childMcpConfig(
         compatibility.mcpConfig,
         selectedAgent.mcpServers,
+        options.reserveIssueMcpServer,
       );
     let model = resolveCodexModel(
       options.model ?? compatibility.model ?? selectedAgent?.model,
@@ -664,6 +669,7 @@ export async function runCodex(
       signal: controller.signal,
       maxTurns: compatibility.maxTurns,
       mcpConfig: compatibility.mcpConfig,
+      reserveIssueMcpServer: options.reserveIssueMcpServer,
       mcpEnvironment,
       toolEnvironment,
       trustedEnvironmentKeys: Object.keys(githubEnvironment),
