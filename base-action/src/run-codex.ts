@@ -1,3 +1,4 @@
+import { agentTraceConfig, type AgentTracePhase } from "./agent-tracing";
 import {
   ModelRouter,
   parseModelRouting,
@@ -112,6 +113,9 @@ export type CodexOptions = Omit<
   modelPrices?: Record<string, ModelPrice>;
   /** Opt-in routing configuration; both model identifiers remain workflow-controlled. */
   modelRouting?: string | ModelRoutingConfig;
+  /** First-party SDK tracing defaults on, with payload capture disabled. */
+  tracingEnabled?: boolean;
+  tracePhase?: AgentTracePhase;
   workspace?: string;
   readAliases?: Record<string, string>;
 };
@@ -709,12 +713,21 @@ export async function runCodex(
       ),
     );
     Object.assign(mcpEnvironment, toolEnvironment);
+    const tracing = agentTraceConfig({
+      apiKey,
+      baseURL,
+      enabled: options.tracingEnabled,
+      customModel: !!options.modelProvider || typeof options.model === "object",
+      phase: options.tracePhase,
+      sessionId,
+    });
     runtime = await createCodexAgentRuntime({
       openAIClient: authentication.client,
       apiKey,
       baseURL,
       modelProvider,
       modelRouter,
+      tracing,
       getModel: () => model,
       setModel: (next) => {
         model = resolveCodexModel(next);
@@ -883,6 +896,7 @@ export async function runCodex(
         fallbackModel,
         modelProvider,
         modelRouter,
+        tracing,
         resolveModel: () => model,
         includePartialMessages: compatibility.includePartialMessages,
         instructions,

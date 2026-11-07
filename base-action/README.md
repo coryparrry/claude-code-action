@@ -34,6 +34,7 @@ Authentication supports an OpenAI API key, OpenAI workload identity federation, 
 | `azure_openai_ad_token`       | Azure AD token for Azure OpenAI (alternative to API key)                                | Empty               |
 | `codex_model`                 | Provider model ID (Azure: deployment name); defaults to gpt-6-luna                      | Empty               |
 | `model_routing`               | Optional JSON cheap/strong model routing; see [routing guide](../docs/model-routing.md) | Empty               |
+| `enable_tracing`              | Upload direct OpenAI SDK traces without prompts or tool payloads                        | `true`              |
 | `codex_effort`                | Optional reasoning effort: none, minimal, low, medium, high, or xhigh                   | Empty               |
 | `codex_sandbox`               | Tool policy: read-only or workspace-write; not an OS sandbox                            | `workspace-write`   |
 | `codex_timeout_minutes`       | Positive integer timeout for the agent run                                              | `30`                |

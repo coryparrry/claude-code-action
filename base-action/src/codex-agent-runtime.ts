@@ -1,3 +1,4 @@
+import type { AgentTraceConfig } from "./agent-tracing";
 import type { ModelRouter } from "./model-router";
 import * as core from "@actions/core";
 import {
@@ -57,6 +58,7 @@ export type AgentRuntimeOptions = {
   baseURL?: string;
   modelProvider?: ModelProvider;
   modelRouter?: ModelRouter;
+  tracing?: AgentTraceConfig;
   getModel(): string | Model;
   setModel(model: string | Model): void;
   assertModel(model: string | Model): void;
@@ -156,6 +158,7 @@ async function buildContext(
       throw new Error(hook.reason ?? "Hook blocked execution");
     return hook.additionalContext.join("\n");
   };
+  /** Run auxiliary inference with the caller's trace policy, credentials and deadline. */
   const runAuxiliary = (
     input: string | AgentInputItem[],
     extra: {
@@ -234,6 +237,13 @@ async function buildContext(
       fallbackModel: options.fallbackModel,
       modelProvider: options.modelProvider,
       modelRouter: options.modelRouter,
+      tracing: options.tracing
+        ? {
+            ...options.tracing,
+            workflowName: "Codex auxiliary",
+            metadata: { ...options.tracing.metadata, phase: "auxiliary" },
+          }
+        : undefined,
       instructions: [options.inheritedInstructions, extra.instructions]
         .filter(Boolean)
         .join("\n\n"),

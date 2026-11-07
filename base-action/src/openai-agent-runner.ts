@@ -1,3 +1,9 @@
+import {
+  agentTraceConfig,
+  withAgentTrace,
+  flushAgentTraces,
+  type AgentTraceConfig,
+} from "./agent-tracing";
 import { ModelRouter, ROUTING_INSTRUCTIONS } from "./model-router";
 import {
   Agent,
@@ -48,6 +54,8 @@ export type OpenAIAgentOptions = {
   includePartialMessages?: boolean;
   /** Testable model boundary; production defaults to an API-key-only OpenAI provider. */
   modelProvider?: ModelProvider;
+  /** Explicit production trace policy; injected test/custom models stay offline by default. */
+  tracing?: AgentTraceConfig;
   /** Optional shared routing state; API fallback remains a separate mechanism. */
   modelRouter?: ModelRouter;
   instructions: string;
@@ -185,7 +193,16 @@ export async function runOpenAIAgent(
     options.onEvent?.(event);
   };
 
+  const tracing =
+    options.tracing ??
+    agentTraceConfig({
+      apiKey: options.apiKey,
+      baseURL,
+      customModel: !!options.modelProvider || typeof options.model !== "string",
+      sessionId,
+    });
   try {
+    /** Execute the SDK loop under the caller's payload-free trace and original run limits. */
     const execute = async (): Promise<OpenAIAgentResult> => {
       if (options.session) {
         if (!options.sessionId)
@@ -367,7 +384,14 @@ export async function runOpenAIAgent(
             }
           : "text",
       });
-      const runner = new Runner({ tracingDisabled: true });
+      const runner = new Runner({
+        tracingDisabled: !tracing.enabled,
+        traceIncludeSensitiveData: false,
+        workflowName: tracing.workflowName,
+        groupId: tracing.groupId,
+        traceMetadata: tracing.metadata,
+        tracing: { apiKey: tracing.apiKey },
+      });
       runner.on("agent_tool_start", (_context, _agent, tool, details) => {
         emit({
           type: "tool.started",
@@ -503,7 +527,9 @@ export async function runOpenAIAgent(
           : [...history, { role: "user", content: continuation }];
       }
     };
-    return await Promise.race([execute(), interrupted]);
+    return await withAgentTrace(tracing, () =>
+      Promise.race([execute(), interrupted]),
+    );
   } catch (error) {
     const state =
       error instanceof AgentsError && error.state ? error.state : activeState;
@@ -541,5 +567,6 @@ export async function runOpenAIAgent(
   } finally {
     clearTimeout(timer);
     options.signal?.removeEventListener("abort", abort);
+    await flushAgentTraces(tracing);
   }
 }

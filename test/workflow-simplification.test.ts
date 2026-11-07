@@ -89,3 +89,18 @@ test("AI findings and overviews label their execution limits visibly", () => {
     "AI review · tests not executed",
   );
 });
+
+test("both actions automatically enable tracing and pass through an explicit opt-out", async () => {
+  for (const [path, env] of [
+    ["action.yml", "ENABLE_TRACING"],
+    ["base-action/action.yml", "INPUT_ENABLE_TRACING"],
+  ]) {
+    const action = parse(await readFile(path!, "utf8"));
+    expect(action.inputs.enable_tracing.default).toBe("true");
+    expect(
+      action.runs.steps.some(
+        (step: any) => step.env?.[env!] === "${{ inputs.enable_tracing }}",
+      ),
+    ).toBe(true);
+  }
+});

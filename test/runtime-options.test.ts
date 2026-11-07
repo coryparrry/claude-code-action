@@ -47,3 +47,16 @@ test("routing JSON is passed intact from the main action", () => {
     actionRuntimeOptions({ MODEL_ROUTING: modelRouting }).modelRouting,
   ).toBe(modelRouting);
 });
+
+test("tracing is automatic unless the action input explicitly opts out", () => {
+  expect(actionRuntimeOptions({}).tracingEnabled).toBeUndefined();
+  expect(actionRuntimeOptions({ ENABLE_TRACING: "true" }).tracingEnabled).toBe(
+    true,
+  );
+  expect(actionRuntimeOptions({ ENABLE_TRACING: "false" }).tracingEnabled).toBe(
+    false,
+  );
+  expect(() => actionRuntimeOptions({ ENABLE_TRACING: "invalid" })).toThrow(
+    "enable_tracing",
+  );
+});

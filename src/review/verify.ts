@@ -113,6 +113,7 @@ export async function verifyReviewCandidates(
     model: routing?.strong_model ?? verifierOptions.model,
     effort: routing?.strong_effort ?? verifierOptions.effort,
     modelRouting: undefined,
+    tracePhase: "verification",
     fallbackModel: routing ? undefined : verifierOptions.fallbackModel,
     mcpConfig: '{"mcpServers":{}}',
     maxTurns,

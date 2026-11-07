@@ -1,0 +1,51 @@
+{
+  "recorded_at": "2026-11-07T18:50:25.275Z",
+  "model": "gpt-6-luna",
+  "model_calls": 2,
+  "outcomes": [
+    {
+      "phase": "review",
+      "passed": true
+    },
+    {
+      "phase": "verification",
+      "passed": true
+    }
+  ],
+  "exports": [
+    {
+      "status": 204,
+      "trace_ids": ["trace_7ecf8657e97f4819a191118db865ca5d"],
+      "names": ["Codex review"],
+      "contains_sensitive_payload": false
+    },
+    {
+      "status": 204,
+      "trace_ids": ["trace_2314938ff74e47cab2826d955d59c42b"],
+      "names": ["Codex verification"],
+      "contains_sensitive_payload": false
+    }
+  ],
+  "source_sha256": {
+    "base-action/src/agent-tracing.ts": "a35fbb1482bedfe0e108301c8841f8be958f15690b1a5a64821aacbc7f082661",
+    "base-action/src/openai-agent-runner.ts": "b4eb670496f4a09f70cb55dcba402a506f58f27459816cfc2ce2ac56c9f8b609",
+    "base-action/src/run-codex.ts": "7350a92fc7278710aa0c06620bb828d45c5733b3c34c1cb3987b1a9fb28616b5",
+    "base-action/src/codex-agent-runtime.ts": "e0b7579c2c2e321ed99d8d3670ab4e2dde60e2d76f5942c46bbc0ee2bf26eb96",
+    "src/review/runtime.ts": "0e7125ee2306242eee347e32d89b49c8b3fbb0fa4ee4001baeb6524ada2a6a6c",
+    "src/review/verify.ts": "35007479d68db8590fa96a969859bcdc6b2fd6bbcef497d5b5fe10fbf209735f"
+  },
+  "accepted": true,
+  "limitation": "Verified local SDK inference, HTTP 204 ingestion and dashboard visibility. Existing GitHub workflows pinned to older action revisions are unchanged until they select the updated revision.",
+  "dashboard_verification": {
+    "visible_in_agents_sdk_logs": true,
+    "trace_ids": [
+      "trace_7ecf8657e97f4819a191118db865ca5d",
+      "trace_2314938ff74e47cab2826d955d59c42b"
+    ],
+    "trace_urls": [
+      "https://platform.openai.com/logs/trace?trace_id=trace_7ecf8657e97f4819a191118db865ca5d&api=traces",
+      "https://platform.openai.com/logs/trace?trace_id=trace_2314938ff74e47cab2826d955d59c42b&api=traces"
+    ]
+  },
+  "source_note": "Recorded live hashes precede two documentation-only function comments; no executable tracing code changed after the live check."
+}

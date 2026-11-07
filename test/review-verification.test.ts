@@ -555,3 +555,33 @@ test("routed verification always uses the configured strong model and effort in 
   expect(captured!.fallbackModel).toBeUndefined();
   expect(captured!.modelPrices).toHaveProperty("chosen-large");
 });
+
+test("native reviewer and verifier preserve the tracing opt-out and label their phases", async () => {
+  const { nativeReviewOptions } = await import("../src/review/runtime");
+  const options = await nativeReviewOptions("", { tracingEnabled: false });
+  expect(options).toMatchObject({
+    tracingEnabled: false,
+    tracePhase: "review",
+  });
+  let captured: CodexOptions | undefined;
+  const runner = (async (prompt, opts) => {
+    paths.push(prompt);
+    captured = opts;
+    return {
+      conclusion: "success",
+      structuredOutput: verdict(),
+      readEvidence: inspected,
+    };
+  }) as typeof runCodex;
+  await verifyReviewCandidates(
+    { conclusion: "success", structuredOutput: review() },
+    options,
+    head,
+    [],
+    runner,
+  );
+  expect(captured).toMatchObject({
+    tracingEnabled: false,
+    tracePhase: "verification",
+  });
+});

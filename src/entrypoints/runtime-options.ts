@@ -1,3 +1,4 @@
+import { parseTracingEnabled } from "../../base-action/src/agent-tracing";
 import type { CodexOptions } from "../../base-action/src/run-codex";
 
 /** Omitted Actions inputs must not override controls supplied by mode arguments. */
@@ -11,6 +12,7 @@ export function actionRuntimeOptions(
   return {
     model: value("CODEX_MODEL"),
     modelRouting: value("MODEL_ROUTING"),
+    tracingEnabled: parseTracingEnabled(value("ENABLE_TRACING")),
     baseURL: value("OPENAI_BASE_URL"),
     effort: value("CODEX_EFFORT"),
     sandbox: value("CODEX_SANDBOX"),

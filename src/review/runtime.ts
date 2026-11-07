@@ -16,6 +16,8 @@ export async function nativeReviewOptions(
     model: direct.model ?? requested.model,
     modelRouting: parseModelRouting(direct.modelRouting),
     modelPrices: direct.modelPrices,
+    tracingEnabled: direct.tracingEnabled,
+    tracePhase: "review",
     baseURL: direct.baseURL,
     effort: direct.effort ?? requested.effort,
     maxTurns: direct.maxTurns ?? requested.maxTurns,

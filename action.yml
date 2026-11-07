@@ -48,6 +48,10 @@ inputs:
     description: "Opt-in JSON model router: cheap_model, strong_model, cheap_effort, strong_effort, max_cheap_turns, max_cheap_input_bytes. Blank disables routing."
     required: false
     default: ""
+  enable_tracing:
+    description: "Upload SDK traces for direct OpenAI runs, excluding prompts and tool payloads"
+    required: false
+    default: "true"
   codex_effort:
     description: "Optional Codex reasoning effort"
     required: false
@@ -419,6 +423,7 @@ runs:
         AZURE_OPENAI_ENDPOINT: ${{ inputs.azure_openai_endpoint || env.AZURE_OPENAI_ENDPOINT }}
         AZURE_OPENAI_API_KEY: ${{ inputs.azure_openai_api_key || env.AZURE_OPENAI_API_KEY }}
         AZURE_OPENAI_AD_TOKEN: ${{ inputs.azure_openai_ad_token || env.AZURE_OPENAI_AD_TOKEN }}
+        ENABLE_TRACING: ${{ inputs.enable_tracing }}
         MODEL_ROUTING: ${{ inputs.model_routing }}
         CODEX_MODEL: ${{ inputs.codex_model }}
         CODEX_EFFORT: ${{ inputs.codex_effort }}
