@@ -25,7 +25,7 @@ sets up the OpenAI key, and opens a draft setup PR. Merge the PR to enable
 
 ### Manual workflow setup
 
-The examples pin source commit `4a2adb0725c9de7f8b5243613c22325eb0c9fadd`, which includes verified native reviews, requested-change delivery and bounded repository learning. Existing installations can run the guided installer to update both workflows and enable automatic cross-PR memory. The manual examples below run reviews without the separate memory publisher.
+The examples pin source commit `23135f7c38219fcd13e130bcb1ca6430aca4fcc1`, which includes verified native reviews, requested-change delivery and bounded repository learning. Existing installations can run the guided installer to update both workflows and enable automatic cross-PR memory. The manual examples below run reviews without the separate memory publisher.
 
 Add your existing OpenAI key as the repository Actions secret `OPENAI_API_KEY`. Save this workflow as `.github/workflows/codex.yml` in the repository where you want the action to operate. Replace `your-github-username` with the trusted user's login. The workflow must be on the default branch for `issue_comment` events.
 
@@ -71,7 +71,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: agent
-        uses: coryparrry/claude-code-action@4a2adb0725c9de7f8b5243613c22325eb0c9fadd
+        uses: coryparrry/claude-code-action@23135f7c38219fcd13e130bcb1ca6430aca4fcc1
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -117,7 +117,7 @@ jobs:
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
       - id: agent
-        uses: coryparrry/claude-code-action@4a2adb0725c9de7f8b5243613c22325eb0c9fadd
+        uses: coryparrry/claude-code-action@23135f7c38219fcd13e130bcb1ca6430aca4fcc1
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -170,7 +170,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
-      - uses: coryparrry/claude-code-action@4a2adb0725c9de7f8b5243613c22325eb0c9fadd
+      - uses: coryparrry/claude-code-action@23135f7c38219fcd13e130bcb1ca6430aca4fcc1
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           codex_sandbox: read-only
