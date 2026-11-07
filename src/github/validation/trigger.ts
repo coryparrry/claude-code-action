@@ -13,11 +13,11 @@ import {
 import type { GitHubContext, ParsedGitHubContext } from "../context";
 
 /** Prevent self-triggering openings while preserving independent workflow automation. */
-export function isActionCreatedIssueOpening(context: GitHubContext): boolean {
+export function isActionCreatedIssueEvent(context: GitHubContext): boolean {
   return (
     !!process.env.GITHUB_WORKFLOW_REF &&
     isIssuesEvent(context) &&
-    context.eventAction === "opened" &&
+    ["opened", "labeled"].includes(context.eventAction ?? "") &&
     context.payload.issue?.user?.type === "Bot" &&
     context.payload.issue.user.login === context.actor &&
     context.payload.issue.user.login === context.inputs.botName &&
@@ -33,7 +33,7 @@ export function checkContainsTrigger(context: ParsedGitHubContext): boolean {
     inputs: { assigneeTrigger, labelTrigger, triggerPhrase, prompt },
   } = context;
 
-  if (isActionCreatedIssueOpening(context)) return false;
+  if (isActionCreatedIssueEvent(context)) return false;
 
   // If prompt is provided, always trigger
   if (prompt) {

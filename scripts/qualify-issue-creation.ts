@@ -83,12 +83,15 @@ export function selectQualificationIssues(
   );
 }
 
-/** Replay a published bot-owned opening without supplying any credentials. */
-export async function assertOpeningIsSkipped(issue: {
-  number: number;
-  title: string;
-  body: string;
-}) {
+/** Replay bot-owned creation events without supplying any credentials. */
+export async function assertCreatedEventIsSkipped(
+  issue: {
+    number: number;
+    title: string;
+    body: string;
+  },
+  action: "opened" | "labeled" = "opened",
+) {
   const temp = await mkdtemp(join(process.env.RUNNER_TEMP!, "issue-opening-"));
   try {
     const payload = join(temp, "event.json");
@@ -96,7 +99,7 @@ export async function assertOpeningIsSkipped(issue: {
     await writeFile(
       payload,
       JSON.stringify({
-        action: "opened",
+        action,
         issue: { ...issue, user: { login: actor, type: "Bot" } },
         sender: { login: actor, type: "Bot" },
       }),
@@ -128,7 +131,7 @@ export async function assertOpeningIsSkipped(issue: {
       new Response(child.stderr).text(),
     ]);
     assert.equal(status, 0, stderr);
-    assert.match(stdout, /Action-created issue opening skipped/);
+    assert.match(stdout, /Action-created issue event skipped/);
     assert.match(stdout, /contains_trigger::false/);
   } finally {
     await rm(temp, { recursive: true, force: true });
@@ -215,7 +218,7 @@ if (import.meta.main) {
     );
     const issue = matches[0];
     assert.equal(issue.body, prefix + submitted.body);
-    if (success) await assertOpeningIsSkipped(issue);
+    if (success) await assertCreatedEventIsSkipped(issue);
     assert.equal(issue.user.login, "github-actions[bot]");
     assert.ok(
       issue.html_url.startsWith(`https://github.com/${repository}/issues/`),

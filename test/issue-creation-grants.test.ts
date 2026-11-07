@@ -99,6 +99,7 @@ function interactiveContext() {
 async function prepareTagFixture(
   context = interactiveContext(),
   octokit = {} as any,
+  onSetup?: () => Promise<void>,
 ) {
   const spies = [
     spyOn(actor, "checkHumanActor").mockResolvedValue(undefined),
@@ -108,11 +109,14 @@ async function prepareTagFixture(
     spyOn(fetcher, "fetchGitHubData").mockImplementation(
       async () => ({}) as any,
     ),
-    spyOn(branch, "setupBranch").mockResolvedValue({
-      baseBranch: "main",
-      claudeBranch: "codex/fixture",
-      currentBranch: "codex/fixture",
-    } as any),
+    spyOn(branch, "setupBranch").mockImplementation(async () => {
+      await onSetup?.();
+      return {
+        baseBranch: "main",
+        claudeBranch: "codex/fixture",
+        currentBranch: "codex/fixture",
+      } as any;
+    }),
     spyOn(prompt, "createPrompt").mockResolvedValue(undefined),
     spyOn(mcp, "prepareMcpConfig").mockResolvedValue('{"mcpServers":{}}'),
     spyOn(gitConfig, "configureGitAuth").mockResolvedValue(undefined),
@@ -439,6 +443,42 @@ test.each(["", "Interactive task"])(
     expect(result).toBe(content + "\n");
   },
 );
+
+test("tag preflight defers runtime argument files until the selected branch is ready", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "release-runtime-files-"));
+  directories.push(directory);
+  const system = join(directory, "system.txt"),
+    append = join(directory, "append.txt"),
+    mcpFile = join(directory, "mcp.json"),
+    schema = join(directory, "schema.json");
+  process.env.CODEX_ARGS = `--allowedTools ${issueTool} --system-prompt-file ${system} --append-system-prompt-file ${append} --mcp-config ${mcpFile} --json-schema ${schema}`;
+  const context = interactiveContext();
+  context.isPR = false;
+  context.inputs = { ...context.inputs, baseBranch: "release" };
+  const prepared = await prepareTagFixture(context, {} as any, async () => {
+    await Promise.all([
+      writeFile(system, "Release system instructions"),
+      writeFile(append, "Release appended instructions"),
+      writeFile(
+        mcpFile,
+        '{"mcpServers":{"release_context":{"command":"trusted-reader"}}}',
+      ),
+      writeFile(schema, '{"type":"object","properties":{}}'),
+    ]);
+  });
+  const resolved = await resolveCompatibility(
+    prepared.claudeArgs,
+    prepared.settings,
+    prepared.mcpConfig,
+  );
+  expect(resolved.systemPrompt).toBe("Release system instructions");
+  expect(resolved.appendSystemPrompt).toBe("Release appended instructions");
+  expect(resolved.schema).toEqual({ type: "object", properties: {} });
+  expect(
+    JSON.parse(resolved.mcpConfig).mcpServers.release_context.command,
+  ).toBe("trusted-reader");
+  expect(prepared.reserveIssueMcpServer).toBe(true);
+});
 
 test("invalid settings fail before tag mode posts a working comment", async () => {
   process.env.INPUT_SETTINGS = '{"permissions":{"allow":"Read"}}';

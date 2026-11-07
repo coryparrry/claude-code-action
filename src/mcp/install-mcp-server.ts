@@ -89,6 +89,7 @@ export async function resolveActionPermissions(
       allowedTools: process.env.ALLOWED_TOOLS || undefined,
       permissionMode: process.env.PERMISSION_MODE || undefined,
     },
+    { deferRuntimeFiles: true },
   );
   const selected = permission.agentName
     ? permission.agentDefinitions?.[permission.agentName]

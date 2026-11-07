@@ -21,7 +21,7 @@ import {
   readCreatedIssues,
 } from "../src/github/operations/issue-creation-receipts";
 import {
-  assertOpeningIsSkipped,
+  assertCreatedEventIsSkipped,
   selectQualificationIssues,
 } from "../scripts/qualify-issue-creation";
 import { prepareMcpConfig } from "../src/mcp/install-mcp-server";
@@ -74,7 +74,7 @@ test("issue publication masks opaque URL credentials without registered secrets"
     { owner: "owner", repo: "repo" },
     {
       title: connection,
-      body: `${connection}\n${encoded}\n${reproduction}\nhttps://docs.example/database\nssh://git@github.com/owner/repo.git\nssh://git:ssh-password@git.example/repo`,
+      body: `${connection}\n\x1b[31m${connection}\n${encoded}\n${reproduction}\nhttps://docs.example/database\nssh://git@github.com/owner/repo.git\nssh://git:ssh-password@git.example/repo`,
       labels: ["https://reader:short@db.test"],
     },
   );
@@ -389,6 +389,9 @@ test("literal Markdown, accessible image descriptions and fenced examples surviv
     } as any,
   });
   expect(checkContainsTrigger(context)).toBe(false);
+  expect(checkContainsTrigger({ ...context, eventAction: "labeled" })).toBe(
+    false,
+  );
   process.env.GITHUB_WORKFLOW_REF =
     "owner/repo/.github/workflows/create.yml@refs/heads/release";
   expect(checkContainsTrigger(context)).toBe(false);
@@ -398,6 +401,9 @@ test("literal Markdown, accessible image descriptions and fenced examples surviv
   process.env.GITHUB_WORKFLOW_REF =
     "owner/repo/.github/workflows/triage.yml@refs/heads/main";
   expect(checkContainsTrigger(context)).toBe(true);
+  expect(checkContainsTrigger({ ...context, eventAction: "labeled" })).toBe(
+    true,
+  );
   delete process.env.GITHUB_WORKFLOW_REF;
   expect(checkContainsTrigger(context)).toBe(true);
   expect(
@@ -554,7 +560,7 @@ test("only live author-matching comment requests get the default creation tool",
   ).toBe(false);
 });
 
-test("qualification replays an actual configured-bot opening without credentials", async () => {
+test("qualification replays configured-bot opening and label events without credentials", async () => {
   const directory = await mkdtemp(join(tmpdir(), "issue-opening-replay-"));
   process.env.RUNNER_TEMP = directory;
   process.env.GITHUB_REPOSITORY = "owner/repo";
@@ -562,11 +568,19 @@ test("qualification replays an actual configured-bot opening without credentials
   try {
     process.env.GITHUB_WORKFLOW_REF =
       "owner/repo/.github/workflows/create.yml@refs/heads/main";
-    await assertOpeningIsSkipped({
+    await assertCreatedEventIsSkipped({
       number: 1,
       title: "/codex fixture",
       body: `${actionCreatedIssueMarker()}\n\nReplay only`,
     });
+    await assertCreatedEventIsSkipped(
+      {
+        number: 1,
+        title: "/codex fixture",
+        body: `${actionCreatedIssueMarker()}\n\nReplay label only`,
+      },
+      "labeled",
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

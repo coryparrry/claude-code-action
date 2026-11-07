@@ -60,7 +60,7 @@ import { prepareTagMode } from "../modes/tag";
 import { prepareAgentMode } from "../modes/agent";
 import {
   checkContainsTrigger,
-  isActionCreatedIssueOpening,
+  isActionCreatedIssueEvent,
 } from "../github/validation/trigger";
 import {
   getReviewSourceMappings,
@@ -156,8 +156,8 @@ async function run() {
     // Phase 1: Prepare
     const actionInputsPresent = collectActionInputsPresence();
     context = parseGitHubContext();
-    if (isActionCreatedIssueOpening(context)) {
-      console.log("Action-created issue opening skipped");
+    if (isActionCreatedIssueEvent(context)) {
+      console.log("Action-created issue event skipped");
       core.setOutput("contains_trigger", "false");
       return;
     }

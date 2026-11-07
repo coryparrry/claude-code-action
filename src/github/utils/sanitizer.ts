@@ -90,8 +90,15 @@ export function redactSecrets(content: string): string {
 
   // URL userinfo can carry opaque credentials without a secret-like variable name.
   content = content.replace(
-    /\b([a-z][a-z0-9+.-]{0,63}:\/\/)([^\s/?#"<>`\\]+)@/gi,
-    (match, scheme: string, userinfo: string, offset: number, text: string) => {
+    /(\x1b\[[0-9;]*m|\\(?:u001b|x1b)\[[0-9;]*m|\\(?:[nrtbf]|u[0-9a-fA-F]{4})|\b)([a-z][a-z0-9+.-]{0,63}:\/\/)([^\s/?#"<>`\\]+)@/gi,
+    (
+      match,
+      prefix: string,
+      scheme: string,
+      userinfo: string,
+      offset: number,
+      text: string,
+    ) => {
       let login = userinfo;
       let suffix = "";
       // Apostrophes are valid password characters except when closing a quoted value.
@@ -107,7 +114,7 @@ export function redactSecrets(content: string): string {
         suffix = authority.slice(at + 1) + userinfo.slice(boundary) + "@";
       }
       if (scheme.toLowerCase() === "ssh://" && login === "git") return match;
-      return `${scheme}[REDACTED]@${suffix}`;
+      return `${prefix}${scheme}[REDACTED]@${suffix}`;
     },
   );
 

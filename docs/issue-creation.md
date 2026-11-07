@@ -23,7 +23,7 @@ Runtime-compatible namespace and wildcard grants, including
 the model cannot select an owner or repository. It uses the action-owned token
 and existing dependencies, with no Docker requirement.
 
-An invisible origin marker suppresses openings authored by the configured bot
+An invisible origin marker suppresses openings and label events authored by the configured bot
 only in the producing workflow, identified by its repository and workflow path
 across branch refs. Independent prompt-driven workflows keep their normal triggers.
 GitHub identifies the author independently of the issue body. Human-authored

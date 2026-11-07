@@ -630,3 +630,22 @@ it("masks legal apostrophes in raw and double-quoted URL passwords", () => {
     ),
   ).toBe("{'url':'https://[REDACTED]@db.example','email':'alice@example.net'}");
 });
+
+it("masks connection passwords after ANSI and serialized escape boundaries", () => {
+  const url = "postgres://reader:opaque@db.example/report";
+  const masked = "postgres://[REDACTED]@db.example/report";
+  for (const prefix of [
+    "\x1b[31m",
+    "\x1b[m",
+    "\x1b[;m",
+    "\x1b[38;2;255;0;0m",
+    "\x1b[" + "1;".repeat(2000) + "31m",
+    String.raw`\n`,
+    String.raw`\u001b[31m`,
+  ]) {
+    expect(redactSecrets(prefix + url)).toBe(prefix + masked);
+    expect(redactSecrets(prefix + "ssh://git@github.com/owner/repo.git")).toBe(
+      prefix + "ssh://git@github.com/owner/repo.git",
+    );
+  }
+});

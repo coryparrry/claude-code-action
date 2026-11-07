@@ -217,13 +217,17 @@ export function isSettingsFile(raw: string): boolean {
   );
 }
 
-/** Supported legacy options retain their meaning; unsupported controls fail closed. */
+/**
+ * Resolve supported controls and fail closed on unsupported flags.
+ * Permission preflight defers execution-only argument files until checkout is ready.
+ */
 export async function resolveCompatibility(
   raw: string,
   settingsRaw: string,
   actionMcpConfig: string,
   defaultAllowedTools: string[] = [],
   directOptions: DirectCompatibilityOptions = {},
+  resolution: { deferRuntimeFiles?: boolean } = {},
 ): Promise<Compatibility> {
   const result: Compatibility = {
     mcpConfig: actionMcpConfig,
@@ -463,11 +467,13 @@ export async function resolveCompatibility(
           "--output-format must be json or stream-json for action report output",
         );
       result.outputFormat = value as "json" | "stream-json";
-    } else if (flag === "--system-prompt-file")
-      result.systemPrompt = await readFile(value, "utf8");
-    else if (flag === "--append-system-prompt-file")
-      result.appendSystemPrompt = await readFile(value, "utf8");
-    else if (flag === "--effort") result.effort = value;
+    } else if (flag === "--system-prompt-file") {
+      if (!resolution.deferRuntimeFiles)
+        result.systemPrompt = await readFile(value, "utf8");
+    } else if (flag === "--append-system-prompt-file") {
+      if (!resolution.deferRuntimeFiles)
+        result.appendSystemPrompt = await readFile(value, "utf8");
+    } else if (flag === "--effort") result.effort = value;
     else if (flag === "--system-prompt") {
       result.systemPrompt = value;
       result.configOverrides = result.configOverrides.filter(
@@ -492,11 +498,13 @@ export async function resolveCompatibility(
       if (separator < 0)
         while (args[index + 1] && !args[index + 1]!.startsWith("--"))
           configs.push(args[++index]!);
-      for (const config of configs)
-        addMcp(await jsonObject(config, "--mcp-config"));
-    } else if (flag === "--json-schema" || flag === "--output-schema")
-      result.schema = await jsonObject(value, "--json-schema");
-    else {
+      if (!resolution.deferRuntimeFiles)
+        for (const config of configs)
+          addMcp(await jsonObject(config, "--mcp-config"));
+    } else if (flag === "--json-schema" || flag === "--output-schema") {
+      if (!resolution.deferRuntimeFiles)
+        result.schema = await jsonObject(value, "--json-schema");
+    } else {
       const tools = [value];
       if (separator < 0)
         while (args[index + 1] && !args[index + 1]!.startsWith("--"))
