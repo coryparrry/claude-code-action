@@ -16,6 +16,8 @@ WORKFLOW_DIR = pathlib.Path(".github/workflows")
 POLICY_PATH = pathlib.Path(".github/egress-firewall.yaml")
 SIGN_IN_MARKER = "anthropic_federation_rule_id"
 CLAUDE_ACTIONS = ("anthropics/claude-code-action", "anthropics/claude-code-base-action")
+PINNED_CODEX_BASE_ACTION = "coryparrry/claude-code-action/base-action@"
+DIRECT_QUALIFICATION_JOBS = {("release-qualification.yml", "live-runtime")}
 HELP = 'See AGENTS.md, "Security hardening for GitHub Actions".'
 # Claude Code runs auto mode only on claude-opus-4-6 and newer models. On an older model it
 # falls back to its default permission mode, with no safety review.
@@ -88,7 +90,7 @@ def runs_claude_code_action(step: dict) -> bool:
     """Whether the step runs the Claude Code action: the published action, or a
     local action that accepts a claude_args input."""
     uses = str(step.get("uses", ""))
-    if uses.lower().startswith(CLAUDE_ACTIONS):
+    if uses.lower().startswith((*CLAUDE_ACTIONS, PINNED_CODEX_BASE_ACTION)):
         return True
     action = load_local_action(uses)
     return action is not None and "claude_args" in (action.get("inputs") or {})
@@ -114,7 +116,11 @@ def permission_mode_problem(step: dict, exempt: bool, inherited_env: dict) -> st
     job's 'env'.
     """
     inputs = step.get("with") or {}
-    lines = str(inputs.get("claude_args", "")).splitlines()
+    args_input = "claude_args"
+    if str(step.get("uses", "")).lower().startswith(PINNED_CODEX_BASE_ACTION):
+        if inputs.get("codex_args"):
+            args_input = "codex_args"
+    lines = str(inputs.get(args_input, "")).splitlines()
     text = " ".join(line for line in lines if not line.strip().startswith("#"))
     try:
         args = shlex.split(text, comments=True)
@@ -318,7 +324,9 @@ def main() -> int:
         workflow = load_yaml(path)
         jobs = workflow.get("jobs") if isinstance(workflow, dict) else None
         for job_id, job in (jobs or {}).items():
-            if not isinstance(job, dict) or not job_calls_claude(job):
+            if not isinstance(job, dict):
+                continue
+            if (path.name, job_id) not in DIRECT_QUALIFICATION_JOBS and not job_calls_claude(job):
                 continue
             checked += 1
             errors.extend(check_job(path.name, job_id, job, workflow.get("env") or {}))
