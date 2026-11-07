@@ -1,5 +1,4 @@
 import { issueCreationAllowed } from "./issue-creation-policy";
-import { isIssueMcpServerName } from "../../base-action/src/mcp-names";
 import { stringList } from "../../base-action/src/agent-markdown";
 import { resolveCompatibility } from "../../base-action/src/codex-compat";
 import { usesApiCommitSigning } from "../github/operations/commit-signing";
@@ -113,25 +112,11 @@ export async function resolveActionPermissions(
     process.env.CODEX_SANDBOX !== "read-only" &&
     !context.inputs.allowedNonWriteUsers &&
     issueCreationAllowed(context, mode, allowedTools);
-  const agentServers = Array.isArray(agent?.mcpServers)
-    ? agent.mcpServers
-    : [agent?.mcpServers];
-  const issueMcpNamespaceConflict = [
-    JSON.parse(permission.mcpConfig).mcpServers,
-    ...agentServers,
-  ].some(
-    (servers) =>
-      servers &&
-      typeof servers === "object" &&
-      !Array.isArray(servers) &&
-      Object.keys(servers).some(isIssueMcpServerName),
-  );
   return {
     permissionMode: permission.permissionMode,
     allowedTools,
     planning,
     reserveIssueMcpServer,
-    issueMcpNamespaceConflict,
   };
 }
 

@@ -550,3 +550,21 @@ describe("outbound comment sanitization and redaction", () => {
     expect(sanitizedAndRedacted).toContain("[REDACTED_GITHUB_TOKEN]");
   });
 });
+
+it("bounds work on long scheme-like CI log lines", async () => {
+  const source = new URL("../src/github/utils/sanitizer.ts", import.meta.url)
+    .pathname;
+  const child = Bun.spawn({
+    cmd: [
+      process.execPath,
+      "--no-env-file",
+      "-e",
+      `import { redactSecrets } from ${JSON.stringify(source)}; const value="a.".repeat(1000000)+"://host @x"; if(redactSecrets(value)!==value)process.exit(1);`,
+    ],
+    env: { PATH: process.env.PATH! },
+    signal: AbortSignal.timeout(5000),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expect(await child.exited).toBe(0);
+});

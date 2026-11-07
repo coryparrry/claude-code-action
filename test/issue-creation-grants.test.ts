@@ -174,6 +174,28 @@ test.each(["args", "direct", "settings", "file"] as const)(
   },
 );
 
+test("non-write tag requests do not inherit an implicit custom-server write grant", async () => {
+  process.env.ALLOWED_TOOLS = "mcp__github_issues__get_issue";
+  process.env.CODEX_ARGS = `--mcp-config '${JSON.stringify({ mcpServers: { github_issues: { command: "custom-reader-with-writer" } } })}'`;
+  const context = interactiveContext();
+  context.inputs = { ...context.inputs, allowedNonWriteUsers: context.actor };
+  const prepared = await prepareTagFixture(context);
+  expect(prepared.reserveIssueMcpServer).toBe(false);
+  const permission = await resolveCompatibility(
+    prepared.claudeArgs,
+    prepared.settings,
+    prepared.mcpConfig,
+  );
+  expect(permission.allowedTools).toContain("mcp__github_issues__get_issue");
+  expect(permission.allowedTools).not.toContain(issueTool);
+  const policy = new AgentPermissions({
+    cwd: tmpdir(),
+    allowedTools: permission.allowedTools,
+    permissionMode: permission.permissionMode,
+  });
+  expect(() => policy.assertTool(issueTool)).toThrow("without approval");
+});
+
 test("interactive tag commands retain an unscoped default when no matching grant exists", async () => {
   const prepared = await prepareTagFixture();
   const permission = await resolveCompatibility(
@@ -250,7 +272,6 @@ test.each(["github_issues", "github:issues"])(
       ),
     ).toMatchObject({
       reserveIssueMcpServer: true,
-      issueMcpNamespaceConflict: true,
     });
     expect(() => childMcpConfig('{"mcpServers":{}}', [config], true)).toThrow(
       "github_issues is reserved",
@@ -267,7 +288,6 @@ test.each(["github_issues", "github:issues"])(
       ),
     ).toMatchObject({
       reserveIssueMcpServer: true,
-      issueMcpNamespaceConflict: true,
     });
   },
 );

@@ -26,7 +26,7 @@ import {
 } from "./codex-compat";
 import { workflowToolEnvironment } from "./codex-tool-environment";
 import { nativeModelSettings } from "./agent-native-controls";
-import { isIssueMcpServerName } from "./mcp-names";
+import { assertNoIssueMcpServer, isIssueMcpServerName } from "./mcp-names";
 import { scrubMcpEnvironment } from "./mcp-environment";
 import { summarizeMcpToolOutput } from "./agent-mcp";
 import { createOpenAIAuthentication } from "./openai-auth";
@@ -74,8 +74,6 @@ export type CodexOptions = Omit<
   mcpConfig: string;
   /** Protect the main action's automatically authorized repository issue server. */
   reserveIssueMcpServer?: boolean;
-  /** Defer workflow namespace conflicts until loaded settings decide writer eligibility. */
-  issueMcpNamespaceConflict?: boolean;
   /** Workflow mode before tag preparation adds its default editing mode. */
   issuePermissionMode?: string;
   compatibilityArgs?: string;
@@ -457,10 +455,29 @@ export async function runCodex(
       reserveIssueMcpServer =
         !!trustedIssues &&
         !["plan", "readonly", "read-only"].includes(String(issueMode));
-      if (reserveIssueMcpServer && options.issueMcpNamespaceConflict)
-        throw new Error(
-          "github_issues is reserved for the action-owned issue writer",
+      if (reserveIssueMcpServer) {
+        // Inspect current restored inputs, excluding the action-owned MCP overlay.
+        const workflow = await resolveCompatibility(
+          options.compatibilityArgs ?? "",
+          options.settings ?? "",
+          '{"mcpServers":{}}',
+          options.defaultAllowedTools,
+          direct,
         );
+        for (const servers of [
+          JSON.parse(workflow.mcpConfig).mcpServers,
+          configuration.mcpServers,
+        ]) {
+          const customServers = { ...servers };
+          for (const [name, server] of Object.entries(customServers))
+            if (
+              isIssueMcpServerName(name) &&
+              isDeepStrictEqual(server, trustedIssues)
+            )
+              delete customServers[name];
+          assertNoIssueMcpServer(customServers);
+        }
+      }
       const resolvedMcp = JSON.parse(compatibility.mcpConfig);
       for (const [name, server] of Object.entries(resolvedMcp.mcpServers))
         if (

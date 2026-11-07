@@ -1,3 +1,7 @@
+import { prepareAgentMode } from "../../src/modes/agent";
+import * as actorValidation from "../../src/github/validation/actor";
+import * as gitConfiguration from "../../src/github/operations/git-config";
+import * as mcpPreparation from "../../src/mcp/install-mcp-server";
 import { resolveActionPermissions } from "../../src/mcp/install-mcp-server";
 import {
   createMockAutomationContext,
@@ -524,7 +528,6 @@ test.each(["true", "false"])(
           reserveIssueMcpServer: true,
           issuePermissionMode: "acceptEdits",
           settingSources: ["project"],
-          compatibilityArgs: `--mcp-config '${JSON.stringify({ mcpServers: { "github:issues": { command: "must-not-run" } } })}'`,
           mcpConfig: JSON.stringify({
             mcpServers: {
               github_issues: {
@@ -568,6 +571,9 @@ test.each([
   "main-read-only",
   "main-project-plan",
   "main-writer-conflict",
+  "main-writer-conflict-alias",
+  "main-restored",
+  "main-prepared",
 ] as const)(
   "runtime retains caller-owned github_issues servers from %s",
   async (source) => {
@@ -600,10 +606,22 @@ readline.createInterface({input:process.stdin}).on("line",line=>{
         : source === "settings"
           ? { settings: config }
           : { mcpConfig: config };
-    if (source.startsWith("main-")) {
+    if (source.startsWith("main-") && source !== "main-prepared") {
       if (source === "main-read-only") process.env.CODEX_SANDBOX = "read-only";
-      process.env.CODEX_ARGS = `--allowedTools mcp__github_issues__proof --mcp-config '${config}'`;
-      if (source !== "main-read-only") {
+      const callerConfig =
+        source === "main-writer-conflict-alias"
+          ? config.replace('"github_issues"', '"github:issues"')
+          : config;
+      process.env.CODEX_ARGS = `--allowedTools mcp__github_issues__proof --mcp-config '${callerConfig}'`;
+      if (source === "main-restored") {
+        const file = join(directory, "workflow-mcp.json");
+        await writeFile(
+          file,
+          '{"mcpServers":{"github_issues":{"command":"must-not-start"}}}',
+        );
+        process.env.CODEX_ARGS = `--allowedTools mcp__github_issues__proof --mcp-config '${file}'`;
+      }
+      if (!["main-read-only", "main-restored"].includes(source)) {
         await mkdir(join(directory, ".claude"));
         await writeFile(
           join(directory, ".claude/settings.json"),
@@ -626,21 +644,58 @@ readline.createInterface({input:process.stdin}).on("line",line=>{
       expect(permission.reserveIssueMcpServer).toBe(
         source !== "main-read-only",
       );
+      if (source === "main-restored")
+        await writeFile(
+          join(directory, "workflow-mcp.json"),
+          '{"mcpServers":{}}',
+        );
       Object.assign(extra, {
         reserveIssueMcpServer: permission.reserveIssueMcpServer,
-        issueMcpNamespaceConflict: permission.issueMcpNamespaceConflict,
         sandbox: source === "main-read-only" ? "read-only" : "workspace-write",
         settingSources: ["project"],
-        mcpConfig: JSON.stringify({
-          mcpServers: { github_issues: { command: "must-not-start" } },
-        }),
+        mcpConfig:
+          source === "main-restored"
+            ? config
+            : JSON.stringify({
+                mcpServers: { github_issues: { command: "must-not-start" } },
+              }),
         compatibilityArgs: process.env.CODEX_ARGS,
-        ...(source === "main-writer-conflict"
+        ...(source.startsWith("main-writer-conflict")
           ? { issuePermissionMode: "acceptEdits" }
           : {}),
       });
     }
-    if (source === "main-writer-conflict") {
+    if (source === "main-prepared") {
+      process.env.ALLOWED_TOOLS =
+        "mcp__github_issues__create_issue,mcp__github_issues__proof";
+      process.env.CODEX_ARGS = "--allowedTools mcp__github_issues__proof";
+      const spies = [
+        spyOn(actorValidation, "checkHumanActor").mockResolvedValue(undefined),
+        spyOn(gitConfiguration, "configureGitAuth").mockResolvedValue(
+          undefined,
+        ),
+        spyOn(mcpPreparation, "prepareMcpConfig").mockResolvedValue(config),
+      ];
+      try {
+        const prepared = await prepareAgentMode({
+          context: createMockAutomationContext({
+            inputs: { prompt: "Inspect the issue" },
+          }),
+          octokit: {} as any,
+          githubToken: "fixture-token",
+        });
+        expect(prepared.reserveIssueMcpServer).toBe(true);
+        Object.assign(extra, {
+          compatibilityArgs: prepared.claudeArgs,
+          mcpConfig: prepared.mcpConfig,
+          reserveIssueMcpServer: prepared.reserveIssueMcpServer,
+          issuePermissionMode: prepared.issuePermissionMode,
+        });
+      } finally {
+        for (const spy of spies) spy.mockRestore();
+      }
+    }
+    if (source.startsWith("main-writer-conflict")) {
       await expect(runCodex(prompt, options(model, extra))).rejects.toThrow(
         "github_issues is reserved",
       );

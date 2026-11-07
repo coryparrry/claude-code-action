@@ -90,7 +90,7 @@ export function redactSecrets(content: string): string {
 
   // URL userinfo can carry opaque credentials without a secret-like variable name.
   content = content.replace(
-    /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/?#]+)@/gi,
+    /\b([a-z][a-z0-9+.-]{0,63}:\/\/)([^\s/?#]+)@/gi,
     (match, scheme: string, userinfo: string) =>
       scheme.toLowerCase() === "ssh://" && userinfo === "git"
         ? match

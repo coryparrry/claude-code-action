@@ -43,7 +43,6 @@ export async function prepareAgentMode({
         planning: true,
         permissionMode: undefined,
         reserveIssueMcpServer: false,
-        issueMcpNamespaceConflict: false,
       }
     : await resolveActionPermissions(settings, context, "agent");
 
@@ -176,7 +175,6 @@ export async function prepareAgentMode({
     settings,
     issuePermissionMode: resolvedPermissions.permissionMode,
     reserveIssueMcpServer: resolvedPermissions.reserveIssueMcpServer,
-    issueMcpNamespaceConflict: resolvedPermissions.issueMcpNamespaceConflict,
     claudeArgs,
   };
 }

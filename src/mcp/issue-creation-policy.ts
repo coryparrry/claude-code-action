@@ -35,6 +35,7 @@ export function issueCreationGrants(
   }
   const grants = allowedTools.filter((rule) => toolMatchesRule(tool, rule));
   if (grants.length) return grants;
+  if (context.inputs.allowedNonWriteUsers) return [];
   if (mode !== "tag" || context.inputs.prompt) return [];
   if (
     [

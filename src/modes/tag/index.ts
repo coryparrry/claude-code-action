@@ -225,7 +225,6 @@ export async function prepareTagMode({
     settings,
     issuePermissionMode: resolvedPermissions.permissionMode,
     reserveIssueMcpServer: resolvedPermissions.reserveIssueMcpServer,
-    issueMcpNamespaceConflict: resolvedPermissions.issueMcpNamespaceConflict,
     claudeArgs: claudeArgs.trim(),
   };
 }
