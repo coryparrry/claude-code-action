@@ -70,13 +70,15 @@ test("issue publication masks opaque URL credentials without registered secrets"
     { owner: "owner", repo: "repo" },
     {
       title: connection,
-      body: `${connection}\n${encoded}\nhttps://docs.example/database`,
+      body: `${connection}\n${encoded}\nhttps://docs.example/database\nssh://git@github.com/owner/repo.git\nssh://git:ssh-password@git.example/repo`,
       labels: ["https://reader:short@db.test"],
     },
   );
   const posted = JSON.stringify(calls[0]);
   expect(posted).not.toContain(password);
   expect(posted).not.toContain("embedded");
+  expect(posted).not.toContain("ssh-password");
+  expect(calls[0]!.body).toContain("ssh://git@github.com/owner/repo.git");
   expect(posted).not.toContain("p%40ss%3Aword");
   expect(posted).not.toContain("reader:");
   expect(calls[0]!.title).toBe("postgresql://[REDACTED]@db.example/reports");

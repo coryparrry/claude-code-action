@@ -1,5 +1,5 @@
 import { issueCreationAllowed } from "./issue-creation-policy";
-import { assertNoIssueMcpServer } from "../../base-action/src/mcp-names";
+import { isIssueMcpServerName } from "../../base-action/src/mcp-names";
 import { stringList } from "../../base-action/src/agent-markdown";
 import { resolveCompatibility } from "../../base-action/src/codex-compat";
 import { usesApiCommitSigning } from "../github/operations/commit-signing";
@@ -75,7 +75,12 @@ async function checkActionsReadPermission(
 }
 
 /** Resolve trusted workflow grants once for checkout preparation and MCP setup. */
-export async function resolveActionPermissions(settings: string) {
+export async function resolveActionPermissions(
+  settings: string,
+  context: GitHubContext,
+  mode: AutoDetectedMode,
+  additionalTools: string[] = [],
+) {
   const permission = await resolveCompatibility(
     process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "",
     settings,
@@ -86,7 +91,6 @@ export async function resolveActionPermissions(settings: string) {
       permissionMode: process.env.PERMISSION_MODE || undefined,
     },
   );
-  assertNoIssueMcpServer(JSON.parse(permission.mcpConfig).mcpServers);
   const selected = permission.agentName
     ? permission.agentDefinitions?.[permission.agentName]
     : undefined;
@@ -94,25 +98,40 @@ export async function resolveActionPermissions(settings: string) {
     selected && typeof selected === "object"
       ? (selected as Record<string, unknown>)
       : undefined;
-  const servers = Array.isArray(agent?.mcpServers)
+  const allowedTools = [
+    ...new Set([
+      ...(permission.allowedTools ?? []),
+      ...(stringList(agent?.tools, "Agent tools") ?? []),
+      ...additionalTools,
+    ]),
+  ];
+  const planning =
+    agent?.permissionMode === "plan" ||
+    ["plan", "readonly", "read-only"].includes(permission.permissionMode || "");
+  const reserveIssueMcpServer =
+    !planning &&
+    process.env.CODEX_SANDBOX !== "read-only" &&
+    !context.inputs.allowedNonWriteUsers &&
+    issueCreationAllowed(context, mode, allowedTools);
+  const agentServers = Array.isArray(agent?.mcpServers)
     ? agent.mcpServers
     : [agent?.mcpServers];
-  for (const entry of servers)
-    if (entry && typeof entry === "object" && !Array.isArray(entry))
-      assertNoIssueMcpServer(entry);
+  const issueMcpNamespaceConflict = [
+    JSON.parse(permission.mcpConfig).mcpServers,
+    ...agentServers,
+  ].some(
+    (servers) =>
+      servers &&
+      typeof servers === "object" &&
+      !Array.isArray(servers) &&
+      Object.keys(servers).some(isIssueMcpServerName),
+  );
   return {
     permissionMode: permission.permissionMode,
-    allowedTools: [
-      ...new Set([
-        ...(permission.allowedTools ?? []),
-        ...(stringList(agent?.tools, "Agent tools") ?? []),
-      ]),
-    ],
-    planning:
-      agent?.permissionMode === "plan" ||
-      ["plan", "readonly", "read-only"].includes(
-        permission.permissionMode || "",
-      ),
+    allowedTools,
+    planning,
+    reserveIssueMcpServer,
+    issueMcpNamespaceConflict,
   };
 }
 
@@ -133,11 +152,17 @@ export async function prepareMcpConfig(
     mode,
   } = params;
   try {
-    const { allowedTools: resolved, planning } =
-      params.resolvedPermissions ??
-      (await resolveActionPermissions(
-        params.settings ?? process.env.INPUT_SETTINGS ?? "",
-      ));
+    const {
+      allowedTools: resolved,
+      planning,
+      reserveIssueMcpServer,
+    } = params.resolvedPermissions ??
+    (await resolveActionPermissions(
+      params.settings ?? process.env.INPUT_SETTINGS ?? "",
+      context,
+      mode,
+      allowedTools,
+    ));
     const allowedToolsList = [
       ...new Set([...(allowedTools || []), ...resolved]),
     ];
@@ -170,17 +195,7 @@ export async function prepareMcpConfig(
       mcpServers: {},
     };
 
-    const issueCreationRequested = issueCreationAllowed(
-      context,
-      mode,
-      allowedToolsList,
-    );
-    if (
-      issueCreationRequested &&
-      !planning &&
-      process.env.CODEX_SANDBOX !== "read-only" &&
-      !context?.inputs.allowedNonWriteUsers
-    ) {
+    if (reserveIssueMcpServer) {
       baseMcpConfig.mcpServers.github_issues = {
         command: process.execPath,
         args: bunServerArgs("src/mcp/github-issues-server.ts"),

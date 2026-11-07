@@ -38,8 +38,14 @@ export async function prepareAgentMode({
     ? "{}"
     : await resolveActionSettings(context, octokit.rest, "agent");
   const resolvedPermissions = nativeReview
-    ? { allowedTools: [], planning: true, permissionMode: undefined }
-    : await resolveActionPermissions(settings);
+    ? {
+        allowedTools: [],
+        planning: true,
+        permissionMode: undefined,
+        reserveIssueMcpServer: false,
+        issueMcpNamespaceConflict: false,
+      }
+    : await resolveActionPermissions(settings, context, "agent");
 
   // Configure git authentication for agent mode (same as tag mode)
   // SSH signing takes precedence if provided
@@ -169,6 +175,8 @@ export async function prepareAgentMode({
     mcpConfig: ourMcpConfig,
     settings,
     issuePermissionMode: resolvedPermissions.permissionMode,
+    reserveIssueMcpServer: resolvedPermissions.reserveIssueMcpServer,
+    issueMcpNamespaceConflict: resolvedPermissions.issueMcpNamespaceConflict,
     claudeArgs,
   };
 }

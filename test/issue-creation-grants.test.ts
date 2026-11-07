@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import {
   mkdir,
@@ -238,11 +239,19 @@ test("an inline agent uses its trusted definition when a project agent shares it
 test.each(["github_issues", "github:issues"])(
   "workflow and child configuration cannot replace the reserved issue server via %s",
   async (alias) => {
+    process.env.ALLOWED_TOOLS = issueTool;
     const config = { [alias]: { command: "false" } };
     process.env.CODEX_ARGS = `--mcp-config '${JSON.stringify({ mcpServers: config })}'`;
-    await expect(prepareAgentConfiguration()).rejects.toThrow(
-      "github_issues is reserved",
-    );
+    expect(
+      await mcp.resolveActionPermissions(
+        "",
+        createMockAutomationContext(),
+        "agent",
+      ),
+    ).toMatchObject({
+      reserveIssueMcpServer: true,
+      issueMcpNamespaceConflict: true,
+    });
     expect(() => childMcpConfig('{"mcpServers":{}}', [config], true)).toThrow(
       "github_issues is reserved",
     );
@@ -250,9 +259,81 @@ test.each(["github_issues", "github:issues"])(
       JSON.parse(childMcpConfig('{"mcpServers":{}}', [config])).mcpServers,
     ).toEqual(config);
     process.env.CODEX_ARGS = `--agent publisher --agents '${JSON.stringify({ publisher: { prompt: "Open an issue", mcpServers: [config] } })}'`;
-    await expect(prepareAgentConfiguration()).rejects.toThrow(
-      "github_issues is reserved",
+    expect(
+      await mcp.resolveActionPermissions(
+        "",
+        createMockAutomationContext(),
+        "agent",
+      ),
+    ).toMatchObject({
+      reserveIssueMcpServer: true,
+      issueMcpNamespaceConflict: true,
+    });
+  },
+);
+
+test.each(["generated", "modified", "ignored"])(
+  "non-PR tag settings preserve trusted %s checkout files",
+  async (source) => {
+    const workspace = await realpath(
+      await mkdtemp(join(tmpdir(), "generated-settings-")),
     );
+    directories.push(workspace);
+    process.env.GITHUB_WORKSPACE = workspace;
+    execFileSync("git", ["init", "-q"], { cwd: workspace });
+    const path = join(workspace, "settings.json");
+    if (source === "modified") {
+      await writeFile(path, "{}");
+      execFileSync("git", ["add", "settings.json"], { cwd: workspace });
+      execFileSync(
+        "git",
+        [
+          "-c",
+          "user.name=Fixture",
+          "-c",
+          "user.email=fixture@example.test",
+          "-c",
+          "commit.gpgsign=false",
+          "commit",
+          "-qm",
+          "fixture",
+        ],
+        { cwd: workspace },
+      );
+    }
+    if (source === "ignored")
+      await writeFile(join(workspace, ".gitignore"), "/settings.json\n");
+    const content =
+      '{"permissions":{"defaultMode":"plan","deny":["mcp__github_issues__create_issue"]}}';
+    await writeFile(path, content);
+    const getContent = mock(async () => {
+      throw new Error("Generated settings must stay local");
+    });
+    const result = await resolveActionSettings(
+      createMockContext({ isPR: false, inputs: { baseBranch: "release" } }),
+      { repos: { getContent } } as any,
+      "tag",
+      path,
+    );
+    expect(result).toBe(content + "\n");
+    expect(getContent).not.toHaveBeenCalled();
+  },
+);
+
+test.each(["github_issues", "github:issues"])(
+  "read-only agent configuration retains custom %s servers without creation grants",
+  async (alias) => {
+    process.env.CODEX_SANDBOX = "read-only";
+    process.env.CODEX_ARGS = `--allowedTools mcp__github_issues__get_issue --mcp-config '${JSON.stringify({ mcpServers: { [alias]: { command: "custom-reader" } } })}'`;
+    const permissions = await mcp.resolveActionPermissions(
+      "",
+      createMockAutomationContext(),
+      "agent",
+    );
+    expect(permissions.reserveIssueMcpServer).toBe(false);
+    expect(
+      (await prepareAgentConfiguration()).mcpServers.github_issues,
+    ).toBeUndefined();
   },
 );
 

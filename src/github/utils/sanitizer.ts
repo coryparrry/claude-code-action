@@ -90,8 +90,11 @@ export function redactSecrets(content: string): string {
 
   // URL userinfo can carry opaque credentials without a secret-like variable name.
   content = content.replace(
-    /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/?#]+@/gi,
-    "$1[REDACTED]@",
+    /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/?#]+)@/gi,
+    (match, scheme: string, userinfo: string) =>
+      scheme.toLowerCase() === "ssh://" && userinfo === "git"
+        ? match
+        : `${scheme}[REDACTED]@`,
   );
 
   // Anthropic API keys: sk-ant-...

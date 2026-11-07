@@ -173,6 +173,8 @@ describe("Agent Mode", () => {
       mcpConfig: expect.any(String),
       settings: process.env.INPUT_SETTINGS ?? "",
       issuePermissionMode: undefined,
+      reserveIssueMcpServer: false,
+      issueMcpNamespaceConflict: false,
       claudeArgs: "--model gpt-5.4 --max-turns 10",
     });
 

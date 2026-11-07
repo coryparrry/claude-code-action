@@ -365,7 +365,8 @@ async function run() {
     const result: CodexRunResult = await runCodex(promptConfig.path, {
       mcpConfig: prepareResult.mcpConfig,
       ...actionRuntimeOptions(process.env),
-      reserveIssueMcpServer: true,
+      reserveIssueMcpServer: prepareResult.reserveIssueMcpServer,
+      issueMcpNamespaceConflict: prepareResult.issueMcpNamespaceConflict,
       issuePermissionMode: prepareResult.issuePermissionMode,
       showFullOutput: process.env.INPUT_SHOW_FULL_OUTPUT,
       compatibilityArgs: prepareResult.claudeArgs,

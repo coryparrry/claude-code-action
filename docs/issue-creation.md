@@ -16,7 +16,7 @@ label/assignment automation and agent mode must explicitly opt in, for example:
 codex_args: --allowedTools mcp__github_issues__create_issue
 ```
 
-Explicit `settings.permissions.allow` grants in JSON or settings files also install the tool. For a PR, repository settings files come from its base commit. Settings outside the checkout require a direct, canonical file path. Scoped rules remain scoped and do not become unrestricted grants. Deleted comments and requests whose author differs from the checked actor cannot install the tool.
+Explicit `settings.permissions.allow` grants in JSON or settings files also install the tool. For a PR, repository settings files come from its base commit. Non-PR tag runs retain generated or modified checkout settings and resolve unchanged repository settings from the selected base. Prompt-driven agent runs retain the caller checkout settings. Settings outside the checkout require a direct, canonical file path. Scoped rules remain scoped and do not become unrestricted grants. Deleted comments and requests whose author differs from the checked actor cannot install the tool. The `github_issues` namespace is reserved only when the action installs its writer; read-only custom servers remain available without that grant.
 
 Runtime-compatible namespace and wildcard grants, including
 `mcp__github_issues__*`, also work. The tool takes title, body and optional labels;

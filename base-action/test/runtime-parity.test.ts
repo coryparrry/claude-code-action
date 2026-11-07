@@ -1,3 +1,8 @@
+import { resolveActionPermissions } from "../../src/mcp/install-mcp-server";
+import {
+  createMockAutomationContext,
+  createMockContext,
+} from "../../test/mockContext";
 import { actionCreatedIssueMarker } from "../../src/github/issue-origin";
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import * as core from "@actions/core";
@@ -556,8 +561,15 @@ test.each(["true", "false"])(
   },
 );
 
-test.each(["args", "settings", "direct"] as const)(
-  "standalone runtime retains caller-owned github_issues servers from %s",
+test.each([
+  "args",
+  "settings",
+  "direct",
+  "main-read-only",
+  "main-project-plan",
+  "main-writer-conflict",
+] as const)(
+  "runtime retains caller-owned github_issues servers from %s",
   async (source) => {
     const server = join(directory, "standalone-mcp.cjs");
     await writeFile(
@@ -588,6 +600,53 @@ readline.createInterface({input:process.stdin}).on("line",line=>{
         : source === "settings"
           ? { settings: config }
           : { mcpConfig: config };
+    if (source.startsWith("main-")) {
+      if (source === "main-read-only") process.env.CODEX_SANDBOX = "read-only";
+      process.env.CODEX_ARGS = `--allowedTools mcp__github_issues__proof --mcp-config '${config}'`;
+      if (source !== "main-read-only") {
+        await mkdir(join(directory, ".claude"));
+        await writeFile(
+          join(directory, ".claude/settings.json"),
+          '{"permissions":{"defaultMode":"plan"}}',
+        );
+      }
+      const permission = await resolveActionPermissions(
+        "",
+        source === "main-read-only"
+          ? createMockAutomationContext()
+          : createMockContext({
+              eventName: "issues",
+              eventAction: "opened",
+              isPR: false,
+              actor: "request-author",
+              payload: { issue: { user: { login: "request-author" } } } as any,
+            }),
+        "tag",
+      );
+      expect(permission.reserveIssueMcpServer).toBe(
+        source !== "main-read-only",
+      );
+      Object.assign(extra, {
+        reserveIssueMcpServer: permission.reserveIssueMcpServer,
+        issueMcpNamespaceConflict: permission.issueMcpNamespaceConflict,
+        sandbox: source === "main-read-only" ? "read-only" : "workspace-write",
+        settingSources: ["project"],
+        mcpConfig: JSON.stringify({
+          mcpServers: { github_issues: { command: "must-not-start" } },
+        }),
+        compatibilityArgs: process.env.CODEX_ARGS,
+        ...(source === "main-writer-conflict"
+          ? { issuePermissionMode: "acceptEdits" }
+          : {}),
+      });
+    }
+    if (source === "main-writer-conflict") {
+      await expect(runCodex(prompt, options(model, extra))).rejects.toThrow(
+        "github_issues is reserved",
+      );
+      expect(model.requests).toHaveLength(0);
+      return;
+    }
     const result = await runCodex(prompt, options(model, extra));
     expect(result.conclusion).toBe("success");
     expect(JSON.stringify(model.requests[1]?.input)).toContain(

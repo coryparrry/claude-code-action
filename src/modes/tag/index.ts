@@ -51,7 +51,11 @@ export async function prepareTagMode({
   // Check if actor is human
   await checkHumanActor(octokit.rest, context);
   const settings = await resolveActionSettings(context, octokit.rest, "tag");
-  const resolvedPermissions = await resolveActionPermissions(settings);
+  const resolvedPermissions = await resolveActionPermissions(
+    settings,
+    context,
+    "tag",
+  );
   const userAllowedTools = resolvedPermissions.allowedTools;
 
   // Create initial tracking comment
@@ -220,6 +224,8 @@ export async function prepareTagMode({
     mcpConfig: ourMcpConfig,
     settings,
     issuePermissionMode: resolvedPermissions.permissionMode,
+    reserveIssueMcpServer: resolvedPermissions.reserveIssueMcpServer,
+    issueMcpNamespaceConflict: resolvedPermissions.issueMcpNamespaceConflict,
     claudeArgs: claudeArgs.trim(),
   };
 }

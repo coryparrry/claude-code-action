@@ -1,3 +1,6 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { existsSync } from "node:fs";
 import type { Octokit } from "@octokit/rest";
 import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
@@ -39,6 +42,23 @@ export async function resolveActionSettings(
         );
       return (await readFile(file, "utf8")) + "\n";
     }
+  }
+
+  if (!context.isPR && existsSync(file)) {
+    // Trusted preceding steps may generate or override settings in the checkout.
+    const { stdout } = await promisify(execFile)(
+      "git",
+      [
+        "status",
+        "--porcelain",
+        "--ignored",
+        "--untracked-files=all",
+        "--",
+        path,
+      ],
+      { cwd: workspace },
+    );
+    if (stdout.trim()) return (await readFile(file, "utf8")) + "\n";
   }
 
   const { owner, repo } = context.repository;

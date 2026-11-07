@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { promptCacheSettings } from "./prompt-cache";
 import * as core from "@actions/core";
 import {
@@ -73,6 +74,8 @@ export type CodexOptions = Omit<
   mcpConfig: string;
   /** Protect the main action's automatically authorized repository issue server. */
   reserveIssueMcpServer?: boolean;
+  /** Defer workflow namespace conflicts until loaded settings decide writer eligibility. */
+  issueMcpNamespaceConflict?: boolean;
   /** Workflow mode before tag preparation adds its default editing mode. */
   issuePermissionMode?: string;
   compatibilityArgs?: string;
@@ -442,22 +445,30 @@ export async function runCodex(
       options.defaultAllowedTools,
       direct,
     );
+    let reserveIssueMcpServer = false;
     if (options.reserveIssueMcpServer) {
-      // Repository-scoped issue grants must always resolve to the action-owned server.
       const trustedIssues = JSON.parse(options.mcpConfig || '{"mcpServers":{}}')
         .mcpServers?.github_issues;
-      const resolvedMcp = JSON.parse(compatibility.mcpConfig);
-      for (const name of Object.keys(resolvedMcp.mcpServers))
-        if (isIssueMcpServerName(name)) delete resolvedMcp.mcpServers[name];
       const loadedPermissions = configuration.settings.permissions as
         | Record<string, unknown>
         | undefined;
       const issueMode =
         options.issuePermissionMode ?? loadedPermissions?.defaultMode;
-      if (
-        trustedIssues &&
-        !["plan", "readonly", "read-only"].includes(String(issueMode))
-      )
+      reserveIssueMcpServer =
+        !!trustedIssues &&
+        !["plan", "readonly", "read-only"].includes(String(issueMode));
+      if (reserveIssueMcpServer && options.issueMcpNamespaceConflict)
+        throw new Error(
+          "github_issues is reserved for the action-owned issue writer",
+        );
+      const resolvedMcp = JSON.parse(compatibility.mcpConfig);
+      for (const [name, server] of Object.entries(resolvedMcp.mcpServers))
+        if (
+          isIssueMcpServerName(name) &&
+          (reserveIssueMcpServer || isDeepStrictEqual(server, trustedIssues))
+        )
+          delete resolvedMcp.mcpServers[name];
+      if (reserveIssueMcpServer)
         resolvedMcp.mcpServers.github_issues = trustedIssues;
       compatibility.mcpConfig = JSON.stringify(resolvedMcp);
     }
@@ -471,7 +482,7 @@ export async function runCodex(
       compatibility.mcpConfig = childMcpConfig(
         compatibility.mcpConfig,
         selectedAgent.mcpServers,
-        options.reserveIssueMcpServer,
+        reserveIssueMcpServer,
       );
     let model = resolveCodexModel(
       options.model ?? compatibility.model ?? selectedAgent?.model,
@@ -680,7 +691,7 @@ export async function runCodex(
       signal: controller.signal,
       maxTurns: compatibility.maxTurns,
       mcpConfig: compatibility.mcpConfig,
-      reserveIssueMcpServer: options.reserveIssueMcpServer,
+      reserveIssueMcpServer,
       mcpEnvironment,
       toolEnvironment,
       trustedEnvironmentKeys: Object.keys(githubEnvironment),
