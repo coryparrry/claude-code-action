@@ -508,3 +508,50 @@ test("long verification text cannot displace a remembered trigger and cause duri
   expect(archived!.body).toContain("null input");
   expect(archived!.body).toContain("no null guard");
 });
+
+test("routed verification always uses the configured strong model and effort in a fresh phase", async () => {
+  let captured: CodexOptions | undefined;
+  const runner = (async (prompt, options) => {
+    paths.push(prompt);
+    captured = options;
+    return {
+      conclusion: "success",
+      structuredOutput: verdict(),
+      readEvidence: inspected,
+    };
+  }) as typeof runCodex;
+  await verifyReviewCandidates(
+    {
+      conclusion: "success",
+      structuredOutput: review(),
+      numTurns: 2,
+      costUsd: 0.1,
+    },
+    {
+      modelRouting: {
+        cheap_model: "chosen-small",
+        strong_model: "chosen-large",
+        cheap_effort: "low",
+        strong_effort: "xhigh",
+      },
+      fallbackModel: "chosen-small",
+      modelPrices: {
+        "chosen-large": { input: 1, cachedInput: 0.1, output: 5 },
+      },
+      maxTurns: 20,
+      maxBudgetUsd: 1,
+    },
+    head,
+    [],
+    runner,
+  );
+  expect(captured).toMatchObject({
+    model: "chosen-large",
+    effort: "xhigh",
+    maxTurns: 18,
+    maxBudgetUsd: 0.9,
+  });
+  expect(captured!.modelRouting).toBeUndefined();
+  expect(captured!.fallbackModel).toBeUndefined();
+  expect(captured!.modelPrices).toHaveProperty("chosen-large");
+});

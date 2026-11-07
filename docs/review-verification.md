@@ -3,12 +3,11 @@
 Native reviews have two separate read-only model passes. The reviewer proposes
 candidates. A fresh verifier tries to disprove each claim by checking its trigger,
 causal path, caller guards, supported configuration, existing tests and whether
-the patch introduced the defect. Both passes use the configured model and effort;
+the patch introduced the defect. Without routing, both passes use `codex_model` and `codex_effort` (the installed workflow selects Terra high). With routing enabled, candidates may use the cheap role; verification always uses the configured `strong_model` and `strong_effort`, without a new cheap phase or API fallback to a different model;
 the verifier has no reviewer conversation, GitHub tools, shell or write access.
 
 Only a **confirmed, high-confidence defect introduced by the patch** can produce
-a new inline comment. That comment displays “Confidence: high · independent static
-inspection” and includes the trigger, source evidence and counterargument checked.
+a new inline comment. That comment displays “AI-verified · not reproduced” and includes the trigger, source evidence and counterargument checked.
 Confidence is a qualitative inspection judgment, not a calibrated probability.
 The gate requires successful recorded Read calls for the prepared patch, cited source lines and each confirmed current-code location. A model’s assertion that it inspected code is insufficient. Neither pass executes tests. This gate reduces unsupported publication; it does
 not establish a measured false-positive rate or guarantee every bug is found.

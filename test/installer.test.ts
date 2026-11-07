@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 import {
   COMMAND_DELIVERY_POLICY,
   DEFAULT_ACTION_REF,
@@ -22,9 +22,12 @@ import {
   SETUP_TITLE,
   setupCommitMessage,
   WORKFLOW_PATH,
+  COMMAND_WORKFLOW_PATH,
   MEMORY_WORKFLOW_PATH,
   renderMemoryWorkflow,
   renderWorkflow,
+  renderReviewWorkflow,
+  renderCommandWorkflow,
   validateActor,
   validateRepository,
 } from "../scripts/github-action-installer/workflow.mjs";
@@ -106,6 +109,7 @@ function fakeClient(overrides: Record<string, any> = {}): {
     secrets: [],
     workflow: null,
     memoryWorkflow: null,
+    commandWorkflow: null,
     pullRequests: [],
     compare: {
       files: [{ filename: WORKFLOW_PATH }, { filename: MEMORY_WORKFLOW_PATH }],
@@ -140,7 +144,9 @@ function fakeClient(overrides: Record<string, any> = {}): {
     ]);
     return path === MEMORY_WORKFLOW_PATH
       ? values.memoryWorkflow
-      : values.workflow;
+      : path === COMMAND_WORKFLOW_PATH
+        ? values.commandWorkflow
+        : values.workflow;
   };
   let setupHead = values.head;
   for (const name of [
@@ -165,12 +171,39 @@ function fakeClient(overrides: Record<string, any> = {}): {
       if (name === "createBranch") setupHead = args[2];
       if (name === "writeWorkflow") {
         const parent = setupHead;
-        setupHead = (args[4] === MEMORY_WORKFLOW_PATH ? "c" : "b").repeat(40);
+        setupHead = (
+          args[4] === MEMORY_WORKFLOW_PATH
+            ? "c"
+            : args[4] === COMMAND_WORKFLOW_PATH
+              ? "9"
+              : "b"
+        ).repeat(40);
         return { commit: { sha: setupHead, parents: [{ sha: parent }] } };
       }
     };
   }
   return { client, calls };
+}
+
+/** Combine installed workflow jobs only for assertions shared with the legacy renderer. */
+async function installedWorkflowSource() {
+  const review = parse(
+    await readFile(
+      new URL("../.github/workflows/codex.yml", import.meta.url),
+      "utf8",
+    ),
+  );
+  const commands = parse(
+    await readFile(
+      new URL("../.github/workflows/codex-commands.yml", import.meta.url),
+      "utf8",
+    ),
+  );
+  return stringify({
+    ...commands,
+    on: { ...commands.on, ...review.on },
+    jobs: { ...commands.jobs, ...review.jobs },
+  });
 }
 
 describe("guided GitHub Action workflow", () => {
@@ -182,10 +215,7 @@ describe("guided GitHub Action workflow", () => {
       const workflow = parse(
         source === "generated"
           ? renderWorkflow(defaultOptions)
-          : await readFile(
-              new URL("../.github/workflows/codex.yml", import.meta.url),
-              "utf8",
-            ),
+          : await installedWorkflowSource(),
       );
       const actor = source === "generated" ? "trusted-user" : "coryparrry";
       /** Build command or review events with independently selectable repository origins. */
@@ -272,10 +302,7 @@ describe("guided GitHub Action workflow", () => {
       const workflow = parse(
         source === "generated"
           ? renderWorkflow(defaultOptions)
-          : await readFile(
-              new URL("../.github/workflows/codex.yml", import.meta.url),
-              "utf8",
-            ),
+          : await installedWorkflowSource(),
       );
       for (const [jobName, label] of [
         ["codex", "command"],
@@ -673,9 +700,13 @@ describe("installation planning and application", () => {
   });
 
   test("marks a matching installed workflow configured and reuses the existing secret", async () => {
-    const workflow = renderWorkflow(defaultOptions);
+    const workflow = renderReviewWorkflow(defaultOptions);
     const { client, calls } = fakeClient({
       workflow: { sha: "workflow-sha", content: workflow },
+      commandWorkflow: {
+        sha: "command-sha",
+        content: renderCommandWorkflow(defaultOptions),
+      },
       memoryWorkflow: {
         sha: "memory-sha",
         content: renderMemoryWorkflow(defaultOptions),
@@ -723,6 +754,7 @@ describe("installation planning and application", () => {
       "repository",
       "workflow",
       "workflow",
+      "workflow",
       "verifyActionRevision",
       "secrets",
       "pullRequests",
@@ -730,6 +762,7 @@ describe("installation planning and application", () => {
       "secrets",
       "head",
       "createBranch",
+      "writeWorkflow",
       "writeWorkflow",
       "writeWorkflow",
       "createPullRequest",
@@ -747,11 +780,16 @@ describe("installation planning and application", () => {
       "codex/install-github-action-test",
       (plan as any).baseSha,
     ]);
-    expect(calls.find(([name]) => name === "writeWorkflow")).toEqual([
+    expect(
+      calls.find(
+        ([name, , , , , path]) =>
+          name === "writeWorkflow" && path === WORKFLOW_PATH,
+      ),
+    ).toEqual([
       "writeWorkflow",
       "octo/demo",
       "codex/install-github-action-test",
-      plan.workflow,
+      plan.reviewWorkflow,
       undefined,
       WORKFLOW_PATH,
     ]);
@@ -797,7 +835,7 @@ describe("installation planning and application", () => {
       "writeWorkflow",
       "octo/demo",
       "codex/install-github-action-test",
-      plan.workflow,
+      plan.reviewWorkflow,
       "legacy-workflow",
       WORKFLOW_PATH,
     ]);
@@ -805,7 +843,7 @@ describe("installation planning and application", () => {
   });
 
   test("reuses a matching pending setup PR without creating another branch or PR", async () => {
-    const workflow = renderWorkflow(defaultOptions);
+    const workflow = renderReviewWorkflow(defaultOptions);
     const { client, calls } = fakeClient({
       pullRequests: [
         {
@@ -829,7 +867,9 @@ describe("installation planning and application", () => {
             content:
               path === MEMORY_WORKFLOW_PATH
                 ? renderMemoryWorkflow(defaultOptions)
-                : workflow,
+                : path === COMMAND_WORKFLOW_PATH
+                  ? renderCommandWorkflow(defaultOptions)
+                  : workflow,
           };
     };
     const plan = await planInstallation(client, {
@@ -1048,6 +1088,7 @@ describe("installation planning and application", () => {
         "repository",
         "workflow",
         "workflow",
+        "workflow",
       ]);
     },
   );
@@ -1087,6 +1128,7 @@ describe("installation planning and application", () => {
       );
       expect(calls.map(([name]) => name)).toEqual([
         "repository",
+        "workflow",
         "workflow",
         "workflow",
       ]);
@@ -1192,10 +1234,10 @@ describe("installation planning and application", () => {
             : `GitHub could not confirm the write. Check branch ${branch}`,
         );
       }
-      expect(writes).toBe(2);
+      expect(writes).toBe(3);
       expect(secretWrites).toBe(1);
       expect({ head }).toEqual({
-        head: outcome === "reject secret" ? undefined : "2".repeat(40),
+        head: outcome === "reject secret" ? undefined : "3".repeat(40),
       });
       expect(draft).toBe(outcome !== "reject secret");
       expect(secret).toBe(outcome !== "reject secret");
@@ -1403,7 +1445,7 @@ describe("installation planning and application", () => {
         apiKey: "sk-test-secret",
         branchName: "codex/install-github-action-test",
       }),
-    ).rejects.toThrow("writing the workflow");
+    ).rejects.toThrow("writing the command workflow");
     await expect(
       applyInstallation(client, plan, {
         apiKey: "sk-test-secret",
@@ -1673,7 +1715,10 @@ describe("installer interaction guards", () => {
       runner: "macos-latest",
       model: "gpt-5.4",
     };
-    const workflow = { sha: "installed", content: renderWorkflow(previous) };
+    const workflow = {
+      sha: "installed",
+      content: renderReviewWorkflow(previous),
+    };
     const memoryWorkflow = {
       sha: "memory",
       content: renderMemoryWorkflow(previous),
@@ -1685,6 +1730,10 @@ describe("installer interaction guards", () => {
       secrets: [{ name: "OPENAI_API_KEY" }],
       workflow,
       memoryWorkflow,
+      commandWorkflow: {
+        sha: "commands",
+        content: renderCommandWorkflow(previous),
+      },
     });
     const { terminal, prompts } = interactiveTerminalSpy();
     const unchanged = await runCli(["--dry-run"], { client, terminal } as any);
@@ -1869,9 +1918,10 @@ if (args[0] === 'api' && args.includes('--method') && args.includes('POST')) {
 }
 if (args[0] === 'api' && args.includes('--method') && args.includes('PUT')) {
   const memory = args[1].endsWith('/codex-memory.yml');
+  const commands = args[1].endsWith('/codex-commands.yml');
   return json({ commit: {
-    sha: (memory ? 'c' : 'b').repeat(40),
-    parents: [{ sha: memory ? 'b'.repeat(40) : '0123456789abcdef0123456789abcdef01234567' }],
+    sha: (memory ? 'c' : commands ? '9' : 'b').repeat(40),
+    parents: [{ sha: memory ? 'b'.repeat(40) : commands ? '0123456789abcdef0123456789abcdef01234567' : '9'.repeat(40) }],
   } });
 }
 if (args[0] === 'secret' && args[1] === 'set') process.exit(0);
@@ -2129,5 +2179,48 @@ process.exit(2);
         true,
       );
     });
+  });
+});
+
+test("split command workflows retain the trusted validation migration gate", async () => {
+  const customized = renderCommandWorkflow(defaultOptions).replace(
+    /(  validate_change:[\s\S]*?    steps:\n)/,
+    "$1      - name: Required project checks\n        run: ./required-check.sh\n",
+  );
+  const { client, calls } = fakeClient({
+    workflow: { sha: "review", content: renderReviewWorkflow(defaultOptions) },
+    commandWorkflow: { sha: "commands", content: customized },
+    hasValidationRecipe: false,
+  });
+  await expect(planInstallation(client, defaultOptions)).rejects.toThrow(
+    "Move its checks",
+  );
+  expect(
+    calls.some(([name]) => name === "createBranch" || name === "writeWorkflow"),
+  ).toBe(false);
+});
+
+test("command-only installations recover their actor, runner and model", async () => {
+  const installed = {
+    ...defaultOptions,
+    actors: ["original-owner"],
+    runner: "macos-latest",
+    model: "gpt-custom",
+  };
+  const { client } = fakeClient({
+    commandWorkflow: {
+      sha: "commands",
+      content: renderCommandWorkflow(installed),
+    },
+  });
+  const plan = await planInstallation(client, {
+    repository: defaultOptions.repository,
+    defaultActor: "new-installer",
+  });
+  expect(plan).toMatchObject({
+    actors: installed.actors,
+    runner: installed.runner,
+    model: installed.model,
+    status: "update",
   });
 });

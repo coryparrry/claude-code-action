@@ -213,3 +213,21 @@ Reviews and review comments from external PR heads are skipped before checkout.
 For `/codex` issue comments on PRs, the action resolves the head repository through
 GitHub and skips fork PRs before invoking the model. Unresolved origins fail closed.
 Rerun the installer and merge its update PR to apply these guards to an older setup.
+
+## Separate workflow events
+
+The installer writes three managed files: `codex.yml` runs only automatic PR
+reviews; `codex-commands.yml` handles explicit `/codex` requests and retains
+separate validation/report jobs; `codex-memory.yml` handles trusted memory
+publication. Ordinary PR updates therefore do not create skipped command jobs.
+
+Upgrading a combined installation moves the existing managed command jobs into
+the command workflow. Actor allowlists, runner/model choices, memory proof
+checks and custom-check protections are retained. Existing custom validation in
+either workflow requires the trusted validation-recipe migration before upgrade.
+Unmanaged files or additional custom checks are not overwritten. Existing
+installations need their setup PR merged to use the split layout.
+
+This repository's issue-creation qualification runs only on an explicit
+`test-issue-creation` label action on its qualification branch, rather than
+every opened or updated PR.

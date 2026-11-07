@@ -1,3 +1,4 @@
+import { parseModelRouting } from "../../base-action/src/model-router";
 import type { CodexOptions } from "../../base-action/src/run-codex";
 import { resolveCompatibility } from "../../base-action/src/codex-compat";
 import { reviewJsonSchema } from "./schema";
@@ -13,6 +14,8 @@ export async function nativeReviewOptions(
   return {
     compatibilityArgs: `--json-schema '${schema}'`,
     model: direct.model ?? requested.model,
+    modelRouting: parseModelRouting(direct.modelRouting),
+    modelPrices: direct.modelPrices,
     baseURL: direct.baseURL,
     effort: direct.effort ?? requested.effort,
     maxTurns: direct.maxTurns ?? requested.maxTurns,

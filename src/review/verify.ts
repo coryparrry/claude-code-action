@@ -1,3 +1,4 @@
+import { parseModelRouting } from "../../base-action/src/model-router";
 import type { ReviewSourceContext } from "./source-evidence";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -101,8 +102,18 @@ export async function verifyReviewCandidates(
       mode: 0o600,
     },
   );
+  const routing = parseModelRouting(options.modelRouting);
+  const verifierOptions = await nativeReviewOptions(
+    "",
+    options,
+    verificationJsonSchema,
+  );
   const verified = await runner(prompt, {
-    ...(await nativeReviewOptions("", options, verificationJsonSchema)),
+    ...verifierOptions,
+    model: routing?.strong_model ?? verifierOptions.model,
+    effort: routing?.strong_effort ?? verifierOptions.effort,
+    modelRouting: undefined,
+    fallbackModel: routing ? undefined : verifierOptions.fallbackModel,
     mcpConfig: '{"mcpServers":{}}',
     maxTurns,
     maxBudgetUsd,

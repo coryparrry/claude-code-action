@@ -14,10 +14,13 @@ import {
 import {
   MANAGED_MARKER,
   WORKFLOW_PATH,
+  COMMAND_WORKFLOW_PATH,
   MEMORY_WORKFLOW_PATH,
   VALIDATION_ACTION_DIR,
   renderMemoryWorkflow,
   renderWorkflow,
+  renderReviewWorkflow,
+  renderCommandWorkflow,
   validateRepository,
 } from "./workflow.mjs";
 
@@ -38,9 +41,15 @@ async function installationRepository(client, repository) {
   return { repository, defaultBranch, repositoryId: metadata.id };
 }
 
-/** Reuse only matching installer PRs containing the two managed workflow paths. */
+/** Reuse only matching installer PRs containing the three managed workflow paths. */
 async function pendingInstallation(client, plan) {
-  const { repository, defaultBranch, workflow, memoryWorkflow } = plan;
+  const {
+    repository,
+    defaultBranch,
+    memoryWorkflow,
+    commandWorkflow,
+    reviewWorkflow,
+  } = plan;
   for (const pull of await client.pullRequests(repository, defaultBranch)) {
     if (pull.isCrossRepository !== false) continue;
     if (!pull.headRefName.startsWith("codex/install-github-action-")) continue;
@@ -53,10 +62,14 @@ async function pendingInstallation(client, plan) {
     );
     if (
       !comparison.files?.length ||
-      comparison.files.length > 2 ||
+      comparison.files.length > 3 ||
       comparison.files.some(
         (file) =>
-          ![WORKFLOW_PATH, MEMORY_WORKFLOW_PATH].includes(file.filename),
+          ![
+            WORKFLOW_PATH,
+            MEMORY_WORKFLOW_PATH,
+            COMMAND_WORKFLOW_PATH,
+          ].includes(file.filename),
       )
     )
       throw new Error(
@@ -67,8 +80,14 @@ async function pendingInstallation(client, plan) {
       pull.headRefName,
       MEMORY_WORKFLOW_PATH,
     );
+    const pendingCommand = await client.workflow(
+      repository,
+      pull.headRefName,
+      COMMAND_WORKFLOW_PATH,
+    );
     if (
-      pending.content !== workflow ||
+      pendingCommand?.content !== commandWorkflow ||
+      pending.content !== reviewWorkflow ||
       pendingMemory?.content !== memoryWorkflow
     )
       throw new Error(
@@ -88,11 +107,13 @@ function assertManagedWorkflow(current, path) {
 }
 
 /** Bind an update to a base that contains any required validation migration. */
-async function setupBase(client, plan, existing) {
+async function setupBase(client, plan, existing, commands) {
   const baseSha = await client.head(plan.repository, plan.defaultBranch);
   if (!/^[a-f0-9]{40}$/i.test(baseSha))
     throw new Error("GitHub did not return a valid default-branch commit.");
-  const validationMigration = needsValidationMigration(existing, plan.workflow);
+  const validationMigration =
+    needsValidationMigration(existing, plan.fullWorkflow) ||
+    needsValidationMigration(commands, plan.commandWorkflow);
   if (
     validationMigration &&
     !(await client.hasValidationRecipe(plan.repository, baseSha))
@@ -104,7 +125,7 @@ async function setupBase(client, plan, existing) {
   return { baseSha, validationMigration };
 }
 
-/** Plan both managed workflows without overwriting user-owned files. */
+/** Plan the managed workflows without overwriting user-owned files. */
 export async function planInstallation(client, options) {
   const { repository, defaultBranch, repositoryId } =
     await installationRepository(client, options.repository);
@@ -115,6 +136,12 @@ export async function planInstallation(client, options) {
     defaultBranch,
     MEMORY_WORKFLOW_PATH,
   );
+  const commandExisting = await client.workflow(
+    repository,
+    defaultBranch,
+    COMMAND_WORKFLOW_PATH,
+  );
+  assertManagedWorkflow(commandExisting, COMMAND_WORKFLOW_PATH);
   assertManagedWorkflow(existing, WORKFLOW_PATH);
   assertManagedWorkflow(memoryExisting, MEMORY_WORKFLOW_PATH);
   const existingContent = existing?.content;
@@ -123,16 +150,26 @@ export async function planInstallation(client, options) {
     existingContent,
     memoryContent,
     options,
+    commandExisting?.content,
   );
-  const workflow = renderWorkflow({ repository, ...settings });
+  const fullWorkflow = renderWorkflow({ repository, ...settings });
+  const workflow = fullWorkflow;
+  const reviewWorkflow = renderReviewWorkflow({ repository, ...settings });
+  const commandWorkflow = renderCommandWorkflow({ repository, ...settings });
   const memoryWorkflow = renderMemoryWorkflow({
     repository,
     actors: settings.actors,
   });
-  assertNoRemovedChecks(existingContent, workflow, WORKFLOW_PATH);
+  assertNoRemovedChecks(existingContent, fullWorkflow, WORKFLOW_PATH);
+  assertNoRemovedChecks(
+    commandExisting?.content,
+    commandWorkflow,
+    COMMAND_WORKFLOW_PATH,
+  );
   assertNoRemovedChecks(memoryContent, memoryWorkflow, MEMORY_WORKFLOW_PATH);
   const installed = [
-    { current: existing, content: workflow },
+    { current: existing, content: reviewWorkflow },
+    { current: commandExisting, content: commandWorkflow },
     { current: memoryExisting, content: memoryWorkflow },
   ];
   await client.verifyActionRevision();
@@ -146,6 +183,10 @@ export async function planInstallation(client, options) {
     repositoryId,
     ...settings,
     workflow,
+    fullWorkflow,
+    reviewWorkflow,
+    commandWorkflow,
+    commandWorkflowSha: commandExisting?.sha,
     workflowSha: existing?.sha,
     memoryWorkflow,
     memoryWorkflowSha: memoryExisting?.sha,
@@ -162,7 +203,12 @@ export async function planInstallation(client, options) {
   if (plan.status === "configured") return plan;
 
   const pending = await pendingInstallation(client, plan);
-  const base = await setupBase(client, plan, existingContent);
+  const base = await setupBase(
+    client,
+    plan,
+    existingContent,
+    commandExisting?.content,
+  );
   return { ...(pending ?? plan), ...base };
 }
 
@@ -183,7 +229,7 @@ function assertKey(apiKey) {
     throw new Error("An OpenAI API key is required for this repository.");
 }
 
-/** Apply the reviewed workflow pair and existing API-key setup in each repository. */
+/** Apply the reviewed workflow set and existing API-key setup in each repository. */
 export async function applyInstallation(
   client,
   plan,
@@ -212,13 +258,29 @@ export async function applyInstallation(
   let pullRequestUrl;
   try {
     branchHead = await createSetupBranch(client, plan, branch);
+    step = "writing the command workflow";
+    branchHead = await writeSetupWorkflow(
+      client,
+      plan.repository,
+      branch,
+      branchHead,
+      {
+        path: COMMAND_WORKFLOW_PATH,
+        content: plan.commandWorkflow,
+        sha: plan.commandWorkflowSha,
+      },
+    );
     step = "writing the workflow";
     branchHead = await writeSetupWorkflow(
       client,
       plan.repository,
       branch,
       branchHead,
-      { path: WORKFLOW_PATH, content: plan.workflow, sha: plan.workflowSha },
+      {
+        path: WORKFLOW_PATH,
+        content: plan.reviewWorkflow,
+        sha: plan.workflowSha,
+      },
     );
     step = "writing the memory maintenance workflow";
     branchHead = await writeSetupWorkflow(
