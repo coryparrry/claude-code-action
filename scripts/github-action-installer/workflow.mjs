@@ -1,4 +1,5 @@
 export const WORKFLOW_PATH = ".github/workflows/codex.yml";
+export const COMMAND_WORKFLOW_PATH = ".github/workflows/codex-commands.yml";
 export const MEMORY_WORKFLOW_PATH = ".github/workflows/codex-memory.yml";
 export const VALIDATION_ACTION_DIR = ".github/actions/codex-validate";
 export const TRUSTED_VALIDATION_ACTION = `./.git/codex-validation/${VALIDATION_ACTION_DIR}`;
@@ -42,7 +43,7 @@ export function validateActor(value) {
   return value;
 }
 
-/** Render repository-bound jobs, using Max effort only for the default Terra model. */
+/** Render the legacy combined preview with high effort for the default Terra model. */
 export function renderWorkflow({
   repository,
   actors,
@@ -282,6 +283,27 @@ ${model === DEFAULT_MODEL ? "          codex_effort: high\n" : ""}          max_
           path: \${{ runner.temp }}/codex-review-memory/\${{ github.run_id }}-\${{ github.run_attempt }}/candidate.json
           if-no-files-found: ignore
 `;
+}
+
+/** Keep ordinary PR events in the review workflow without creating skipped command jobs. */
+export function renderReviewWorkflow(options) {
+  const full = renderWorkflow(options);
+  const review = full.slice(full.indexOf("\n  codex_review:"));
+  return `${MANAGED_MARKER}\nname: Codex\n\non:\n  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n\npermissions: {}\n\njobs:${review}`;
+}
+
+/** Retain the separate validation/report jobs, but trigger them only for requested commands. */
+export function renderCommandWorkflow(options) {
+  return (
+    renderWorkflow(options)
+      .split("\n  codex_review:", 1)[0]
+      .trimEnd()
+      .replace("name: Codex\n", "name: Codex commands\n")
+      .replace(
+        "  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n",
+        "",
+      ) + "\n"
+  );
 }
 
 /** Install the trusted publisher beside the review workflow, with no per-repo configuration. */

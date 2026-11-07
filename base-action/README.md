@@ -19,44 +19,46 @@ Authentication supports an OpenAI API key, OpenAI workload identity federation, 
 
 ## Inputs
 
-| Input                         | Description                                                              | Default             |
-| ----------------------------- | ------------------------------------------------------------------------ | ------------------- |
-| `prompt`                      | Inline prompt; specify exactly one of prompt or prompt_file              | Empty               |
-| `prompt_file`                 | Path to a non-empty prompt file                                          | Empty               |
-| `openai_api_key`              | OpenAI API key used by Codex                                             | Empty               |
-| `openai_provider`             | OpenAI API provider: openai, bedrock or azure                            | Empty               |
-| `openai_identity_provider_id` | OpenAI workload identity provider ID (requires id-token: write)          | Empty               |
-| `openai_service_account_id`   | OpenAI workload identity mapped service account ID                       | Empty               |
-| `openai_oidc_audience`        | Audience configured for the OpenAI workload identity provider            | Empty               |
-| `bedrock_api_key`             | AWS Bedrock bearer token for OpenAI models; region comes from AWS_REGION | Empty               |
-| `azure_openai_endpoint`       | Azure OpenAI endpoint for the selected deployment                        | Empty               |
-| `azure_openai_api_key`        | Azure OpenAI API key (alternative to Azure AD token)                     | Empty               |
-| `azure_openai_ad_token`       | Azure AD token for Azure OpenAI (alternative to API key)                 | Empty               |
-| `codex_model`                 | Provider model ID (Azure: deployment name); defaults to gpt-6-luna       | Empty               |
-| `codex_effort`                | Optional reasoning effort: none, minimal, low, medium, high, or xhigh    | Empty               |
-| `codex_sandbox`               | Tool policy: read-only or workspace-write; not an OS sandbox             | `workspace-write`   |
-| `codex_timeout_minutes`       | Positive integer timeout for the agent run                               | `30`                |
-| `mcp_config`                  | JSON object with stdio or streamable HTTP mcpServers                     | `{"mcpServers":{}}` |
-| `append_system_prompt`        | Additional instructions appended to the prompt                           | Empty               |
-| `path_to_bun_executable`      | Use an existing Bun executable instead of installing Bun                 | Empty               |
-| `show_full_output`            | Show redacted Codex events in the Actions log                            | `false`             |
-| `codex_args`                  | Supported action controls; not arbitrary CLI subprocess arguments        | Empty               |
-| `claude_args`                 | Compatibility alias for codex_args                                       | Empty               |
-| `settings`                    | Codex configuration or supported legacy settings                         | Empty               |
-| `plugins`                     | Newline-separated Codex plugin names                                     | Empty               |
-| `plugin_marketplaces`         | Newline-separated Codex plugin marketplace sources                       | Empty               |
-| `max_turns`                   | Maximum model turns before execution fails                               | Empty               |
-| `max_budget_usd`              | Maximum estimated API cost in USD before execution fails                 | Empty               |
-| `allowed_tools`               | Comma-separated allowed tool rules                                       | Empty               |
-| `disallowed_tools`            | Comma-separated denied tool rules                                        | Empty               |
-| `system_prompt`               | Replacement trusted system instructions                                  | Empty               |
-| `fallback_model`              | Fallback model for eligible API failures                                 | Empty               |
-| `additional_directories`      | Newline-separated additional workspace directories                       | Empty               |
-| `setting_sources`             | Comma-separated settings sources: user, project, local                   | Empty               |
-| `permission_mode`             | Tool permission mode for this unattended run                             | Empty               |
-| `continue_session`            | Continue the latest saved session when true                              | Empty               |
-| `resume_session`              | Saved session ID to resume                                               | Empty               |
-| `use_node_cache`              | Enable the Node npm cache when true                                      | `false`             |
+| Input                         | Description                                                                             | Default             |
+| ----------------------------- | --------------------------------------------------------------------------------------- | ------------------- |
+| `prompt`                      | Inline prompt; specify exactly one of prompt or prompt_file                             | Empty               |
+| `prompt_file`                 | Path to a non-empty prompt file                                                         | Empty               |
+| `openai_api_key`              | OpenAI API key used by Codex                                                            | Empty               |
+| `openai_provider`             | OpenAI API provider: openai, bedrock or azure                                           | Empty               |
+| `openai_identity_provider_id` | OpenAI workload identity provider ID (requires id-token: write)                         | Empty               |
+| `openai_service_account_id`   | OpenAI workload identity mapped service account ID                                      | Empty               |
+| `openai_oidc_audience`        | Audience configured for the OpenAI workload identity provider                           | Empty               |
+| `bedrock_api_key`             | AWS Bedrock bearer token for OpenAI models; region comes from AWS_REGION                | Empty               |
+| `azure_openai_endpoint`       | Azure OpenAI endpoint for the selected deployment                                       | Empty               |
+| `azure_openai_api_key`        | Azure OpenAI API key (alternative to Azure AD token)                                    | Empty               |
+| `azure_openai_ad_token`       | Azure AD token for Azure OpenAI (alternative to API key)                                | Empty               |
+| `codex_model`                 | Provider model ID (Azure: deployment name); defaults to gpt-6-luna                      | Empty               |
+| `model_routing`               | Optional JSON cheap/strong model routing; see [routing guide](../docs/model-routing.md) | Empty               |
+| `enable_tracing`              | Upload direct OpenAI SDK traces without prompts or tool payloads                        | `true`              |
+| `codex_effort`                | Optional reasoning effort: none, minimal, low, medium, high, or xhigh                   | Empty               |
+| `codex_sandbox`               | Tool policy: read-only or workspace-write; not an OS sandbox                            | `workspace-write`   |
+| `codex_timeout_minutes`       | Positive integer timeout for the agent run                                              | `30`                |
+| `mcp_config`                  | JSON object with stdio or streamable HTTP mcpServers                                    | `{"mcpServers":{}}` |
+| `append_system_prompt`        | Additional instructions appended to the prompt                                          | Empty               |
+| `path_to_bun_executable`      | Use an existing Bun executable instead of installing Bun                                | Empty               |
+| `show_full_output`            | Show redacted Codex events in the Actions log                                           | `false`             |
+| `codex_args`                  | Supported action controls; not arbitrary CLI subprocess arguments                       | Empty               |
+| `claude_args`                 | Compatibility alias for codex_args                                                      | Empty               |
+| `settings`                    | Codex configuration or supported legacy settings                                        | Empty               |
+| `plugins`                     | Newline-separated Codex plugin names                                                    | Empty               |
+| `plugin_marketplaces`         | Newline-separated Codex plugin marketplace sources                                      | Empty               |
+| `max_turns`                   | Maximum model turns before execution fails                                              | Empty               |
+| `max_budget_usd`              | Maximum estimated API cost in USD before execution fails                                | Empty               |
+| `allowed_tools`               | Comma-separated allowed tool rules                                                      | Empty               |
+| `disallowed_tools`            | Comma-separated denied tool rules                                                       | Empty               |
+| `system_prompt`               | Replacement trusted system instructions                                                 | Empty               |
+| `fallback_model`              | Fallback model for eligible API failures                                                | Empty               |
+| `additional_directories`      | Newline-separated additional workspace directories                                      | Empty               |
+| `setting_sources`             | Comma-separated settings sources: user, project, local                                  | Empty               |
+| `permission_mode`             | Tool permission mode for this unattended run                                            | Empty               |
+| `continue_session`            | Continue the latest saved session when true                                             | Empty               |
+| `resume_session`              | Saved session ID to resume                                                              | Empty               |
+| `use_node_cache`              | Enable the Node npm cache when true                                                     | `false`             |
 
 ## Outputs
 

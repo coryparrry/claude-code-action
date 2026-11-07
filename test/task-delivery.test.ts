@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { renderWorkflow } from "../scripts/github-action-installer/workflow.mjs";
+import { renderCommandWorkflow } from "../scripts/github-action-installer/workflow.mjs";
 import {
   deliveredHead,
   initializeDeliveryReceipt,
@@ -72,11 +72,11 @@ test("delivery requires this invocation's successful push and the matching remot
 
 test("repository validation executes without write credentials or model secrets", async () => {
   const installed = await readFile(
-    new URL("../.github/workflows/codex.yml", import.meta.url),
+    new URL("../.github/workflows/codex-commands.yml", import.meta.url),
     "utf8",
   );
   expect(installed).toBe(
-    renderWorkflow({
+    renderCommandWorkflow({
       repository: "coryparrry/claude-code-action",
       actors: ["coryparrry"],
     }),
@@ -181,7 +181,7 @@ test("a delivered commit cannot substitute its own passing validation recipe", a
       ".git/codex-validation",
     );
     const workflow = parse(
-      renderWorkflow({ repository: "owner/repo", actors: ["owner"] }),
+      renderCommandWorkflow({ repository: "owner/repo", actors: ["owner"] }),
     );
     const [, , verify, validate] = workflow.jobs.validate_change.steps;
     const outputs = join(directory, ".git/outputs");
@@ -210,7 +210,7 @@ test("a delivered commit cannot substitute its own passing validation recipe", a
 test("validation reporting updates the existing section after a same-commit retry", async () => {
   const workflow = parse(
     await readFile(
-      new URL("../.github/workflows/codex.yml", import.meta.url),
+      new URL("../.github/workflows/codex-commands.yml", import.meta.url),
       "utf8",
     ),
   );

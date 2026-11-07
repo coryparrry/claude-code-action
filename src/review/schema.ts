@@ -134,7 +134,7 @@ export function renderFinding(
   const code = link
     ? `[View code](${link})`
     : `\`${position}\` (${finding.side})`;
-  return `${marker} **${escapeHtml(clean(finding.title))}**\n\n${clean(finding.body)}${confidence ? "\n\n<sub>Confidence: high · independent static inspection</sub>" : ""}\n\n${code}\n\n${renderDetails("Why this was flagged", `${clean(finding.explanation)}\n\n**Verification:** ${clean(finding.verification)}`)}\n\n<sub>Finding ID: \`f-${findingId(finding)}\`</sub>\n\n<!-- codex-action:finding:${findingId(finding)} -->`;
+  return `${marker} **${escapeHtml(clean(finding.title))}**\n\n${clean(finding.body)}\n\n<sub>${confidence ? "AI-verified · not reproduced" : "AI review · not reproduced"}</sub>\n\n${code}\n\n${renderDetails("Why this was flagged", `${clean(finding.explanation)}\n\n**Verification:** ${clean(finding.verification)}`)}\n\n<sub>Finding ID: \`f-${findingId(finding)}\`</sub>\n\n<!-- codex-action:finding:${findingId(finding)} -->`;
 }
 
 /** Only publisher-owned footer metadata determines whether a head was reviewed. */
@@ -189,7 +189,7 @@ export function renderReview(
       return `<li><strong>${html(change.area)}</strong>: ${html(change.description)}${files}${more}</li>`;
     })
     .join("\n");
-  const walkthrough = `${renderReviewHeading("walkthrough")}\n<p>${html(review.walkthrough)}</p>\n\n<p><strong>Review outcome:</strong> ${html(review.summary)}</p>`;
+  const walkthrough = `${renderReviewHeading("walkthrough")}\n<p>${html(review.walkthrough)}</p>\n\n<p><strong>Review outcome:</strong> ${html(review.summary)}</p>\n<p><sub>AI review · tests not executed</sub></p>`;
   const changeSummary = `${renderReviewHeading("changes")}\n<ul>\n${changes}\n</ul>`;
   const flow = review.flow ? renderFlow(review.flow.steps) : "";
   const risk = renderRiskDetails(

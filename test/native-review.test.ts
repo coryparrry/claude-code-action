@@ -1156,7 +1156,7 @@ test.each([
         );
       }
       if (scenario === "success")
-        expect(api.comments[0].body).toContain("Confidence: high");
+        expect(api.comments[0].body).toContain("AI-verified · not reproduced");
       expect(
         api.requests.some(
           (request) =>
@@ -1174,7 +1174,7 @@ test("verified follow-up reviews remember prior findings instead of posting new 
   const api = fixture();
   await publishReview(api.client, target, review, true);
   expect(api.comments).toHaveLength(1);
-  expect(api.comments[0].body).toContain("Confidence: high");
+  expect(api.comments[0].body).toContain("AI-verified · not reproduced");
   expect(api.reviews[0].body).toContain("codex-action:verified-review:v1");
   const next = "f".repeat(40);
   api.setHead(next);

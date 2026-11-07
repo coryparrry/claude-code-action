@@ -1,3 +1,5 @@
+import type { AgentTraceConfig } from "./agent-tracing";
+import type { ModelRouter } from "./model-router";
 import * as core from "@actions/core";
 import {
   Usage,
@@ -55,6 +57,8 @@ export type AgentRuntimeOptions = {
   apiKey: string;
   baseURL?: string;
   modelProvider?: ModelProvider;
+  modelRouter?: ModelRouter;
+  tracing?: AgentTraceConfig;
   getModel(): string | Model;
   setModel(model: string | Model): void;
   assertModel(model: string | Model): void;
@@ -154,6 +158,7 @@ async function buildContext(
       throw new Error(hook.reason ?? "Hook blocked execution");
     return hook.additionalContext.join("\n");
   };
+  /** Run auxiliary inference with the caller's trace policy, credentials and deadline. */
   const runAuxiliary = (
     input: string | AgentInputItem[],
     extra: {
@@ -175,6 +180,8 @@ async function buildContext(
     const validate = ajv?.compile(extra.schema!);
     const selected = options.resolveModel(extra.model ?? options.getModel());
     options.assertModel(selected);
+    if (extra.model && !extra.context)
+      options.modelRouter?.requestModel(selected);
     const signal = extra.signal
       ? AbortSignal.any([options.signal, extra.signal])
       : options.signal;
@@ -229,6 +236,14 @@ async function buildContext(
       resolveModel: context ? () => context.getModel() : undefined,
       fallbackModel: options.fallbackModel,
       modelProvider: options.modelProvider,
+      modelRouter: options.modelRouter,
+      tracing: options.tracing
+        ? {
+            ...options.tracing,
+            workflowName: "Codex auxiliary",
+            metadata: { ...options.tracing.metadata, phase: "auxiliary" },
+          }
+        : undefined,
       instructions: [options.inheritedInstructions, extra.instructions]
         .filter(Boolean)
         .join("\n\n"),
@@ -528,6 +543,8 @@ async function buildContext(
         );
     }
     const memory = savedMemory ? options.redact(savedMemory) : undefined;
+    if (request.model && request.model !== "inherit")
+      options.modelRouter?.requestModel(options.resolveModel(request.model));
     let childModel = options.resolveModel(
       !request.model || request.model === "inherit"
         ? options.getModel()
@@ -752,6 +769,7 @@ async function buildContext(
       if (skill.model) {
         const model = options.resolveModel(skill.model);
         options.assertModel(model);
+        options.modelRouter?.requestModel(model);
         options.setModel(model);
       }
     },

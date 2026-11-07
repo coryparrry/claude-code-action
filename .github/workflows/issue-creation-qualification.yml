@@ -2,7 +2,7 @@ name: Issue creation qualification
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [labeled]
     paths:
       - src/**
       - action.yml

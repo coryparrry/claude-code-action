@@ -508,3 +508,80 @@ test("long verification text cannot displace a remembered trigger and cause duri
   expect(archived!.body).toContain("null input");
   expect(archived!.body).toContain("no null guard");
 });
+
+test("routed verification always uses the configured strong model and effort in a fresh phase", async () => {
+  let captured: CodexOptions | undefined;
+  const runner = (async (prompt, options) => {
+    paths.push(prompt);
+    captured = options;
+    return {
+      conclusion: "success",
+      structuredOutput: verdict(),
+      readEvidence: inspected,
+    };
+  }) as typeof runCodex;
+  await verifyReviewCandidates(
+    {
+      conclusion: "success",
+      structuredOutput: review(),
+      numTurns: 2,
+      costUsd: 0.1,
+    },
+    {
+      modelRouting: {
+        cheap_model: "chosen-small",
+        strong_model: "chosen-large",
+        cheap_effort: "low",
+        strong_effort: "xhigh",
+      },
+      fallbackModel: "chosen-small",
+      modelPrices: {
+        "chosen-large": { input: 1, cachedInput: 0.1, output: 5 },
+      },
+      maxTurns: 20,
+      maxBudgetUsd: 1,
+    },
+    head,
+    [],
+    runner,
+  );
+  expect(captured).toMatchObject({
+    model: "chosen-large",
+    effort: "xhigh",
+    maxTurns: 18,
+    maxBudgetUsd: 0.9,
+  });
+  expect(captured!.modelRouting).toBeUndefined();
+  expect(captured!.fallbackModel).toBeUndefined();
+  expect(captured!.modelPrices).toHaveProperty("chosen-large");
+});
+
+test("native reviewer and verifier preserve the tracing opt-out and label their phases", async () => {
+  const { nativeReviewOptions } = await import("../src/review/runtime");
+  const options = await nativeReviewOptions("", { tracingEnabled: false });
+  expect(options).toMatchObject({
+    tracingEnabled: false,
+    tracePhase: "review",
+  });
+  let captured: CodexOptions | undefined;
+  const runner = (async (prompt, opts) => {
+    paths.push(prompt);
+    captured = opts;
+    return {
+      conclusion: "success",
+      structuredOutput: verdict(),
+      readEvidence: inspected,
+    };
+  }) as typeof runCodex;
+  await verifyReviewCandidates(
+    { conclusion: "success", structuredOutput: review() },
+    options,
+    head,
+    [],
+    runner,
+  );
+  expect(captured).toMatchObject({
+    tracingEnabled: false,
+    tracePhase: "verification",
+  });
+});

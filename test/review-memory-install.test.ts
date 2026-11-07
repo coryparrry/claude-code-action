@@ -9,6 +9,7 @@ import {
   MEMORY_WORKFLOW_PATH,
   SETUP_TITLE,
   WORKFLOW_PATH,
+  COMMAND_WORKFLOW_PATH,
   renderMemoryWorkflow,
   renderWorkflow,
 } from "../scripts/github-action-installer/workflow.mjs";
@@ -80,10 +81,11 @@ function installerFixture() {
       writes.push({ repository, ref, path, content });
       files.set(key(repository, ref, path), { sha: "workflow-sha", content });
       const memory = path === MEMORY_WORKFLOW_PATH;
+      const commands = path === COMMAND_WORKFLOW_PATH;
       return {
         commit: {
-          sha: (memory ? "c" : "b").repeat(40),
-          parents: [{ sha: (memory ? "b" : "a").repeat(40) }],
+          sha: (memory ? "c" : commands ? "9" : "b").repeat(40),
+          parents: [{ sha: (memory ? "b" : commands ? "a" : "9").repeat(40) }],
         },
       };
     },
@@ -121,6 +123,7 @@ test("fresh setup automatically installs the review and trusted memory workflows
       (write) => write.repository === repository,
     );
     expect(installed.map((write) => write.path)).toEqual([
+      COMMAND_WORKFLOW_PATH,
       WORKFLOW_PATH,
       MEMORY_WORKFLOW_PATH,
     ]);
@@ -139,7 +142,7 @@ test("fresh setup automatically installs the review and trusted memory workflows
       ),
     ).toBe(false);
   }
-  expect(fixture.writes).toHaveLength(4);
+  expect(fixture.writes).toHaveLength(6);
 });
 
 test("an older installation gets the missing memory workflow, while user-owned files are preserved", async () => {

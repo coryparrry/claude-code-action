@@ -221,3 +221,11 @@ Verification covers offline model/transport fixtures, configuration parsing, and
 Fork CI runs offline tests, formatting, type checking, and the inherited workflow checks with Bun `1.4.2`. The [cloud provider guide](docs/cloud-providers.md) describes the supported OpenAI authentication contracts. Upstream model-calling CI remains preserved under `examples/upstream-workflows` without running in this fork.
 
 Nonsecret build/test variables from the workflow environment and `settings.env` reach Codex tools. Reserved runtime controls and credential variables remain excluded.
+
+### Model routing
+
+Use the optional `model_routing` JSON input to choose a cheap model and a stronger model, with configurable reasoning efforts and bounded one-way escalation. Routing stays off when omitted. See [configuration and the paired Terra-high benchmark](docs/model-routing.md).
+
+### SDK tracing
+
+Direct OpenAI runs automatically upload Agents SDK traces without prompts, tool payloads, or raw error messages. Use `enable_tracing: "false"` to opt out. See [SDK tracing](docs/sdk-tracing.md) for project selection, phase labels, and delivery limits.

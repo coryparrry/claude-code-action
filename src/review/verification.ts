@@ -123,7 +123,7 @@ export function applyVerification(
     findings.push({
       ...finding,
       severity: "bug",
-      verification: `Independent static inspection; high confidence, not a calibrated probability.\nTrigger: ${decision.trigger}\nEvidence: ${decision.evidence}\nCounterevidence checked: ${decision.counterevidence}\nAssessment: ${decision.rationale}`,
+      verification: `AI-verified by independent source inspection; not reproduced by executing tests. Confidence is qualitative, not a calibrated probability.\nTrigger: ${decision.trigger}\nEvidence: ${decision.evidence}\nCounterevidence checked: ${decision.counterevidence}\nAssessment: ${decision.rationale}`,
     });
   }
   const audit = {

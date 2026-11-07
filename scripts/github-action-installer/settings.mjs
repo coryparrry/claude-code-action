@@ -134,8 +134,9 @@ function jobSettings(content, job) {
 
 /** Recover consistent settings across earlier command and review jobs. */
 function installedSettings(content) {
-  const command = jobSettings(content, "codex") ?? {};
+  const command = jobSettings(content, "codex");
   const review = jobSettings(content, "codex_review");
+  if (!command) return review ?? {};
   if (!review) return command;
   return Object.fromEntries(
     Object.entries(command).filter(
@@ -157,18 +158,26 @@ function memoryActors(content) {
 }
 
 /** Preserve installed values unless the caller explicitly supplies an override. */
-export async function selectInstallationSettings(existing, memory, options) {
+export async function selectInstallationSettings(
+  existing,
+  memory,
+  options,
+  commands,
+) {
   const publisherActors = memory ? memoryActors(memory) : undefined;
-  const installed = existing
-    ? installedSettings(existing)
-    : {
-        actors: memory ? publisherActors : [options.defaultActor],
-        runner:
-          options.runner ?? (await options.selectRunner?.()) ?? "ubuntu-latest",
-        model: DEFAULT_MODEL,
-      };
+  const installed =
+    existing || commands
+      ? installedSettings([existing, commands].filter(Boolean).join("\n"))
+      : {
+          actors: memory ? publisherActors : [options.defaultActor],
+          runner:
+            options.runner ??
+            (await options.selectRunner?.()) ??
+            "ubuntu-latest",
+          model: DEFAULT_MODEL,
+        };
   if (
-    existing &&
+    (existing || commands) &&
     memory &&
     JSON.stringify(installed.actors) !== JSON.stringify(publisherActors)
   ) {
