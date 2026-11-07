@@ -73,6 +73,8 @@ export type CodexOptions = Omit<
   mcpConfig: string;
   /** Protect the main action's automatically authorized repository issue server. */
   reserveIssueMcpServer?: boolean;
+  /** Workflow mode before tag preparation adds its default editing mode. */
+  issuePermissionMode?: string;
   compatibilityArgs?: string;
   defaultAllowedTools?: string[];
   settings?: string;
@@ -447,7 +449,16 @@ export async function runCodex(
       const resolvedMcp = JSON.parse(compatibility.mcpConfig);
       for (const name of Object.keys(resolvedMcp.mcpServers))
         if (isIssueMcpServerName(name)) delete resolvedMcp.mcpServers[name];
-      if (trustedIssues) resolvedMcp.mcpServers.github_issues = trustedIssues;
+      const loadedPermissions = configuration.settings.permissions as
+        | Record<string, unknown>
+        | undefined;
+      const issueMode =
+        options.issuePermissionMode ?? loadedPermissions?.defaultMode;
+      if (
+        trustedIssues &&
+        !["plan", "readonly", "read-only"].includes(String(issueMode))
+      )
+        resolvedMcp.mcpServers.github_issues = trustedIssues;
       compatibility.mcpConfig = JSON.stringify(resolvedMcp);
     }
     const selectedAgent = await selectConfiguredAgent(

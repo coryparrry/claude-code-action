@@ -35,7 +35,7 @@ async function api(path: string, method = "GET", data?: unknown) {
 }
 
 /** Find only this run's issue, including closed records, for assertions and cleanup. */
-async function issues(cleanup = false, expectedBody = body) {
+export async function issues(cleanup = false, expectedBody = body) {
   const urls = [
     process.env.CREATED_ISSUE_URLS,
     process.env.FAILED_CREATED_ISSUE_URLS,
@@ -50,12 +50,10 @@ async function issues(cleanup = false, expectedBody = body) {
     assert.equal(issue.html_url, url);
     records.set(issue.number, issue);
   }
-  if (cleanup || !urls.length) {
-    for (const issue of await api(
-      "issues?state=all&sort=created&direction=desc&per_page=100",
-    ))
-      records.set(issue.number, issue);
-  }
+  for (const issue of await api(
+    "issues?state=all&sort=created&direction=desc&per_page=100",
+  ))
+    records.set(issue.number, issue);
   return selectQualificationIssues(
     [...records.values()],
     title,

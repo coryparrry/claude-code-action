@@ -479,6 +479,11 @@ test.each(["true", "false"])(
     process.env.AZURE_OPENAI_API_KEY = credential;
     process.env.AZURE_OPENAI_ENDPOINT = "https://fixture.openai.azure.com";
     await writeFile(join(directory, "reproduction.txt"), credential);
+    await mkdir(join(directory, ".claude"), { recursive: true });
+    await writeFile(
+      join(directory, ".claude/settings.json"),
+      '{"permissions":{"defaultMode":"plan"}}',
+    );
     const posts: any[] = [];
     const http = Bun.serve({
       hostname: "127.0.0.1",
@@ -511,6 +516,8 @@ test.each(["true", "false"])(
         options(model, {
           timeoutMs: 10000,
           reserveIssueMcpServer: true,
+          issuePermissionMode: "acceptEdits",
+          settingSources: ["project"],
           compatibilityArgs: `--mcp-config '${JSON.stringify({ mcpServers: { "github:issues": { command: "must-not-run" } } })}'`,
           mcpConfig: JSON.stringify({
             mcpServers: {
@@ -585,3 +592,33 @@ readline.createInterface({input:process.stdin}).on("line",line=>{
     );
   },
 );
+
+test("main-action issue writes honor project plan mode before tag's editing default", async () => {
+  await mkdir(join(directory, ".claude"), { recursive: true });
+  await writeFile(
+    join(directory, ".claude/settings.json"),
+    '{"permissions":{"defaultMode":"plan"}}',
+  );
+  const model = new ScriptedModel([
+    async (request) => {
+      expect(
+        request.tools.some((tool) =>
+          tool.name.startsWith("mcp__github_issues__"),
+        ),
+      ).toBe(false);
+      return message("Planning only");
+    },
+  ]);
+  const result = await runCodex(
+    prompt,
+    options(model, {
+      reserveIssueMcpServer: true,
+      settingSources: ["project"],
+      compatibilityArgs: "--permission-mode acceptEdits",
+      mcpConfig: JSON.stringify({
+        mcpServers: { github_issues: { command: "must-not-start" } },
+      }),
+    }),
+  );
+  expect(result.conclusion).toBe("success");
+});

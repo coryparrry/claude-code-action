@@ -255,6 +255,44 @@ test.each(["github_issues", "github:issues"])(
   },
 );
 
+test("issue settings are frozen from the selected base before creating its branch", async () => {
+  const workspace = await realpath(
+    await mkdtemp(join(tmpdir(), "issue-base-settings-")),
+  );
+  directories.push(workspace);
+  process.env.GITHUB_WORKSPACE = workspace;
+  const requests: any[] = [];
+  const content = '{"permissions":{"defaultMode":"plan"}}';
+  const result = await resolveActionSettings(
+    createMockContext({
+      eventName: "issues",
+      isPR: false,
+      inputs: { baseBranch: "release" },
+    }),
+    {
+      repos: {
+        getContent: async (request: any) => {
+          requests.push(request);
+          return {
+            data: {
+              type: "file",
+              encoding: "base64",
+              content: Buffer.from(content).toString("base64"),
+            },
+          };
+        },
+      },
+    } as any,
+    join(workspace, "release-settings.json"),
+  );
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toMatchObject({
+    path: "release-settings.json",
+    ref: "release",
+  });
+  expect(result).toBe(content + "\n");
+});
+
 test("invalid settings fail before tag mode posts a working comment", async () => {
   process.env.INPUT_SETTINGS = '{"permissions":{"allow":"Read"}}';
   const checkActor = spyOn(actor, "checkHumanActor").mockResolvedValue(

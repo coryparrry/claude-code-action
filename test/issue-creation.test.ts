@@ -4,7 +4,7 @@ import { afterEach, expect, test } from "bun:test";
 import { Octokit } from "@octokit/rest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "@babel/parser";
@@ -517,6 +517,71 @@ test("qualification replays an actual configured-bot opening without credentials
       body: `${ACTION_CREATED_ISSUE_MARKER}\n\nReplay only`,
     });
   } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("qualification counts matching issues absent from creation receipts", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "issue-inventory-"));
+  const first = {
+    number: 1,
+    title: "Run fixture",
+    body: "Unique body",
+    html_url: "https://github.com/owner/repo/issues/1",
+  };
+  const duplicate = {
+    ...first,
+    number: 2,
+    html_url: "https://github.com/owner/repo/issues/2",
+  };
+  const http = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    /** Return a receipt issue separately from the independent repository inventory. */
+    fetch(request) {
+      return Response.json(
+        new URL(request.url).pathname.endsWith("/issues/1")
+          ? first
+          : [first, duplicate],
+      );
+    },
+  });
+  try {
+    const script = join(directory, "inventory.ts");
+    await writeFile(
+      script,
+      `import { issues } from ${JSON.stringify(join(import.meta.dir, "../scripts/qualify-issue-creation.ts"))};
+const found=await issues();
+if (found.length!==2) throw new Error("Unrecorded duplicate was ignored");
+console.log("INVENTORY_OK");
+`,
+    );
+    const child = Bun.spawn({
+      cmd: [process.execPath, "--no-env-file", script],
+      env: {
+        PATH: process.env.PATH!,
+        GITHUB_REPOSITORY: "owner/repo",
+        GITHUB_API_URL: String(http.url).replace(/\/$/, ""),
+        GH_TOKEN: "fixture",
+        ISSUE_TEST_TITLE: first.title,
+        ISSUE_TEST_BODY: first.body,
+        CREATED_ISSUE_URLS: JSON.stringify([first.html_url]),
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [code, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    expect({ code, diagnostics: code ? stderr : "" }).toEqual({
+      code: 0,
+      diagnostics: "",
+    });
+    expect(stdout).toContain("INVENTORY_OK");
+  } finally {
+    http.stop(true);
     await rm(directory, { recursive: true, force: true });
   }
 });

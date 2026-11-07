@@ -2,17 +2,17 @@ import type { Octokit } from "@octokit/rest";
 import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { isSettingsFile } from "../../../base-action/src/codex-compat";
+import { validateBranchName } from "./branch";
 import { retryGitHubRead } from "../api/retry";
 import { isEntityContext, type GitHubContext } from "../context";
 
-/** Freeze file-backed PR settings before preparation can derive grants from them. */
+/** Freeze repository settings from the selected task base before deriving grants. */
 export async function resolveActionSettings(
   context: GitHubContext,
   client: Octokit,
   raw = process.env.INPUT_SETTINGS ?? "",
 ): Promise<string> {
-  if (!isEntityContext(context) || !context.isPR || !isSettingsFile(raw))
-    return raw;
+  if (!isEntityContext(context) || !isSettingsFile(raw)) return raw;
 
   const workspace = resolve(process.env.GITHUB_WORKSPACE || process.cwd());
   /** Map a workspace file to a repository path without reading the PR copy. */
@@ -28,6 +28,7 @@ export async function resolveActionSettings(
     const physicalWorkspace = await realpath(workspace);
     path = repositoryPath(physicalWorkspace, file);
     if (path === undefined) {
+      if (!context.isPR) return (await readFile(file, "utf8")) + "\n";
       // External aliases can traverse a PR symlink and change which file is read.
       if ((await realpath(file)) !== file)
         throw new Error(
@@ -38,8 +39,9 @@ export async function resolveActionSettings(
   }
 
   const { owner, repo } = context.repository;
-  const ref =
-    "pull_request" in context.payload
+  const ref = !context.isPR
+    ? context.inputs.baseBranch || context.repository.default_branch || "main"
+    : "pull_request" in context.payload
       ? context.payload.pull_request.base.sha
       : (
           await retryGitHubRead(() =>
@@ -50,8 +52,9 @@ export async function resolveActionSettings(
             }),
           )
         ).data.base.sha;
-  if (!/^[a-f0-9]{40}$/i.test(ref) || !path)
-    throw new Error("Cannot resolve settings from the trusted PR base");
+  if (!context.isPR) validateBranchName(ref);
+  if ((context.isPR && !/^[a-f0-9]{40}$/i.test(ref)) || !path)
+    throw new Error("Cannot resolve settings from the trusted task base");
 
   const { data } = await retryGitHubRead(() =>
     client.repos.getContent({ owner, repo, path, ref }),

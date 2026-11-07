@@ -366,6 +366,7 @@ async function run() {
       mcpConfig: prepareResult.mcpConfig,
       ...actionRuntimeOptions(process.env),
       reserveIssueMcpServer: true,
+      issuePermissionMode: prepareResult.issuePermissionMode,
       showFullOutput: process.env.INPUT_SHOW_FULL_OUTPUT,
       compatibilityArgs: prepareResult.claudeArgs,
       settings: prepareResult.settings,

@@ -423,6 +423,7 @@ async function buildContext(
     mcpConfig: options.mcpConfig,
     environment: options.mcpEnvironment,
     redactPublication: options.redact,
+    reserveIssueMcpServer: options.reserveIssueMcpServer,
     permissions,
     allowedTools: permissions.options.allowedTools,
     disallowedTools: permissions.options.disallowedTools,

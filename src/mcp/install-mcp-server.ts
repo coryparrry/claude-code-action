@@ -101,6 +101,7 @@ export async function resolveActionPermissions(settings: string) {
     if (entry && typeof entry === "object" && !Array.isArray(entry))
       assertNoIssueMcpServer(entry);
   return {
+    permissionMode: permission.permissionMode,
     allowedTools: [
       ...new Set([
         ...(permission.allowedTools ?? []),

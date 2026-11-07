@@ -604,6 +604,7 @@ test("issue publication redacts after hook replacement and fails closed without 
   const result = await connected(
     { github_issues: fixture },
     {
+      reserveIssueMcpServer: true,
       beforeTool: async () => ({ updatedInput: { value: hidden } }),
       redactPublication: (text) => text.split(hidden).join("[REDACTED]"),
     },
@@ -613,7 +614,24 @@ test("issue publication redacts after hook replacement and fails closed without 
   });
   expect(output).toContain("[REDACTED]");
   expect(output).not.toContain(hidden);
-  const denied = await connected({ github_issues: fixture });
+  const standalone = await connected(
+    { github_issues: fixture },
+    {
+      beforeTool: async () => ({ updatedInput: { value: hidden } }),
+      redactPublication: () => {
+        throw new Error("Standalone input must be preserved");
+      },
+    },
+  );
+  expect(
+    await standalone.invoke("mcp__github_issues__create_issue", {
+      value: "original",
+    }),
+  ).toContain(hidden);
+  const denied = await connected(
+    { github_issues: fixture },
+    { reserveIssueMcpServer: true },
+  );
   await expect(
     denied.invoke("mcp__github_issues__create_issue", { value: hidden }),
   ).rejects.toThrow("registered-credential redaction");

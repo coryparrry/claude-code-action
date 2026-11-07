@@ -28,6 +28,7 @@ export type AgentMcpOptions = {
   deadline: number;
   signal?: AbortSignal;
   redactPublication?: (text: string) => string;
+  reserveIssueMcpServer?: boolean;
   beforeTool?: (event: AgentToolEvent) => Promise<void | AgentToolHookResult>;
   permissionRequest?: (
     event: AgentToolEvent,
@@ -599,7 +600,10 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
               decision = request?.permissionDecision;
             }
             permissions.authorize(eventName, undefined, decision);
-            if (eventName === "mcp__github_issues__create_issue") {
+            if (
+              options.reserveIssueMcpServer &&
+              eventName === "mcp__github_issues__create_issue"
+            ) {
               if (!options.redactPublication)
                 throw new Error(
                   "Issue publication requires registered-credential redaction",

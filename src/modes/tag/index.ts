@@ -219,6 +219,7 @@ export async function prepareTagMode({
     branchInfo,
     mcpConfig: ourMcpConfig,
     settings,
+    issuePermissionMode: resolvedPermissions.permissionMode,
     claudeArgs: claudeArgs.trim(),
   };
 }

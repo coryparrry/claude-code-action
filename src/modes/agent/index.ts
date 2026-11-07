@@ -38,7 +38,7 @@ export async function prepareAgentMode({
     ? "{}"
     : await resolveActionSettings(context, octokit.rest);
   const resolvedPermissions = nativeReview
-    ? { allowedTools: [], planning: true }
+    ? { allowedTools: [], planning: true, permissionMode: undefined }
     : await resolveActionPermissions(settings);
 
   // Configure git authentication for agent mode (same as tag mode)
@@ -168,6 +168,7 @@ export async function prepareAgentMode({
     },
     mcpConfig: ourMcpConfig,
     settings,
+    issuePermissionMode: resolvedPermissions.permissionMode,
     claudeArgs,
   };
 }
