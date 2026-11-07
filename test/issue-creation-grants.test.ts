@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import {
   mkdir,
   mkdtemp,
@@ -16,6 +16,7 @@ import {
 } from "../base-action/src/codex-agent-selection";
 import { AgentPermissions } from "../base-action/src/agent-permissions";
 import { resolveActionSettings } from "../src/github/operations/action-settings";
+import { detectMode } from "../src/modes/detector";
 import { prepareTagMode } from "../src/modes/tag";
 import * as mcp from "../src/mcp/install-mcp-server";
 import * as actor from "../src/github/validation/actor";
@@ -255,43 +256,88 @@ test.each(["github_issues", "github:issues"])(
   },
 );
 
-test("issue settings are frozen from the selected base before creating its branch", async () => {
-  const workspace = await realpath(
-    await mkdtemp(join(tmpdir(), "issue-base-settings-")),
-  );
-  directories.push(workspace);
-  process.env.GITHUB_WORKSPACE = workspace;
-  const requests: any[] = [];
-  const content = '{"permissions":{"defaultMode":"plan"}}';
-  const result = await resolveActionSettings(
-    createMockContext({
-      eventName: "issues",
-      isPR: false,
-      inputs: { baseBranch: "release" },
-    }),
-    {
-      repos: {
-        getContent: async (request: any) => {
-          requests.push(request);
-          return {
-            data: {
-              type: "file",
-              encoding: "base64",
-              content: Buffer.from(content).toString("base64"),
-            },
-          };
+test.each(["", "main"])(
+  "prompt-driven issue automations retain checkout settings with base %s",
+  async (baseBranch) => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-checkout-settings-"));
+    directories.push(directory);
+    process.env.GITHUB_WORKSPACE = directory;
+    const path = join(directory, "release-only-settings.json");
+    const settings = {
+      permissions: { defaultMode: "plan", allow: [issueTool] },
+    };
+    await writeFile(path, JSON.stringify(settings));
+    const getContent = mock(async () => {
+      throw new Error("Unexpected repository settings request");
+    });
+    const result = await resolveActionSettings(
+      createMockContext({
+        eventName: "issues",
+        isPR: false,
+        inputs: { prompt: "Triage this issue", baseBranch },
+      }),
+      { repos: { getContent } } as any,
+      "agent",
+      path,
+    );
+    const permission = await resolveCompatibility(
+      "",
+      result,
+      '{"mcpServers":{}}',
+    );
+    expect(permission.permissionMode).toBe("plan");
+    expect(permission.allowedTools).toContain(issueTool);
+    expect(getContent).not.toHaveBeenCalled();
+  },
+);
+
+test.each(["", "Interactive task"])(
+  "issue settings are frozen from the selected base with prompt %s",
+  async (prompt) => {
+    const workspace = await realpath(
+      await mkdtemp(join(tmpdir(), "issue-base-settings-")),
+    );
+    directories.push(workspace);
+    process.env.GITHUB_WORKSPACE = workspace;
+    const requests: any[] = [];
+    const content = '{"permissions":{"defaultMode":"plan"}}';
+    const result = await resolveActionSettings(
+      createMockContext({
+        eventName: "issues",
+        isPR: false,
+        inputs: { baseBranch: "release", prompt, trackProgress: true },
+      }),
+      {
+        repos: {
+          getContent: async (request: any) => {
+            requests.push(request);
+            return {
+              data: {
+                type: "file",
+                encoding: "base64",
+                content: Buffer.from(content).toString("base64"),
+              },
+            };
+          },
         },
-      },
-    } as any,
-    join(workspace, "release-settings.json"),
-  );
-  expect(requests).toHaveLength(1);
-  expect(requests[0]).toMatchObject({
-    path: "release-settings.json",
-    ref: "release",
-  });
-  expect(result).toBe(content + "\n");
-});
+      } as any,
+      detectMode(
+        createMockContext({
+          eventName: "issues",
+          isPR: false,
+          inputs: { prompt, trackProgress: true },
+        }),
+      ),
+      join(workspace, "release-settings.json"),
+    );
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      path: "release-settings.json",
+      ref: "release",
+    });
+    expect(result).toBe(content + "\n");
+  },
+);
 
 test("invalid settings fail before tag mode posts a working comment", async () => {
   process.env.INPUT_SETTINGS = '{"permissions":{"allow":"Read"}}';
@@ -458,6 +504,7 @@ test.each(["external", "workspace"])(
       resolveActionSettings(
         createMockContext({ eventName: "pull_request", isPR: true }),
         {} as any,
+        "tag",
         alias,
       ),
     ).rejects.toThrow("require a direct file path");

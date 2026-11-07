@@ -1,4 +1,4 @@
-import { ACTION_CREATED_ISSUE_MARKER } from "../src/github/issue-origin";
+import { actionCreatedIssueMarker } from "../src/github/issue-origin";
 import { checkContainsTrigger } from "../src/github/validation/trigger";
 import { afterEach, expect, test } from "bun:test";
 import { Octokit } from "@octokit/rest";
@@ -59,6 +59,33 @@ function apiFixture(status?: number) {
   } as unknown as Octokit;
   return { client, calls };
 }
+
+test("issue publication masks opaque URL credentials without registered secrets", async () => {
+  const { client, calls } = apiFixture();
+  const password = "opaque-connection-value";
+  const connection = `postgresql://reader:${password}@embedded@db.example/reports`;
+  const encoded = "mongodb+srv://reader:p%40ss%3Aword@cluster.example/data";
+  await createRepositoryIssue(
+    client,
+    { owner: "owner", repo: "repo" },
+    {
+      title: connection,
+      body: `${connection}\n${encoded}\nhttps://docs.example/database`,
+      labels: ["https://reader:short@db.test"],
+    },
+  );
+  const posted = JSON.stringify(calls[0]);
+  expect(posted).not.toContain(password);
+  expect(posted).not.toContain("embedded");
+  expect(posted).not.toContain("p%40ss%3Aword");
+  expect(posted).not.toContain("reader:");
+  expect(calls[0]!.title).toBe("postgresql://[REDACTED]@db.example/reports");
+  expect(calls[0]!.body).toContain(
+    "mongodb+srv://[REDACTED]@cluster.example/data",
+  );
+  expect(calls[0]!.body).toContain("https://docs.example/database");
+  expect(calls[0]!.labels).toEqual(["https://[REDACTED]@db.test"]);
+});
 
 test("creates a repository-scoped issue with sanitized content and confirmed URL", async () => {
   const { client, calls } = apiFixture();
@@ -280,6 +307,8 @@ test("new issue-creation code meets the 85% documentation requirement", async ()
   const results: boolean[] = [];
   for (const file of [
     "src/mcp/github-issues-server.ts",
+    "src/github/issue-origin.ts",
+    "src/github/operations/action-settings.ts",
     "src/mcp/issue-creation-policy.ts",
     "src/github/operations/issue-creation-receipts.ts",
     "test/issue-creation.test.ts",
@@ -324,6 +353,8 @@ test("tracking reviews need an explicit issue-creation grant, including wildcard
 });
 
 test("literal Markdown, accessible image descriptions and fenced examples survive issue creation", async () => {
+  process.env.GITHUB_WORKFLOW_REF =
+    "owner/repo/.github/workflows/create.yml@refs/heads/main";
   const { client, calls } = apiFixture();
   const body =
     '![Meaningful chart description](https://example.com/chart.png)\n```html\n<img alt="Reproduction" title="Example">\n<!-- literal regression marker -->\n```';
@@ -332,7 +363,7 @@ test("literal Markdown, accessible image descriptions and fenced examples surviv
     { owner: "owner", repo: "repo" },
     { title: "Reproduction", body },
   );
-  expect(calls[0]!.body).toBe(`${ACTION_CREATED_ISSUE_MARKER}\n\n${body}`);
+  expect(calls[0]!.body).toBe(`${actionCreatedIssueMarker()}\n\n${body}`);
   const context = createMockContext({
     eventName: "issues",
     eventAction: "opened",
@@ -351,6 +382,17 @@ test("literal Markdown, accessible image descriptions and fenced examples surviv
     } as any,
   });
   expect(checkContainsTrigger(context)).toBe(false);
+  process.env.GITHUB_WORKFLOW_REF =
+    "owner/repo/.github/workflows/create.yml@refs/heads/release";
+  expect(checkContainsTrigger(context)).toBe(false);
+  process.env.GITHUB_WORKFLOW_REF =
+    "owner/repo/.github/workflows/create.yml@refs/heads/feature/notify@team";
+  expect(checkContainsTrigger(context)).toBe(false);
+  process.env.GITHUB_WORKFLOW_REF =
+    "owner/repo/.github/workflows/triage.yml@refs/heads/main";
+  expect(checkContainsTrigger(context)).toBe(true);
+  delete process.env.GITHUB_WORKFLOW_REF;
+  expect(checkContainsTrigger(context)).toBe(true);
   expect(
     checkContainsTrigger({
       ...context,
@@ -511,10 +553,12 @@ test("qualification replays an actual configured-bot opening without credentials
   process.env.GITHUB_REPOSITORY = "owner/repo";
   process.env.GITHUB_RUN_ID = "fixture";
   try {
+    process.env.GITHUB_WORKFLOW_REF =
+      "owner/repo/.github/workflows/create.yml@refs/heads/main";
     await assertOpeningIsSkipped({
       number: 1,
       title: "/codex fixture",
-      body: `${ACTION_CREATED_ISSUE_MARKER}\n\nReplay only`,
+      body: `${actionCreatedIssueMarker()}\n\nReplay only`,
     });
   } finally {
     await rm(directory, { recursive: true, force: true });

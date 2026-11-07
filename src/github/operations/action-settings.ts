@@ -10,9 +10,12 @@ import { isEntityContext, type GitHubContext } from "../context";
 export async function resolveActionSettings(
   context: GitHubContext,
   client: Octokit,
+  mode: "tag" | "agent",
   raw = process.env.INPUT_SETTINGS ?? "",
 ): Promise<string> {
   if (!isEntityContext(context) || !isSettingsFile(raw)) return raw;
+  // Prompt-driven issue automations execute the caller checkout without setupBranch.
+  if (!context.isPR && mode === "agent") return raw;
 
   const workspace = resolve(process.env.GITHUB_WORKSPACE || process.cwd());
   /** Map a workspace file to a repository path without reading the PR copy. */

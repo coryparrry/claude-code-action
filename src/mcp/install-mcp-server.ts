@@ -188,6 +188,7 @@ export async function prepareMcpConfig(
           GITHUB_TOKEN: githubToken,
           REPO_OWNER: owner,
           REPO_NAME: repo,
+          GITHUB_WORKFLOW_REF: process.env.GITHUB_WORKFLOW_REF || "",
           GITHUB_API_URL,
           CODEX_CREATED_ISSUES_RECEIPT:
             process.env.CODEX_CREATED_ISSUES_RECEIPT || "",

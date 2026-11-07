@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import * as core from "@actions/core";
-import { ACTION_CREATED_ISSUE_MARKER } from "../issue-origin";
+import { actionCreatedIssueMarker } from "../issue-origin";
 import {
   isIssuesEvent,
   isIssuesAssignedEvent,
@@ -12,16 +12,17 @@ import {
 } from "../context";
 import type { GitHubContext, ParsedGitHubContext } from "../context";
 
-/** Prevent an issue created by this action from initiating a new command. */
+/** Prevent self-triggering openings while preserving independent workflow automation. */
 export function isActionCreatedIssueOpening(context: GitHubContext): boolean {
   return (
+    !!process.env.GITHUB_WORKFLOW_REF &&
     isIssuesEvent(context) &&
     context.eventAction === "opened" &&
     context.payload.issue?.user?.type === "Bot" &&
     context.payload.issue.user.login === context.actor &&
     context.payload.issue.user.login === context.inputs.botName &&
     !!context.payload.issue.body?.startsWith(
-      `${ACTION_CREATED_ISSUE_MARKER}\n\n`,
+      `${actionCreatedIssueMarker()}\n\n`,
     )
   );
 }

@@ -1,3 +1,4 @@
+import { actionCreatedIssueMarker } from "../../src/github/issue-origin";
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import * as core from "@actions/core";
 import {
@@ -533,6 +534,8 @@ test.each(["true", "false"])(
                   GITHUB_TOKEN: "fixture-token",
                   REPO_OWNER: "owner",
                   REPO_NAME: "repo",
+                  GITHUB_WORKFLOW_REF:
+                    "owner/repo/.github/workflows/create.yml@refs/heads/main",
                   GITHUB_API_URL: String(http.url).replace(/\/$/, ""),
                 },
               },
@@ -544,7 +547,7 @@ test.each(["true", "false"])(
       expect(JSON.stringify(posts)).not.toContain(credential);
       expect(posts[0]).toMatchObject({
         title: "Report true and false [REDACTED]",
-        body: '<!-- codex-action:created-issue:v1 -->\n\nLiteral <img alt="Example"> return true; enabled: false [REDACTED] [REDACTED]',
+        body: `${actionCreatedIssueMarker("owner/repo/.github/workflows/create.yml@refs/heads/main")}\n\nLiteral <img alt="Example"> return true; enabled: false [REDACTED] [REDACTED]`,
         labels: ["true", "false", "[REDACTED]"],
       });
     } finally {

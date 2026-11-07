@@ -1,3 +1,9 @@
-/** Hidden marker written atomically with each action-created issue. */
-export const ACTION_CREATED_ISSUE_MARKER =
-  "<!-- codex-action:created-issue:v1 -->";
+/** Identify the producing workflow across refs without suppressing other automations. */
+export function actionCreatedIssueMarker(
+  workflowRef = process.env.GITHUB_WORKFLOW_REF ?? "",
+): string {
+  const separator = workflowRef.indexOf("@refs/");
+  const workflow =
+    separator < 0 ? workflowRef : workflowRef.slice(0, separator);
+  return `<!-- codex-action:created-issue:v2:${Buffer.from(workflow).toString("base64url")} -->`;
+}

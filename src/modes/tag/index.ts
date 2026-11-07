@@ -50,7 +50,7 @@ export async function prepareTagMode({
 
   // Check if actor is human
   await checkHumanActor(octokit.rest, context);
-  const settings = await resolveActionSettings(context, octokit.rest);
+  const settings = await resolveActionSettings(context, octokit.rest, "tag");
   const resolvedPermissions = await resolveActionPermissions(settings);
   const userAllowedTools = resolvedPermissions.allowedTools;
 

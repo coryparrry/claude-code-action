@@ -1,7 +1,7 @@
 /** Verify issue creation against GitHub; never execute this live harness locally. */
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { ACTION_CREATED_ISSUE_MARKER } from "../src/github/issue-origin";
+import { actionCreatedIssueMarker } from "../src/github/issue-origin";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -115,6 +115,7 @@ export async function assertOpeningIsSkipped(issue: {
         GITHUB_ACTOR: actor,
         BOT_NAME: actor,
         GITHUB_RUN_ID: process.env.GITHUB_RUN_ID!,
+        GITHUB_WORKFLOW_REF: process.env.GITHUB_WORKFLOW_REF!,
         RUNNER_TEMP: temp,
         PROMPT: "This opening must not trigger the action",
       },
@@ -202,7 +203,7 @@ if (import.meta.main) {
       assert.deepEqual(submitted, JSON.parse(calls[1].input.arguments));
     // Failure delivery is independent of model-added explanatory prose. Verify the
     // stored body against the real tool input; normal creation remains exact.
-    const prefix = `${ACTION_CREATED_ISSUE_MARKER}\n\n`;
+    const prefix = `${actionCreatedIssueMarker()}\n\n`;
     const matches = await issues(
       false,
       prefix + (success ? body : submitted.body),

@@ -88,6 +88,12 @@ export function sanitizeContent(content: string): string {
 export function redactSecrets(content: string): string {
   content = redactGitHubTokens(content);
 
+  // URL userinfo can carry opaque credentials without a secret-like variable name.
+  content = content.replace(
+    /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/?#]+@/gi,
+    "$1[REDACTED]@",
+  );
+
   // Anthropic API keys: sk-ant-...
   content = content.replace(
     /sk-ant-[A-Za-z0-9_-]{20,}/g,

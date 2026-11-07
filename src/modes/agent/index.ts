@@ -36,7 +36,7 @@ export async function prepareAgentMode({
   const nativeReview = process.env.REVIEW_MODE === "true";
   const settings = nativeReview
     ? "{}"
-    : await resolveActionSettings(context, octokit.rest);
+    : await resolveActionSettings(context, octokit.rest, "agent");
   const resolvedPermissions = nativeReview
     ? { allowedTools: [], planning: true, permissionMode: undefined }
     : await resolveActionPermissions(settings);

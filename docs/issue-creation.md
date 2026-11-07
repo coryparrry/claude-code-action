@@ -23,14 +23,16 @@ Runtime-compatible namespace and wildcard grants, including
 the model cannot select an owner or repository. It uses the action-owned token
 and existing dependencies, with no Docker requirement.
 
-An invisible origin marker suppresses openings authored by the configured bot.
+An invisible origin marker suppresses openings authored by the configured bot
+only in the producing workflow, identified by its repository and workflow path
+across branch refs. Independent prompt-driven workflows keep their normal triggers.
 GitHub identifies the author independently of the issue body. Human-authored
 openings follow the workflow’s normal triggers, including when automation uses
 a human-owned token. Subsequent comments can still start a command. The marker
 shares the issue body’s size budget.
 
 Issue bodies retain literal Markdown, accessible image descriptions, HTML
-attributes and fenced reproductions. Secret-format redaction and the runtime's registered-credential redactor apply before publication, after any hook changes.
+attributes and fenced reproductions. Secret-format redaction, URL-userinfo masking and the runtime's registered-credential redactor apply before publication, after any hook changes.
 Ordinary reviews do not turn findings into backlog issues automatically.
 
 ## Delivery and retries
