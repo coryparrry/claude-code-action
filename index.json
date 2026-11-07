@@ -1,1 +1,1 @@
-{"version":1,"repository":"coryparrry/claude-code-action","repositoryId":1398635634,"entries":[{"version":1,"sourcePr":14,"head":"b0132eb0ce2463f4ec76aedaaef0cda1a0b5f7a2","paths":["scripts/release-qualification/"],"note":"For execution-phase failures, runCodex attempts to write a redacted report under RUNNER_TEMP before throwing; sequential invocations reuse the default report filename.","merged":false,"baseRef":"main","updatedAt":"2026-11-02T22:22:39Z"}]}
+{"version":1,"repository":"coryparrry/claude-code-action","repositoryId":1398635634,"entries":[]}
