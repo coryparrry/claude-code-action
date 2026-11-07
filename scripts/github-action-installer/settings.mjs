@@ -71,7 +71,7 @@ function managedSteps(content, job) {
       "$1",
     )
     .replace(
-      /^          codex_model: ["']?[\w.-]+["']?\n(?:          codex_effort: max\n)?/m,
+      /^          codex_model: ["']?[\w.-]+["']?\n(?:          codex_effort: (?:max|high)\n)?/m,
       "",
     )
     .replace(`${COMMAND_DELIVERY_POLICY}\n`, "");
