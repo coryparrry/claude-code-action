@@ -594,3 +594,39 @@ it("bounds work on long scheme-like CI log lines", async () => {
   });
   expect(await child.exited).toBe(0);
 });
+
+it("keeps credential-free URL matches inside string and markup boundaries", () => {
+  const examples = [
+    JSON.stringify({ url: "https://example.org", email: "alice@example.net" }),
+    "{'url':'https://example.org','email':'alice@example.net'}",
+    "['https://example.org:443','alice@example.net']",
+    '<a href="https://example.org">alice@example.net</a>',
+    "`https://example.org` alice@example.net",
+  ];
+  for (const value of examples) expect(redactSecrets(value)).toBe(value);
+  const credentials = JSON.stringify({
+    url: "postgres://reader:opaque@db.example/report",
+    email: "alice@example.net",
+  });
+  expect(JSON.parse(redactSecrets(credentials))).toEqual({
+    url: "postgres://[REDACTED]@db.example/report",
+    email: "alice@example.net",
+  });
+});
+
+it("masks legal apostrophes in raw and double-quoted URL passwords", () => {
+  const url = "postgres://reader:op'aque@db.example/report";
+  const masked = "postgres://[REDACTED]@db.example/report";
+  expect(redactSecrets(url)).toBe(masked);
+  expect(redactSecrets(`'${url}'`)).toBe(`'${masked}'`);
+  expect(
+    JSON.parse(
+      redactSecrets(JSON.stringify({ url, email: "alice@example.net" })),
+    ),
+  ).toEqual({ url: masked, email: "alice@example.net" });
+  expect(
+    redactSecrets(
+      "{'url':'https://reader:opaque@db.example','email':'alice@example.net'}",
+    ),
+  ).toBe("{'url':'https://[REDACTED]@db.example','email':'alice@example.net'}");
+});

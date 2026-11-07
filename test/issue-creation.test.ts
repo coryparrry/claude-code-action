@@ -62,15 +62,19 @@ function apiFixture(status?: number) {
 
 test("issue publication masks opaque URL credentials without registered secrets", async () => {
   const { client, calls } = apiFixture();
-  const password = "opaque-connection-value";
+  const password = "opaque-connection-value'part";
   const connection = `postgresql://reader:${password}@embedded@db.example/reports`;
   const encoded = "mongodb+srv://reader:p%40ss%3Aword@cluster.example/data";
+  const reproduction = JSON.stringify({
+    url: "https://example.org",
+    email: "alice@example.net",
+  });
   await createRepositoryIssue(
     client,
     { owner: "owner", repo: "repo" },
     {
       title: connection,
-      body: `${connection}\n${encoded}\nhttps://docs.example/database\nssh://git@github.com/owner/repo.git\nssh://git:ssh-password@git.example/repo`,
+      body: `${connection}\n${encoded}\n${reproduction}\nhttps://docs.example/database\nssh://git@github.com/owner/repo.git\nssh://git:ssh-password@git.example/repo`,
       labels: ["https://reader:short@db.test"],
     },
   );
@@ -86,6 +90,7 @@ test("issue publication masks opaque URL credentials without registered secrets"
     "mongodb+srv://[REDACTED]@cluster.example/data",
   );
   expect(calls[0]!.body).toContain("https://docs.example/database");
+  expect(calls[0]!.body).toContain(reproduction);
   expect(calls[0]!.labels).toEqual(["https://[REDACTED]@db.test"]);
 });
 

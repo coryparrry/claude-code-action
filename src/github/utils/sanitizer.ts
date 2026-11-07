@@ -90,11 +90,25 @@ export function redactSecrets(content: string): string {
 
   // URL userinfo can carry opaque credentials without a secret-like variable name.
   content = content.replace(
-    /\b([a-z][a-z0-9+.-]{0,63}:\/\/)([^\s/?#]+)@/gi,
-    (match, scheme: string, userinfo: string) =>
-      scheme.toLowerCase() === "ssh://" && userinfo === "git"
-        ? match
-        : `${scheme}[REDACTED]@`,
+    /\b([a-z][a-z0-9+.-]{0,63}:\/\/)([^\s/?#"<>`\\]+)@/gi,
+    (match, scheme: string, userinfo: string, offset: number, text: string) => {
+      let login = userinfo;
+      let suffix = "";
+      // Apostrophes are valid password characters except when closing a quoted value.
+      const boundary =
+        text[offset - 1] === "'"
+          ? userinfo.search(/'(?=\s*(?:[,;]\s*['"`]|[}\]]))/)
+          : -1;
+      if (boundary >= 0) {
+        const authority = userinfo.slice(0, boundary);
+        const at = authority.lastIndexOf("@");
+        if (at < 0) return match;
+        login = authority.slice(0, at);
+        suffix = authority.slice(at + 1) + userinfo.slice(boundary) + "@";
+      }
+      if (scheme.toLowerCase() === "ssh://" && login === "git") return match;
+      return `${scheme}[REDACTED]@${suffix}`;
+    },
   );
 
   // Anthropic API keys: sk-ant-...
