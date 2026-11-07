@@ -1,1 +1,1 @@
-{"version":1,"repository":"coryparrry/claude-code-action","repositoryId":1398635634,"entries":[]}
+{"version":1,"repository":"coryparrry/claude-code-action","repositoryId":1398635634,"entries":[{"version":1,"sourcePr":38,"head":"a0146f435354c9e794b045b52473569e3e002e28","paths":["src/entrypoints/"],"note":"Native reviews construct isolated options with nativeReviewOptions and run a separate verifier through verifyReviewCandidates.","merged":false,"baseRef":"main","updatedAt":"2026-11-07T18:01:04Z"}]}
