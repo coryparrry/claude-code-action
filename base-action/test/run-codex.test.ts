@@ -401,6 +401,138 @@ describe("Codex Agents SDK integration", () => {
     ).toBe(first.providerData?.prompt_cache_key);
   });
 
+  test("routed budget exhaustion retains all paid usage and per-model cost", async () => {
+    const small = new ScriptedModel([
+      call("Read", { file_path: prompt, offset: null, limit: null }),
+    ]);
+    const strong = new ScriptedModel([message("Done")]);
+    await expect(
+      runCodex(
+        prompt,
+        options(small, {
+          model: "custom-large",
+          modelRouting: {
+            cheap_model: "custom-small",
+            strong_model: "custom-large",
+          },
+          modelPrices: {
+            "custom-small": { input: 1, cachedInput: 0.1, output: 5 },
+            "custom-large": { input: 10, cachedInput: 1, output: 50 },
+          },
+          modelProvider: {
+            getModel: async (name) =>
+              name === "custom-small" ? small : strong,
+          },
+          maxBudgetUsd: 0.000001,
+        }),
+      ),
+    ).rejects.toThrow("budget");
+    const final = (await artifact()).at(-1)!;
+    expect(final.usage.input_tokens).toBe(10);
+    expect(final.total_cost_usd).toBeGreaterThan(0);
+    expect(final.model_routing.cost_by_model_usd["custom-small"]).toBe(
+      final.total_cost_usd,
+    );
+    expect(strong.requests).toHaveLength(0);
+    expect(small.requests).toHaveLength(1);
+  });
+  test("routed skill explicitly selecting strong escalates the next inference", async () => {
+    await mkdir(join(directory, ".codex", "skills", "deep"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(directory, ".codex", "skills", "deep", "SKILL.md"),
+      "---\nname: deep\ndescription: Deeper task\nmodel: gpt-6.1-terra\n---\nVerify deeply.",
+    );
+    const small = new ScriptedModel([
+      call("Skill", { skill: "deep", args: null }),
+    ]);
+    const strong = new ScriptedModel([message("Verified")]);
+    await runCodex(
+      prompt,
+      options(small, {
+        model: "gpt-6.1-terra",
+        permissionMode: "bypassPermissions",
+        settingSources: ["project"],
+        modelRouting: {
+          cheap_model: "gpt-6-luna",
+          strong_model: "gpt-6.1-terra",
+          max_cheap_turns: 5,
+        },
+        modelProvider: {
+          getModel: async (name) => (name === "gpt-6-luna" ? small : strong),
+        },
+      }),
+    );
+    expect(small.requests).toHaveLength(1);
+    expect(strong.requests).toHaveLength(1);
+    expect(
+      (await artifact()).at(-1)?.model_routing.decisions.at(-1).reason,
+    ).toBe("explicit stronger-model selection");
+  });
+  test("routed Task requesting strong cannot execute on the cheap model", async () => {
+    const small = new ScriptedModel([
+      call("Task", {
+        subagent_type: "general-purpose",
+        prompt: "Check the result",
+        description: null,
+        model: "gpt-6.1-terra",
+        max_turns: null,
+        run_in_background: null,
+      }),
+    ]);
+    const strong = new ScriptedModel([
+      message("Child verified"),
+      message("Parent done"),
+    ]);
+    await runCodex(
+      prompt,
+      options(small, {
+        model: "gpt-6.1-terra",
+        permissionMode: "bypassPermissions",
+        modelRouting: {
+          cheap_model: "gpt-6-luna",
+          strong_model: "gpt-6.1-terra",
+          max_cheap_turns: 5,
+        },
+        modelProvider: {
+          getModel: async (name) => (name === "gpt-6-luna" ? small : strong),
+        },
+      }),
+    );
+    expect(small.requests).toHaveLength(1);
+    expect(strong.requests).toHaveLength(2);
+    const final = (await artifact()).at(-1)!;
+    expect(final.model_routing.decisions.at(-1).reason).toBe(
+      "explicit stronger-model selection",
+    );
+    expect(final.usage.input_tokens).toBe(30);
+    expect(
+      Object.values(final.model_routing.cost_by_model_usd).reduce(
+        (sum: any, cost: any) => sum + cost,
+        0,
+      ),
+    ).toBeCloseTo(final.total_cost_usd, 10);
+  });
+  test("routed unpriced fallbacks fail before invoking either model", async () => {
+    const small = new ScriptedModel([]);
+    await expect(
+      runCodex(
+        prompt,
+        options(small, {
+          model: "gpt-6.1-terra",
+          fallbackModel: "unpriced-fallback",
+          modelRouting: {
+            cheap_model: "gpt-6-luna",
+            strong_model: "gpt-6.1-terra",
+          },
+          modelProvider: { getModel: async () => small },
+        }),
+      ),
+    ).rejects.toThrow("token prices");
+    expect(small.requests).toHaveLength(0);
+    expect((await artifact()).at(-1)?.usage.input_tokens).toBe(0);
+  });
   test("fallback uses named provider models without repeating completed tools", async () => {
     const primary = new ScriptedModel([
       async () => {

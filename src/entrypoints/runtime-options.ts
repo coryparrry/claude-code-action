@@ -10,6 +10,7 @@ export function actionRuntimeOptions(
     throw new Error("continue_session must be true or false");
   return {
     model: value("CODEX_MODEL"),
+    modelRouting: value("MODEL_ROUTING"),
     baseURL: value("OPENAI_BASE_URL"),
     effort: value("CODEX_EFFORT"),
     sandbox: value("CODEX_SANDBOX"),

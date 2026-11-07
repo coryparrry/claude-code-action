@@ -10,6 +10,7 @@ import {
   setExecutionFileOutputIfPresent,
 } from "./execution-file";
 
+/** Forward standalone action inputs and preserve failure outputs for routed and fixed-model runs. */
 export async function run() {
   try {
     const previousExecutionFile = getExecutionFilePath();
@@ -36,6 +37,7 @@ export async function run() {
     const result = await runCodex(promptConfig.path, {
       mcpConfig: process.env.INPUT_MCP_CONFIG || '{"mcpServers":{}}',
       model: process.env.INPUT_CODEX_MODEL || undefined,
+      modelRouting: process.env.INPUT_MODEL_ROUTING || undefined,
       baseURL: process.env.OPENAI_BASE_URL,
       maxTurns: process.env.INPUT_MAX_TURNS || undefined,
       maxBudgetUsd: process.env.INPUT_MAX_BUDGET_USD || undefined,

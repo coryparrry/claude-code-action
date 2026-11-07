@@ -37,3 +37,13 @@ test("explicit controls retain values and directory spaces", () => {
     "true or false",
   );
 });
+
+test("routing JSON is passed intact from the main action", () => {
+  const modelRouting = JSON.stringify({
+    cheap_model: "chosen-small",
+    strong_model: "chosen-large",
+  });
+  expect(
+    actionRuntimeOptions({ MODEL_ROUTING: modelRouting }).modelRouting,
+  ).toBe(modelRouting);
+});

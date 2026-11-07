@@ -1,3 +1,4 @@
+import { ModelRouter, ROUTING_INSTRUCTIONS } from "./model-router";
 import {
   Agent,
   AgentsError,
@@ -47,6 +48,8 @@ export type OpenAIAgentOptions = {
   includePartialMessages?: boolean;
   /** Testable model boundary; production defaults to an API-key-only OpenAI provider. */
   modelProvider?: ModelProvider;
+  /** Optional shared routing state; API fallback remains a separate mechanism. */
+  modelRouter?: ModelRouter;
   instructions: string;
   tools: Tool[];
   mcpServers?: MCPServer[];
@@ -117,6 +120,8 @@ export async function runOpenAIAgent(
   input: string | AgentInputItem[],
   options: OpenAIAgentOptions,
 ): Promise<OpenAIAgentResult> {
+  if (options.fallbackModel !== undefined)
+    options.modelRouter?.assertPricedModel(options.fallbackModel);
   const maxTurns = options.maxTurns ?? Number.MAX_SAFE_INTEGER;
   if (!Number.isSafeInteger(maxTurns) || maxTurns <= 0)
     throw new Error("Agent maxTurns must be a positive integer");
@@ -204,9 +209,14 @@ export async function runOpenAIAgent(
       let fallbackUsed = false;
       let contextRecoveryUsed = false;
       const model: Model = {
+        /** Route each inference while retaining the SDK conversation, cancellation and usage contracts. */
         async getResponse(request) {
           if (controller.signal.aborted) throw new Error(interruption);
-          const desired = (await options.resolveModel?.()) ?? primary;
+          const explicit = await options.resolveModel?.();
+          if (explicit !== undefined && explicit !== options.model)
+            options.modelRouter?.requestModel(explicit);
+          const desired =
+            options.modelRouter?.select(request) ?? explicit ?? primary;
           if (desired !== primary) {
             primary = desired;
             selected = await resolveModel(primary);
@@ -220,6 +230,14 @@ export async function runOpenAIAgent(
             request: ModelRequest,
           ): Promise<ModelResponse> => {
             if (controller.signal.aborted) throw new Error(interruption);
+            if (options.modelRouter && activeModelName)
+              request = {
+                ...request,
+                modelSettings: options.modelRouter.settings(
+                  activeModelName,
+                  request.modelSettings,
+                ),
+              };
             if (!options.includePartialMessages)
               return selected.getResponse(request);
             let completed: ModelResponse | undefined;
@@ -303,6 +321,9 @@ export async function runOpenAIAgent(
             )
               throw error;
             fallbackUsed = true;
+            options.modelRouter?.escalate(
+              "eligible API failure ended the cheap phase",
+            );
             selected = await resolveModel(options.fallbackModel);
             activeModelName =
               typeof options.fallbackModel === "string"
@@ -326,10 +347,14 @@ export async function runOpenAIAgent(
       };
       const agent = new Agent({
         name: "GitHub action agent",
-        instructions: options.instructions,
+        instructions: options.modelRouter
+          ? `${options.instructions}\n\n${ROUTING_INSTRUCTIONS}`
+          : options.instructions,
         model,
         modelSettings: { ...options.modelSettings, store: false },
-        tools: options.tools,
+        tools: options.modelRouter
+          ? [...options.tools, options.modelRouter.escalationTool()]
+          : options.tools,
         mcpServers: options.mcpServers,
         outputType: options.schema
           ? {

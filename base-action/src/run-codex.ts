@@ -1,3 +1,8 @@
+import {
+  ModelRouter,
+  parseModelRouting,
+  type ModelRoutingConfig,
+} from "./model-router";
 import { isDeepStrictEqual } from "node:util";
 import { promptCacheSettings } from "./prompt-cache";
 import * as core from "@actions/core";
@@ -105,6 +110,8 @@ export type CodexOptions = Omit<
   sessionStoragePath?: string;
   executionFileName?: import("./execution-file").ExecutionFilename;
   modelPrices?: Record<string, ModelPrice>;
+  /** Opt-in routing configuration; both model identifiers remain workflow-controlled. */
+  modelRouting?: string | ModelRoutingConfig;
   workspace?: string;
   readAliases?: Record<string, string>;
 };
@@ -256,6 +263,7 @@ export async function runCodex(
     workspace,
   );
   let budget: AgentBudget | undefined;
+  let modelRouter: ModelRouter | undefined;
   const totalUsage = new Usage();
   let compaction: ReturnType<typeof createAgentCompaction> | undefined;
   let logBytes = 0;
@@ -294,11 +302,19 @@ export async function runCodex(
       flushPartials();
       totalUsage.add(event.response.usage);
       try {
-        budget?.accept(
-          event.response.usage,
-          event.activeModelName,
-          event.response.output,
-        );
+        try {
+          modelRouter?.record(
+            event.activeModelName,
+            event.response.usage,
+            event.response.output,
+          );
+        } finally {
+          budget?.accept(
+            event.response.usage,
+            event.activeModelName,
+            event.response.output,
+          );
+        }
       } catch (error) {
         fatalFailure = error instanceof Error ? error.message : String(error);
         controller.abort();
@@ -522,6 +538,8 @@ export async function runCodex(
         : resolveCodexModel(
             options.fallbackModel ?? compatibility.fallbackModel,
           );
+    const routingConfig = parseModelRouting(options.modelRouting);
+    if (routingConfig) model = routingConfig.strong_model;
     const effort = normalizeCodexEffort(
       compatibility.effort,
       typeof model === "string" ? model : DEFAULT_MODEL,
@@ -558,6 +576,13 @@ export async function runCodex(
       ),
       ...options.modelPrices,
     });
+    if (routingConfig) {
+      modelRouter = new ModelRouter(routingConfig, budget.prices);
+      if (fallbackModel !== undefined)
+        modelRouter.assertPricedModel(fallbackModel);
+      if (selectedAgent?.model)
+        modelRouter.requestModel(resolveCodexModel(selectedAgent.model));
+    }
     if (typeof model === "string") budget.assertModel(model);
     if (typeof fallbackModel === "string") budget.assertModel(fallbackModel);
     const scan = (value: unknown, sensitive = false) => {
@@ -689,6 +714,7 @@ export async function runCodex(
       apiKey,
       baseURL,
       modelProvider,
+      modelRouter,
       getModel: () => model,
       setModel: (next) => {
         model = resolveCodexModel(next);
@@ -773,7 +799,10 @@ export async function runCodex(
           ]),
         ],
       });
-    if (command?.model) model = resolveCodexModel(command.model);
+    if (command?.model) {
+      model = resolveCodexModel(command.model);
+      modelRouter?.requestModel(model);
+    }
     const userPrompt = [
       prompt.request ? prompt.context : undefined,
       command?.instructions ?? prompt.request ?? prompt.context,
@@ -853,6 +882,7 @@ export async function runCodex(
         model,
         fallbackModel,
         modelProvider,
+        modelRouter,
         resolveModel: () => model,
         includePartialMessages: compatibility.includePartialMessages,
         instructions,
@@ -979,6 +1009,7 @@ export async function runCodex(
       num_turns: result?.turns ?? 0,
       usage: usageReport(totalUsage),
       read_evidence: inspected,
+      ...(modelRouter ? { model_routing: modelRouter.report() } : {}),
       ...(budget?.costKnown ? { total_cost_usd: budget.cost } : {}),
       ...(failure ? { errors: [failure] } : {}),
       ...(finalOutput !== undefined && typeof finalOutput !== "string"

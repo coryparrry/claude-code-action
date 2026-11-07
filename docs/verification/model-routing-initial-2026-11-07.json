@@ -1,0 +1,885 @@
+{
+  "recorded_at": "2026-11-07T17:39:54.020Z",
+  "baseline": {
+    "model": "gpt-6.1-terra",
+    "effort": "high"
+  },
+  "router": {
+    "cheap_model": "gpt-6-luna",
+    "strong_model": "gpt-6.1-terra",
+    "max_cheap_turns": 3
+  },
+  "fixture_sha256": "8d7e609f126a19de80d1dc38755e85e9374184f765290f5051bba34356bfe5f6",
+  "repeats": 2,
+  "tasks": 12,
+  "pricing_source": "https://developers.openai.com/api/docs/pricing",
+  "pricing": {
+    "gpt-6-luna": {
+      "input": 0.1,
+      "cachedInput": 0.01,
+      "output": 0.5,
+      "cacheWrite": 0.125,
+      "longContext": {
+        "input": 0.2,
+        "cachedInput": 0.02,
+        "output": 0.75,
+        "cacheWrite": 0.25
+      }
+    },
+    "gpt-6.1-terra": {
+      "input": 1,
+      "cachedInput": 0.05,
+      "output": 5,
+      "cacheWrite": 1.25,
+      "longContext": {
+        "input": 2,
+        "cachedInput": 0.1,
+        "output": 7.5,
+        "cacheWrite": 2.5
+      }
+    }
+  },
+  "baseline_cost_usd": 0.10476995000000001,
+  "routed_cost_usd": 0.033849950000000004,
+  "savings_fraction": 0.6769116526255858,
+  "baseline_passed": 22,
+  "routed_passed": 24,
+  "runs_per_arm": 24,
+  "paired_regressions": [],
+  "accepted": false,
+  "limitation": "Small synthetic action-runtime suite; does not establish noninferiority across arbitrary repositories, long-context tasks, or hosted GitHub publishing.",
+  "rows": [
+    {
+      "case": "fix-clamp",
+      "repeat": 0,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.0038459999999999996,
+      "turns": 4,
+      "duration_ms": 7725
+    },
+    {
+      "case": "fix-clamp",
+      "repeat": 0,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.00027570000000000003,
+      "turns": 3,
+      "duration_ms": 3094,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 3,
+        "escalated": false,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.00027570000000000003,
+          "gpt-6.1-terra": 0
+        }
+      }
+    },
+    {
+      "case": "fix-median",
+      "repeat": 0,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.00356355,
+      "turns": 5,
+      "duration_ms": 9206,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 3,
+        "escalated": true,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          },
+          {
+            "model": "gpt-6.1-terra",
+            "reason": "shared cheap-model turn allowance exhausted"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.0003673,
+          "gpt-6.1-terra": 0.0031962500000000003
+        }
+      }
+    },
+    {
+      "case": "fix-median",
+      "repeat": 0,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.005285,
+      "turns": 4,
+      "duration_ms": 9633
+    },
+    {
+      "case": "fix-pagination",
+      "repeat": 0,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.006883500000000001,
+      "turns": 5,
+      "duration_ms": 10351
+    },
+    {
+      "case": "fix-pagination",
+      "repeat": 0,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.00034540000000000005,
+      "turns": 3,
+      "duration_ms": 4835,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 3,
+        "escalated": false,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.00034540000000000005,
+          "gpt-6.1-terra": 0
+        }
+      }
+    },
+    {
+      "case": "fix-authorization",
+      "repeat": 0,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.0059615,
+      "turns": 5,
+      "duration_ms": 11163,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 0,
+        "escalated": true,
+        "decisions": [
+          {
+            "model": "gpt-6.1-terra",
+            "reason": "task contains a sensitive path or complex failure mode"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0,
+          "gpt-6.1-terra": 0.0059615
+        }
+      }
+    },
+    {
+      "case": "fix-authorization",
+      "repeat": 0,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.005569,
+      "turns": 5,
+      "duration_ms": 8523
+    },
+    {
+      "case": "fix-retry",
+      "repeat": 0,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.008293,
+      "turns": 4,
+      "duration_ms": 13978
+    },
+    {
+      "case": "fix-retry",
+      "repeat": 0,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.0021725,
+      "turns": 4,
+      "duration_ms": 8565,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 3,
+        "escalated": true,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          },
+          {
+            "model": "gpt-6.1-terra",
+            "reason": "shared cheap-model turn allowance exhausted"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.0003995,
+          "gpt-6.1-terra": 0.001773
+        }
+      }
+    },
+    {
+      "case": "fix-zero-option",
+      "repeat": 0,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.0002683,
+      "turns": 3,
+      "duration_ms": 3766,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 3,
+        "escalated": false,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.0002683,
+          "gpt-6.1-terra": 0
+        }
+      }
+    },
+    {
+      "case": "fix-zero-option",
+      "repeat": 0,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.004789000000000001,
+      "turns": 5,
+      "duration_ms": 7834
+    },
+    {
+      "case": "review-bounds",
+      "repeat": 0,
+      "arm": "baseline",
+      "passed": false,
+      "cost_usd": 0.004326,
+      "turns": 3,
+      "duration_ms": 8580
+    },
+    {
+      "case": "review-bounds",
+      "repeat": 0,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.0002099,
+      "turns": 2,
+      "duration_ms": 3877,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 2,
+        "escalated": false,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.0002099,
+          "gpt-6.1-terra": 0
+        }
+      }
+    },
+    {
+      "case": "review-mutation",
+      "repeat": 0,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.000187,
+      "turns": 2,
+      "duration_ms": 3712,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 2,
+        "escalated": false,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.000187,
+          "gpt-6.1-terra": 0
+        }
+      }
+    },
+    {
+      "case": "review-mutation",
+      "repeat": 0,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.002916,
+      "turns": 3,
+      "duration_ms": 6592
+    },
+    {
+      "case": "review-clean",
+      "repeat": 0,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.003166,
+      "turns": 3,
+      "duration_ms": 6040
+    },
+    {
+      "case": "review-clean",
+      "repeat": 0,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.0001843,
+      "turns": 2,
+      "duration_ms": 3387,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 2,
+        "escalated": false,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.0001843,
+          "gpt-6.1-terra": 0
+        }
+      }
+    },
+    {
+      "case": "review-authorization",
+      "repeat": 0,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.00264,
+      "turns": 2,
+      "duration_ms": 5003,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 0,
+        "escalated": true,
+        "decisions": [
+          {
+            "model": "gpt-6.1-terra",
+            "reason": "task contains a sensitive path or complex failure mode"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0,
+          "gpt-6.1-terra": 0.00264
+        }
+      }
+    },
+    {
+      "case": "review-authorization",
+      "repeat": 0,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.002144,
+      "turns": 2,
+      "duration_ms": 4198
+    },
+    {
+      "case": "review-zero",
+      "repeat": 0,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.002217,
+      "turns": 2,
+      "duration_ms": 5150
+    },
+    {
+      "case": "review-zero",
+      "repeat": 0,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.0001896,
+      "turns": 2,
+      "duration_ms": 3655,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 2,
+        "escalated": false,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.0001896,
+          "gpt-6.1-terra": 0
+        }
+      }
+    },
+    {
+      "case": "review-clean-copy",
+      "repeat": 0,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.0001871,
+      "turns": 2,
+      "duration_ms": 2958,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 2,
+        "escalated": false,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.0001871,
+          "gpt-6.1-terra": 0
+        }
+      }
+    },
+    {
+      "case": "review-clean-copy",
+      "repeat": 0,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.002452,
+      "turns": 2,
+      "duration_ms": 5020
+    },
+    {
+      "case": "fix-clamp",
+      "repeat": 1,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.0002506,
+      "turns": 3,
+      "duration_ms": 3494,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 3,
+        "escalated": false,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.0002506,
+          "gpt-6.1-terra": 0
+        }
+      }
+    },
+    {
+      "case": "fix-clamp",
+      "repeat": 1,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.004482,
+      "turns": 4,
+      "duration_ms": 7973
+    },
+    {
+      "case": "fix-median",
+      "repeat": 1,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.00629025,
+      "turns": 4,
+      "duration_ms": 11527
+    },
+    {
+      "case": "fix-median",
+      "repeat": 1,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.0039664999999999995,
+      "turns": 5,
+      "duration_ms": 10241,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 3,
+        "escalated": true,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          },
+          {
+            "model": "gpt-6.1-terra",
+            "reason": "shared cheap-model turn allowance exhausted"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.00036300000000000004,
+          "gpt-6.1-terra": 0.0036035
+        }
+      }
+    },
+    {
+      "case": "fix-pagination",
+      "repeat": 1,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.0003497,
+      "turns": 3,
+      "duration_ms": 4319,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 3,
+        "escalated": false,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.0003497,
+          "gpt-6.1-terra": 0
+        }
+      }
+    },
+    {
+      "case": "fix-pagination",
+      "repeat": 1,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.005272,
+      "turns": 4,
+      "duration_ms": 9701
+    },
+    {
+      "case": "fix-authorization",
+      "repeat": 1,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.0057469999999999995,
+      "turns": 5,
+      "duration_ms": 9044
+    },
+    {
+      "case": "fix-authorization",
+      "repeat": 1,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.00485,
+      "turns": 4,
+      "duration_ms": 7730,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 0,
+        "escalated": true,
+        "decisions": [
+          {
+            "model": "gpt-6.1-terra",
+            "reason": "task contains a sensitive path or complex failure mode"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0,
+          "gpt-6.1-terra": 0.00485
+        }
+      }
+    },
+    {
+      "case": "fix-retry",
+      "repeat": 1,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.0044808,
+      "turns": 8,
+      "duration_ms": 14724,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 3,
+        "escalated": true,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          },
+          {
+            "model": "gpt-6.1-terra",
+            "reason": "shared cheap-model turn allowance exhausted"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.00042370000000000005,
+          "gpt-6.1-terra": 0.0040571
+        }
+      }
+    },
+    {
+      "case": "fix-retry",
+      "repeat": 1,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.0066302,
+      "turns": 4,
+      "duration_ms": 13113
+    },
+    {
+      "case": "fix-zero-option",
+      "repeat": 1,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.004472,
+      "turns": 4,
+      "duration_ms": 7574
+    },
+    {
+      "case": "fix-zero-option",
+      "repeat": 1,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.0002657,
+      "turns": 3,
+      "duration_ms": 3777,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 3,
+        "escalated": false,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.0002657,
+          "gpt-6.1-terra": 0
+        }
+      }
+    },
+    {
+      "case": "review-bounds",
+      "repeat": 1,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.00023990000000000003,
+      "turns": 2,
+      "duration_ms": 4903,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 2,
+        "escalated": false,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.00023990000000000003,
+          "gpt-6.1-terra": 0
+        }
+      }
+    },
+    {
+      "case": "review-bounds",
+      "repeat": 1,
+      "arm": "baseline",
+      "passed": false,
+      "cost_usd": 0.003206,
+      "turns": 2,
+      "duration_ms": 6824
+    },
+    {
+      "case": "review-mutation",
+      "repeat": 1,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.0032329999999999998,
+      "turns": 3,
+      "duration_ms": 6515
+    },
+    {
+      "case": "review-mutation",
+      "repeat": 1,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.000187,
+      "turns": 2,
+      "duration_ms": 3033,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 2,
+        "escalated": false,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.000187,
+          "gpt-6.1-terra": 0
+        }
+      }
+    },
+    {
+      "case": "review-clean",
+      "repeat": 1,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.0001853,
+      "turns": 2,
+      "duration_ms": 2744,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 2,
+        "escalated": false,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.0001853,
+          "gpt-6.1-terra": 0
+        }
+      }
+    },
+    {
+      "case": "review-clean",
+      "repeat": 1,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.003712,
+      "turns": 3,
+      "duration_ms": 7467
+    },
+    {
+      "case": "review-authorization",
+      "repeat": 1,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.003057,
+      "turns": 3,
+      "duration_ms": 5629
+    },
+    {
+      "case": "review-authorization",
+      "repeat": 1,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.002523,
+      "turns": 2,
+      "duration_ms": 4608,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 0,
+        "escalated": true,
+        "decisions": [
+          {
+            "model": "gpt-6.1-terra",
+            "reason": "task contains a sensitive path or complex failure mode"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0,
+          "gpt-6.1-terra": 0.002523
+        }
+      }
+    },
+    {
+      "case": "review-zero",
+      "repeat": 1,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.0001851,
+      "turns": 2,
+      "duration_ms": 4296,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 2,
+        "escalated": false,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.0001851,
+          "gpt-6.1-terra": 0
+        }
+      }
+    },
+    {
+      "case": "review-zero",
+      "repeat": 1,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.002388,
+      "turns": 2,
+      "duration_ms": 4637
+    },
+    {
+      "case": "review-clean-copy",
+      "repeat": 1,
+      "arm": "baseline",
+      "passed": true,
+      "cost_usd": 0.004394,
+      "turns": 3,
+      "duration_ms": 8816
+    },
+    {
+      "case": "review-clean-copy",
+      "repeat": 1,
+      "arm": "routed",
+      "passed": true,
+      "cost_usd": 0.0001815,
+      "turns": 2,
+      "duration_ms": 3328,
+      "routing": {
+        "cheap_model": "gpt-6-luna",
+        "strong_model": "gpt-6.1-terra",
+        "cheap_calls": 2,
+        "escalated": false,
+        "decisions": [
+          {
+            "model": "gpt-6-luna",
+            "reason": "bounded cheap-model execution"
+          }
+        ],
+        "cost_by_model_usd": {
+          "gpt-6-luna": 0.0001815,
+          "gpt-6.1-terra": 0
+        }
+      }
+    }
+  ]
+}

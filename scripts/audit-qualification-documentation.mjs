@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { parse } from "@babel/parser";
 
-const files = [
-  "scripts/release-qualification/live-runtime.ts",
-  "scripts/audit-qualification-documentation.mjs",
-];
+const files =
+  process.argv.length > 2
+    ? process.argv.slice(2)
+    : [
+        "scripts/release-qualification/live-runtime.ts",
+        "scripts/audit-qualification-documentation.mjs",
+      ];
 const symbols = [];
 
 /** Count named functions, methods and classes with attached documentation. */
@@ -76,5 +79,5 @@ console.log(
 );
 assert.ok(
   coverage >= 0.85,
-  "Qualification code requires at least 85% documentation coverage",
+  "Checked code requires at least 85% documentation coverage",
 );
