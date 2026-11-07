@@ -10,7 +10,7 @@ export function setupCommitMessage(branch, path) {
 }
 export const MANAGED_MARKER = "# Managed by the Codex GitHub Action installer.";
 export const DEFAULT_ACTION_REF =
-  "coryparrry/claude-code-action@8c74aabf3e1bd686cc3cdc3ff0cc27e7c83fd0e3";
+  "coryparrry/claude-code-action@6cfe974c3f774f4ad2ff873cead95d927e63ab9e";
 export const DEFAULT_MODEL = "gpt-6.1-terra";
 export const DEFAULT_TRIGGER_PHRASE = "/codex";
 export const REVIEW_DIFF_PATH = ".git/codex-review.diff";
