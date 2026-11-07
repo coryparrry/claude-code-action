@@ -62,7 +62,8 @@ jobs:
           persist-credentials: false
       - name: Run the exact installed base action with live structured output
         id: runtime
-        uses: coryparrry/claude-code-action/base-action@3cbc03cf0a89a55b2cc898da99b0dcfb95855ea0
+        # Reproduce the installed artifact recorded in the dated qualification report.
+        uses: coryparrry/claude-code-action/base-action@633c206996a8849aedeb77687369e1e7a31e3a37
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           codex_model: gpt-6-luna
