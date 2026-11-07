@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentConfiguration } from "./agent-configuration";
 import { agentDefinitions, catalog, stringList } from "./agent-markdown";
+import { assertNoIssueMcpServer } from "./mcp-names";
 import { parseHooks } from "./agent-hooks";
 
 export async function selectConfiguredAgent(
@@ -26,11 +27,11 @@ export async function selectConfiguredAgent(
         throw new Error("Configured agent requires a string prompt");
       await writeFile(
         join(root, `${agentName}.md`),
-        `---\n${JSON.stringify(metadata)}\n---\n${prompt}`,
+        `---\n${JSON.stringify({ ...metadata, name: agentName })}\n---\n${prompt}`,
         { mode: 0o600 },
       );
     }
-    configuration.agentDirectories.push({ directory: root });
+    configuration.agentDirectories.unshift({ directory: root });
   }
   if (!name) return;
   const selected = (await agentDefinitions(configuration)).find(
@@ -110,7 +111,12 @@ export async function selectConfiguredAgent(
   };
 }
 
-export function childMcpConfig(parent: string, requested: unknown): string {
+/** Select child servers while preserving the main action's reserved namespace. */
+export function childMcpConfig(
+  parent: string,
+  requested: unknown,
+  reserveIssueMcpServer = false,
+): string {
   if (requested === undefined) return parent;
   const available = JSON.parse(parent).mcpServers as Record<string, unknown>;
   const servers: Record<string, unknown> = {};
@@ -119,9 +125,10 @@ export function childMcpConfig(parent: string, requested: unknown): string {
       if (!Object.hasOwn(available, value))
         throw new Error(`Unknown agent MCP server: ${value}`);
       servers[value] = available[value];
-    } else if (value && typeof value === "object" && !Array.isArray(value))
+    } else if (value && typeof value === "object" && !Array.isArray(value)) {
+      if (reserveIssueMcpServer) assertNoIssueMcpServer(value);
       Object.assign(servers, value);
-    else
+    } else
       throw new Error(
         "Agent MCP servers must contain references or server configuration objects",
       );

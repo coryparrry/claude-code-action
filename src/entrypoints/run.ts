@@ -1,4 +1,8 @@
 #!/usr/bin/env bun
+import {
+  initializeIssueReceipts,
+  readCreatedIssues,
+} from "../github/operations/issue-creation-receipts";
 import { recoverRepositoryLearning } from "../github/data/review-memory-candidate";
 import { snapshotGuidance } from "../review/source-evidence";
 
@@ -54,7 +58,10 @@ import {
 import { detectMode } from "../modes/detector";
 import { prepareTagMode } from "../modes/tag";
 import { prepareAgentMode } from "../modes/agent";
-import { checkContainsTrigger } from "../github/validation/trigger";
+import {
+  checkContainsTrigger,
+  isActionCreatedIssueEvent,
+} from "../github/validation/trigger";
 import {
   getReviewSourceMappings,
   restoreConfigFromBase,
@@ -128,6 +135,10 @@ async function run() {
   let prepareCompleted = false;
   try {
     core.exportVariable(
+      "CODEX_CREATED_ISSUES_RECEIPT",
+      initializeIssueReceipts(),
+    );
+    core.exportVariable(
       "CODEX_GIT_DELIVERY_RECEIPT",
       initializeDeliveryReceipt(),
     );
@@ -145,6 +156,11 @@ async function run() {
     // Phase 1: Prepare
     const actionInputsPresent = collectActionInputsPresence();
     context = parseGitHubContext();
+    if (isActionCreatedIssueEvent(context)) {
+      console.log("Action-created issue event skipped");
+      core.setOutput("contains_trigger", "false");
+      return;
+    }
     if (nativeReview) {
       if (!isPullRequestEvent(context) || context.inputs.trackProgress)
         throw new Error(
@@ -316,7 +332,10 @@ async function run() {
         validateBranchName(restoreBase);
       }
       if (restoreBase) {
-        restoredConfigPaths = restoreConfigFromBase(restoreBase);
+        restoredConfigPaths = restoreConfigFromBase(
+          restoreBase,
+          prepareResult.trustedBaseSha,
+        );
       }
     }
 
@@ -349,9 +368,11 @@ async function run() {
     const result: CodexRunResult = await runCodex(promptConfig.path, {
       mcpConfig: prepareResult.mcpConfig,
       ...actionRuntimeOptions(process.env),
+      reserveIssueMcpServer: prepareResult.reserveIssueMcpServer,
+      issuePermissionMode: prepareResult.issuePermissionMode,
       showFullOutput: process.env.INPUT_SHOW_FULL_OUTPUT,
       compatibilityArgs: prepareResult.claudeArgs,
-      settings: process.env.INPUT_SETTINGS,
+      settings: prepareResult.settings,
       plugins: process.env.INPUT_PLUGINS,
       pluginMarketplaces: process.env.INPUT_PLUGIN_MARKETPLACES,
       githubEnvironment: context.inputs.allowedNonWriteUsers
@@ -477,6 +498,14 @@ async function run() {
         core.setOutput("conclusion", "failure");
       }
     }
+
+    const createdIssues = context
+      ? readCreatedIssues(context.repository.owner, context.repository.repo)
+      : [];
+    core.setOutput(
+      "created_issue_urls",
+      JSON.stringify(createdIssues.map((issue) => issue.url)),
+    );
 
     // Update tracking comment
     if (

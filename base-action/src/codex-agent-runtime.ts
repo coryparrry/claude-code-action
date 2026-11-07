@@ -69,12 +69,15 @@ export type AgentRuntimeOptions = {
   signal: AbortSignal;
   maxTurns?: number;
   mcpConfig: string;
+  reserveIssueMcpServer?: boolean;
   mcpEnvironment: Record<string, string>;
   toolEnvironment: Record<string, string>;
   trustedEnvironmentKeys: string[];
   backgroundTasks: Map<string, BackgroundAgentTask>;
   register(secret: string): void;
   redact(text: string): string;
+  /** Publication may reject values that cannot be safely masked in free text. */
+  redactPublication?(text: string): string;
   removeSecretAliases(): void;
   emit(event: OpenAIAgentEvent): void;
   onToolResult?(event: AgentToolEvent): void;
@@ -421,6 +424,8 @@ async function buildContext(
   mcp = await createAgentMcpTools({
     mcpConfig: options.mcpConfig,
     environment: options.mcpEnvironment,
+    redactPublication: options.redactPublication ?? options.redact,
+    reserveIssueMcpServer: options.reserveIssueMcpServer,
     permissions,
     allowedTools: permissions.options.allowedTools,
     disallowedTools: permissions.options.disallowedTools,
@@ -532,7 +537,11 @@ async function buildContext(
       {
         ...options,
         getModel: () => childModel,
-        mcpConfig: childMcpConfig(options.mcpConfig, request.mcpServers),
+        mcpConfig: childMcpConfig(
+          options.mcpConfig,
+          request.mcpServers,
+          options.reserveIssueMcpServer,
+        ),
         setModel: (model) => {
           childModel = options.resolveModel(model);
         },

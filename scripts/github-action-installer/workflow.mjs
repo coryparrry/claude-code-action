@@ -10,7 +10,7 @@ export function setupCommitMessage(branch, path) {
 }
 export const MANAGED_MARKER = "# Managed by the Codex GitHub Action installer.";
 export const DEFAULT_ACTION_REF =
-  "coryparrry/claude-code-action@523e10f03742c9f390e3f16e521aea21b7f08333";
+  "coryparrry/claude-code-action@3cbc03cf0a89a55b2cc898da99b0dcfb95855ea0";
 export const DEFAULT_MODEL = "gpt-6.1-terra";
 export const DEFAULT_TRIGGER_PHRASE = "/codex";
 export const REVIEW_DIFF_PATH = ".git/codex-review.diff";
@@ -114,7 +114,7 @@ jobs:
           trigger_phrase: ${JSON.stringify(DEFAULT_TRIGGER_PHRASE)}
           openai_api_key: \${{ secrets.OPENAI_API_KEY }}
           codex_model: ${JSON.stringify(model)}
-${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_turns: "30"
+${model === DEFAULT_MODEL ? "          codex_effort: high\n" : ""}          max_turns: "30"
           track_progress: "true"
 ${COMMAND_DELIVERY_POLICY}
       - name: Save execution report
@@ -260,7 +260,7 @@ ${COMMAND_DELIVERY_POLICY}
           trigger_phrase: ${JSON.stringify(DEFAULT_TRIGGER_PHRASE)}
           openai_api_key: \${{ secrets.OPENAI_API_KEY }}
           codex_model: ${JSON.stringify(model)}
-${model === DEFAULT_MODEL ? "          codex_effort: max\n" : ""}          max_turns: "60"
+${model === DEFAULT_MODEL ? "          codex_effort: high\n" : ""}          max_turns: "60"
           review_mode: "true"
           codex_sandbox: read-only
           prompt: |

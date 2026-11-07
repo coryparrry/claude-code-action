@@ -61,6 +61,31 @@ describe("restoreConfigFromBase", () => {
     process.chdir(repoDir);
   });
 
+  test("restores the exact permission base even when the remote branch advances", () => {
+    git(["checkout", "main"]);
+    writeRepoFile(
+      ".claude/settings.json",
+      '{"permissions":{"defaultMode":"plan"}}',
+    );
+    git(["add", ".claude/settings.json"]);
+    git(["commit", "-m", "selected permission base"]);
+    const selected = git(["rev-parse", "HEAD"]).trim();
+    git(["push", "origin", "main"]);
+    writeRepoFile(
+      ".claude/settings.json",
+      '{"permissions":{"defaultMode":"acceptEdits"}}',
+    );
+    git(["add", ".claude/settings.json"]);
+    git(["commit", "-m", "later branch change"]);
+    git(["push", "origin", "main"]);
+    git(["checkout", "pr"]);
+    restoreConfigFromBase("main", selected);
+    expect(
+      JSON.parse(readFileSync(join(repoDir, ".claude/settings.json"), "utf8"))
+        .permissions.defaultMode,
+    ).toBe("plan");
+  });
+
   test("records only real preserved head files as evidence mappings", () => {
     writeRepoFile("AGENTS.md", "head instructions\n");
     git(["add", "AGENTS.md"]);

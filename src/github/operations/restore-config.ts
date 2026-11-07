@@ -322,11 +322,18 @@ function ensureClaudePrExcludedFromGit(): void {
  *
  * @param baseBranch - PR base branch name. Must be pre-validated (branch.ts
  *   calls validateBranchName on it before returning).
+ * @param trustedBaseSha - Exact base commit used for permission preflight, when available.
  * @returns The paths whose working-tree state now comes from the base branch
  *   rather than the PR. Callers that stage files must exclude these, or they
  *   will commit the revert back onto the PR author's branch.
  */
-export function restoreConfigFromBase(baseBranch: string): string[] {
+export function restoreConfigFromBase(
+  baseBranch: string,
+  trustedBaseSha?: string,
+): string[] {
+  if (trustedBaseSha && !/^[a-f0-9]{40}$/i.test(trustedBaseSha))
+    throw new Error("Trusted configuration base must be a full commit SHA");
+  const baseRevision = trustedBaseSha ?? `origin/${baseBranch}`;
   reviewSources.clear();
   const sensitivePaths = new Set(SENSITIVE_PATHS);
   addCodexInstructionPaths(
@@ -336,7 +343,7 @@ export function restoreConfigFromBase(baseBranch: string): string[] {
       .filter(Boolean),
   );
   console.log(
-    `Restoring ${SENSITIVE_PATHS.join(", ")} from origin/${baseBranch} (PR head is untrusted)`,
+    `Restoring ${SENSITIVE_PATHS.join(", ")} from ${baseRevision} (PR head is untrusted)`,
   );
 
   // Snapshot every PR-authored sensitive path into .claude-pr/ before deletion
@@ -386,7 +393,7 @@ export function restoreConfigFromBase(baseBranch: string): string[] {
     [
       "fetch",
       "origin",
-      baseBranch,
+      trustedBaseSha ?? baseBranch,
       ...fetchDepthArgs(1),
       "--no-recurse-submodules",
     ],
@@ -398,17 +405,15 @@ export function restoreConfigFromBase(baseBranch: string): string[] {
 
   addCodexInstructionPaths(
     sensitivePaths,
-    execFileSync(
-      "git",
-      ["ls-tree", "-r", "-z", "--name-only", `origin/${baseBranch}`],
-      { encoding: "utf8" },
-    )
+    execFileSync("git", ["ls-tree", "-r", "-z", "--name-only", baseRevision], {
+      encoding: "utf8",
+    })
       .split("\0")
       .filter(Boolean),
   );
   for (const p of sensitivePaths) {
     try {
-      execFileSync("git", ["checkout", `origin/${baseBranch}`, "--", p], {
+      execFileSync("git", ["checkout", baseRevision, "--", p], {
         stdio: "pipe",
       });
     } catch {

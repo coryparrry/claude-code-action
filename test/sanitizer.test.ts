@@ -277,7 +277,7 @@ describe("sanitizeContent", () => {
 
 describe("redactGitHubTokens", () => {
   it("should redact personal access tokens (ghp_)", () => {
-    const token = "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";
+    const token = "ghp_" + "A".repeat(36);
     expect(redactGitHubTokens(`Token: ${token}`)).toBe(
       "Token: [REDACTED_GITHUB_TOKEN]",
     );
@@ -287,14 +287,14 @@ describe("redactGitHubTokens", () => {
   });
 
   it("should redact OAuth tokens (gho_)", () => {
-    const token = "gho_16C7e42F292c6912E7710c838347Ae178B4a";
+    const token = "gho_" + "A".repeat(36);
     expect(redactGitHubTokens(`OAuth: ${token}`)).toBe(
       "OAuth: [REDACTED_GITHUB_TOKEN]",
     );
   });
 
   it("should redact user-to-server tokens (ghu_)", () => {
-    const token = "ghu_16C7e42F292c6912E7710c838347Ae178B4a";
+    const token = "ghu_" + "A".repeat(36);
     expect(redactGitHubTokens(`User token: ${token}`)).toBe(
       "User token: [REDACTED_GITHUB_TOKEN]",
     );
@@ -304,14 +304,14 @@ describe("redactGitHubTokens", () => {
   });
 
   it("should redact installation tokens (ghs_)", () => {
-    const token = "ghs_xz7yzju2SZjGPa0dUNMAx0SH4xDOCS31LXQW";
+    const token = "ghs_" + "A".repeat(36);
     expect(redactGitHubTokens(`Install token: ${token}`)).toBe(
       "Install token: [REDACTED_GITHUB_TOKEN]",
     );
   });
 
   it("should redact refresh tokens (ghr_)", () => {
-    const token = "ghr_1B4a2e77838347a253e56d7b5253e7d11667";
+    const token = "ghr_" + "A".repeat(36);
     expect(redactGitHubTokens(`Refresh: ${token}`)).toBe(
       "Refresh: [REDACTED_GITHUB_TOKEN]",
     );
@@ -327,7 +327,7 @@ describe("redactGitHubTokens", () => {
 
   it("should handle tokens in code blocks", () => {
     const content = `\`\`\`bash
-export GITHUB_TOKEN=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
+export GITHUB_TOKEN=${"ghp_" + "A".repeat(36)}
 \`\`\``;
     const expected = `\`\`\`bash
 export GITHUB_TOKEN=[REDACTED_GITHUB_TOKEN]
@@ -337,7 +337,12 @@ export GITHUB_TOKEN=[REDACTED_GITHUB_TOKEN]
 
   it("should handle multiple tokens in one text", () => {
     const content =
-      "Token 1: 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 and token 2: gho_16C7e42F292c6912E7710c838347Ae178B4a";
+      "Token 1: " +
+      "ghp_" +
+      "A".repeat(36) +
+      " and token 2: " +
+      "gho_" +
+      "A".repeat(36);
     expect(redactGitHubTokens(content)).toBe(
       "Token 1: [REDACTED_GITHUB_TOKEN] and token 2: [REDACTED_GITHUB_TOKEN]",
     );
@@ -345,7 +350,7 @@ export GITHUB_TOKEN=[REDACTED_GITHUB_TOKEN]
 
   it("should handle tokens in URLs", () => {
     const content =
-      "https://api.github.com/user?access_token=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";
+      "https://api.github.com/user?access_token=" + "ghp_" + "A".repeat(36);
     expect(redactGitHubTokens(content)).toBe(
       "https://api.github.com/user?access_token=[REDACTED_GITHUB_TOKEN]",
     );
@@ -353,7 +358,10 @@ export GITHUB_TOKEN=[REDACTED_GITHUB_TOKEN]
 
   it("should not redact partial matches or invalid tokens", () => {
     const content =
-      "This is not a token: ghp_short or gho_toolong1234567890123456789012345678901234567890";
+      "This is not a token: ghp_short or " +
+      "gho_" +
+      "A".repeat(36) +
+      "01234567890";
     expect(redactGitHubTokens(content)).toBe(content);
   });
 
@@ -371,9 +379,9 @@ export GITHUB_TOKEN=[REDACTED_GITHUB_TOKEN]
 
 describe("redactSecrets", () => {
   it("should still redact GitHub tokens", () => {
-    expect(
-      redactSecrets("Token: ghs_xz7yzju2SZjGPa0dUNMAx0SH4xDOCS31LXQW"),
-    ).toBe("Token: [REDACTED_GITHUB_TOKEN]");
+    expect(redactSecrets("Token: " + "ghs_" + "A".repeat(36))).toBe(
+      "Token: [REDACTED_GITHUB_TOKEN]",
+    );
   });
 
   it("should redact Anthropic API keys (sk-ant-)", () => {
@@ -389,17 +397,20 @@ describe("redactSecrets", () => {
   });
 
   it("should redact AWS access key ids", () => {
-    expect(redactSecrets("aws_access_key_id = AKIAIOSFODNN7EXAMPLE")).toBe(
-      "aws_access_key_id = [REDACTED_AWS_KEY_ID]",
-    );
-    expect(redactSecrets("temp creds ASIAIOSFODNN7EXAMPLE end")).toBe(
-      "temp creds [REDACTED_AWS_KEY_ID] end",
-    );
+    expect(
+      redactSecrets("aws_access_key_id = " + "AKIA" + "A".repeat(16)),
+    ).toBe("aws_access_key_id = [REDACTED_AWS_KEY_ID]");
+    expect(
+      redactSecrets("temp creds " + "ASIA" + "A".repeat(16) + " end"),
+    ).toBe("temp creds [REDACTED_AWS_KEY_ID] end");
   });
 
   it("should not redact AWS-like strings that do not fit the format", () => {
     const content =
-      "AKIAtest AKIA123 AKIAIOSFODNN7EXAMPLEXYZ akiaiosfodnn7example";
+      "AKIAtest AKIA123 " +
+      "AKIA" +
+      "A".repeat(16) +
+      "XYZ akiaiosfodnn7example";
     expect(redactSecrets(content)).toBe(content);
   });
 
@@ -428,16 +439,19 @@ describe("redactSecrets", () => {
   it("should redact tokens that follow a JSON escape sequence", () => {
     const serialized = JSON.stringify({
       content:
-        "line one\nGITHUB_TOKEN=ghs_xz7yzju2SZjGPa0dUNMAx0SH4xDOCS31LXQW\tsk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWx",
+        "line one\nGITHUB_TOKEN=" +
+        "ghs_" +
+        "A".repeat(36) +
+        "\tsk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWx",
     });
     const redacted = redactSecrets(serialized);
     expect(redacted).toContain("[REDACTED_GITHUB_TOKEN]");
     expect(redacted).toContain("[REDACTED_ANTHROPIC_KEY]");
-    expect(redacted).not.toContain("ghs_xz7yzju2SZjGPa0dUNMAx0SH4xDOCS31LXQW");
+    expect(redacted).not.toContain("ghs_" + "A".repeat(36));
   });
 
   it("should redact tokens preceded by ANSI color codes", () => {
-    const ghp = "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";
+    const ghp = "ghp_" + "A".repeat(36);
     const anthropic =
       "sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcdefgh";
     expect(redactSecrets(`\x1b[31m${ghp}\x1b[0m`)).toBe(
@@ -446,21 +460,21 @@ describe("redactSecrets", () => {
     expect(redactSecrets(`key=\x1b[32m${anthropic}\x1b[39m`)).toBe(
       "key=\x1b[32m[REDACTED_ANTHROPIC_KEY]\x1b[39m",
     );
-    expect(redactSecrets(`\x1b[1mAKIAIOSFODNN7EXAMPLE\x1b[0m`)).toBe(
+    expect(redactSecrets(`\x1b[1m${"AKIA" + "A".repeat(16)}\x1b[0m`)).toBe(
       "\x1b[1m[REDACTED_AWS_KEY_ID]\x1b[0m",
     );
   });
 
   it("should redact tokens that follow other JSON escapes", () => {
-    const ghp = "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";
+    const ghp = "ghp_" + "A".repeat(36);
     const serialized = JSON.stringify({
       colored: `\x1b[31m${ghp}`,
       formfeed: `\f${ghp}`,
-      quoted: `"AKIAIOSFODNN7EXAMPLE"`,
+      quoted: `"${"AKIA" + "A".repeat(16)}"`,
     });
     const redacted = redactSecrets(serialized);
     expect(redacted).not.toContain(ghp);
-    expect(redacted).not.toContain("AKIAIOSFODNN7EXAMPLE");
+    expect(redacted).not.toContain("AKIA" + "A".repeat(16));
     expect(redacted).toContain("[REDACTED_GITHUB_TOKEN]");
     expect(redacted).toContain("[REDACTED_AWS_KEY_ID]");
   });
@@ -478,23 +492,31 @@ describe("redactSecrets", () => {
 describe("sanitizeContent with token redaction", () => {
   it("should only redact GitHub tokens from inbound content", () => {
     const content =
-      "docs example key AKIAIOSFODNN7EXAMPLE and token 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";
+      "docs example key " +
+      "AKIA" +
+      "A".repeat(16) +
+      " and token " +
+      "ghp_" +
+      "A".repeat(36);
     expect(sanitizeContent(content)).toBe(
-      "docs example key AKIAIOSFODNN7EXAMPLE and token [REDACTED_GITHUB_TOKEN]",
+      "docs example key " +
+        "AKIA" +
+        "A".repeat(16) +
+        " and token [REDACTED_GITHUB_TOKEN]",
     );
   });
 
   it("should redact tokens as part of full sanitization", () => {
     const content = `
-      <!-- Hidden comment with token: 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 -->
-      Here's some text with a token: gho_16C7e42F292c6912E7710c838347Ae178B4a
+      <!-- Hidden comment with token: ${"ghp_" + "A".repeat(36)} -->
+      Here's some text with a token: ${"gho_" + "A".repeat(36)}
       And invisible chars: test\u200Btoken
     `;
 
     const sanitized = sanitizeContent(content);
 
-    expect(sanitized).not.toContain("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");
-    expect(sanitized).not.toContain("gho_16C7e42F292c6912E7710c838347Ae178B4a");
+    expect(sanitized).not.toContain("ghp_" + "A".repeat(36));
+    expect(sanitized).not.toContain("gho_" + "A".repeat(36));
     expect(sanitized).not.toContain("<!-- Hidden comment");
     expect(sanitized).not.toContain("\u200B");
     expect(sanitized).toContain("[REDACTED_GITHUB_TOKEN]");
@@ -529,19 +551,23 @@ describe("outbound comment sanitization and redaction", () => {
   });
   it("should sanitize content and redact all credential types for public comments", () => {
     const rawComment =
-      "Done! Configured AWS AKIAIOSFODNN7EXAMPLE, Anthropic sk-ant-api03-abcdefghijklmnopqrstuvwxyz1234567890, Slack xoxb-1234567890-abcdefghijkl-mnopqrstuvwx, and GitHub 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 <!-- secret note -->";
+      "Done! Configured AWS " +
+      "AKIA" +
+      "A".repeat(16) +
+      ", Anthropic sk-ant-api03-abcdefghijklmnopqrstuvwxyz1234567890, Slack xoxb-1234567890-abcdefghijkl-mnopqrstuvwx, and GitHub " +
+      "ghp_" +
+      "A".repeat(36) +
+      " <!-- secret note -->";
     const sanitizedAndRedacted = redactSecrets(sanitizeContent(rawComment));
 
-    expect(sanitizedAndRedacted).not.toContain("AKIAIOSFODNN7EXAMPLE");
+    expect(sanitizedAndRedacted).not.toContain("AKIA" + "A".repeat(16));
     expect(sanitizedAndRedacted).not.toContain(
       "sk-ant-api03-abcdefghijklmnopqrstuvwxyz1234567890",
     );
     expect(sanitizedAndRedacted).not.toContain(
       "xoxb-1234567890-abcdefghijkl-mnopqrstuvwx",
     );
-    expect(sanitizedAndRedacted).not.toContain(
-      "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",
-    );
+    expect(sanitizedAndRedacted).not.toContain("ghp_" + "A".repeat(36));
     expect(sanitizedAndRedacted).not.toContain("secret note");
 
     expect(sanitizedAndRedacted).toContain("[REDACTED_AWS_KEY_ID]");
@@ -549,4 +575,77 @@ describe("outbound comment sanitization and redaction", () => {
     expect(sanitizedAndRedacted).toContain("[REDACTED_SLACK_TOKEN]");
     expect(sanitizedAndRedacted).toContain("[REDACTED_GITHUB_TOKEN]");
   });
+});
+
+it("bounds work on long scheme-like CI log lines", async () => {
+  const source = new URL("../src/github/utils/sanitizer.ts", import.meta.url)
+    .pathname;
+  const child = Bun.spawn({
+    cmd: [
+      process.execPath,
+      "--no-env-file",
+      "-e",
+      `import { redactSecrets } from ${JSON.stringify(source)}; const value="a.".repeat(1000000)+"://host @x"; if(redactSecrets(value)!==value)process.exit(1);`,
+    ],
+    env: { PATH: process.env.PATH! },
+    signal: AbortSignal.timeout(5000),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expect(await child.exited).toBe(0);
+});
+
+it("keeps credential-free URL matches inside string and markup boundaries", () => {
+  const examples = [
+    JSON.stringify({ url: "https://example.org", email: "alice@example.net" }),
+    "{'url':'https://example.org','email':'alice@example.net'}",
+    "['https://example.org:443','alice@example.net']",
+    '<a href="https://example.org">alice@example.net</a>',
+    "`https://example.org` alice@example.net",
+  ];
+  for (const value of examples) expect(redactSecrets(value)).toBe(value);
+  const credentials = JSON.stringify({
+    url: "postgres://reader:opaque@db.example/report",
+    email: "alice@example.net",
+  });
+  expect(JSON.parse(redactSecrets(credentials))).toEqual({
+    url: "postgres://[REDACTED]@db.example/report",
+    email: "alice@example.net",
+  });
+});
+
+it("masks legal apostrophes in raw and double-quoted URL passwords", () => {
+  const url = "postgres://reader:op'aque@db.example/report";
+  const masked = "postgres://[REDACTED]@db.example/report";
+  expect(redactSecrets(url)).toBe(masked);
+  expect(redactSecrets(`'${url}'`)).toBe(`'${masked}'`);
+  expect(
+    JSON.parse(
+      redactSecrets(JSON.stringify({ url, email: "alice@example.net" })),
+    ),
+  ).toEqual({ url: masked, email: "alice@example.net" });
+  expect(
+    redactSecrets(
+      "{'url':'https://reader:opaque@db.example','email':'alice@example.net'}",
+    ),
+  ).toBe("{'url':'https://[REDACTED]@db.example','email':'alice@example.net'}");
+});
+
+it("masks connection passwords after ANSI and serialized escape boundaries", () => {
+  const url = "postgres://reader:opaque@db.example/report";
+  const masked = "postgres://[REDACTED]@db.example/report";
+  for (const prefix of [
+    "\x1b[31m",
+    "\x1b[m",
+    "\x1b[;m",
+    "\x1b[38;2;255;0;0m",
+    "\x1b[" + "1;".repeat(2000) + "31m",
+    String.raw`\n`,
+    String.raw`\u001b[31m`,
+  ]) {
+    expect(redactSecrets(prefix + url)).toBe(prefix + masked);
+    expect(redactSecrets(prefix + "ssh://git@github.com/owner/repo.git")).toBe(
+      prefix + "ssh://git@github.com/owner/repo.git",
+    );
+  }
 });

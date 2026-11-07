@@ -47,12 +47,12 @@ jobs:
         with:
           fetch-depth: 0
       - id: agent
-        uses: coryparrry/claude-code-action@523e10f03742c9f390e3f16e521aea21b7f08333
+        uses: coryparrry/claude-code-action@3cbc03cf0a89a55b2cc898da99b0dcfb95855ea0
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           codex_model: "gpt-6.1-terra"
-          codex_effort: max
+          codex_effort: high
           max_turns: "30"
           track_progress: "true"
           disallowed_tools: Bash,PowerShell
@@ -197,12 +197,12 @@ jobs:
         run: >-
           git diff --no-ext-diff --no-textconv "$CODEX_PR_BASE_SHA...$CODEX_PR_HEAD_SHA" -- > .git/codex-review.diff
       - id: agent
-        uses: coryparrry/claude-code-action@523e10f03742c9f390e3f16e521aea21b7f08333
+        uses: coryparrry/claude-code-action@3cbc03cf0a89a55b2cc898da99b0dcfb95855ea0
         with:
           trigger_phrase: "/codex"
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           codex_model: "gpt-6.1-terra"
-          codex_effort: max
+          codex_effort: high
           max_turns: "60"
           review_mode: "true"
           codex_sandbox: read-only

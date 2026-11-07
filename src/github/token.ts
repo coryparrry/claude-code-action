@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { createPrivateKey, sign as signBytes } from "node:crypto";
 import * as core from "@actions/core";
+import { normalizeGitHubAppPrivateKey } from "../../base-action/src/github-app-key";
 
 const DEFAULT_PERMISSIONS: Record<string, string> = {
   contents: "write",
@@ -36,7 +37,7 @@ function appCredentials() {
 }
 
 function createAppJwt(appId: string, privateKey: string): string {
-  const normalizedKey = privateKey.replace(/\\n/g, "\n");
+  const normalizedKey = normalizeGitHubAppPrivateKey(privateKey);
   core.setSecret(privateKey);
   if (normalizedKey !== privateKey) core.setSecret(normalizedKey);
   try {

@@ -1,0 +1,36 @@
+{
+  "implementation_pin": "a6b7ec0bdd4ed98520d40c727bb9be85946f6e0b",
+  "driver_source": "1e16779627953b6338c0fd9484620035450723c8",
+  "qualified_source_ci": 41368047400,
+  "driver_ci": 41368603697,
+  "qualified_tests": 1598,
+  "failures": 0,
+  "assertions": 5962,
+  "test_files": 118,
+  "documentation": {
+    "documented_named_symbols": 21,
+    "total": 22,
+    "minimum": 0.85
+  },
+  "exact_pin_live_run": 41368603724,
+  "success": {
+    "issue": "https://github.com/coryparrry/claude-code-action/issues/30",
+    "tool_calls": 2,
+    "actual_issues": 1,
+    "head_unchanged": true,
+    "closed": true
+  },
+  "agent_failure": {
+    "issue": "https://github.com/coryparrry/claude-code-action/issues/31",
+    "expected_failure": true,
+    "confirmed_url_output": true,
+    "confirmed_url_tracking": true,
+    "head_unchanged": true,
+    "closed": true
+  },
+  "read_only_token_denied": true,
+  "native_review_findings_fixed": 10,
+  "issues_setting_preserved": true,
+  "local_tests_run": false,
+  "status": "passed"
+}

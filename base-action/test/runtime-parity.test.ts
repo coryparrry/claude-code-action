@@ -1,3 +1,14 @@
+import { getExecutionFilePath } from "../src/execution-file";
+import { prepareAgentMode } from "../../src/modes/agent";
+import * as actorValidation from "../../src/github/validation/actor";
+import * as gitConfiguration from "../../src/github/operations/git-config";
+import * as mcpPreparation from "../../src/mcp/install-mcp-server";
+import { resolveActionPermissions } from "../../src/mcp/install-mcp-server";
+import {
+  createMockAutomationContext,
+  createMockContext,
+} from "../../test/mockContext";
+import { actionCreatedIssueMarker } from "../../src/github/issue-origin";
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import * as core from "@actions/core";
 import {
@@ -6,7 +17,14 @@ import {
   type ModelRequest,
   type ModelResponse,
 } from "@openai/agents";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCodex, type CodexOptions } from "../src/run-codex";
@@ -463,3 +481,393 @@ describe("runtime parity controls", () => {
     }
   }
 });
+
+test.each(["true", "false"])(
+  "issue publication masks provider and App credentials while preserving %s",
+  async (flag) => {
+    const credential = "opaque-azure-fixture-987654321";
+    const pem =
+      "-----BEGIN PRIVATE KEY-----\nsynthetic-app-credential\n-----END PRIVATE KEY-----";
+    const escapedPem = pem.replaceAll("\n", "\\n");
+    process.env.GITHUB_APP_PRIVATE_KEY = escapedPem;
+    process.env.GITHUB_TOKEN_PROVIDED = flag;
+    delete process.env.OPENAI_API_KEY;
+    process.env.OPENAI_PROVIDER = "azure";
+    process.env.OPENAI_API_VERSION = "2025-03-01-preview";
+    process.env.AZURE_OPENAI_API_KEY = credential;
+    process.env.AZURE_OPENAI_ENDPOINT = "https://fixture.openai.azure.com";
+    await writeFile(join(directory, "reproduction.txt"), credential);
+    await mkdir(join(directory, ".claude"), { recursive: true });
+    await writeFile(
+      join(directory, ".claude/settings.json"),
+      '{"permissions":{"defaultMode":"plan"}}',
+    );
+    const posts: any[] = [];
+    const http = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      /** Capture the real scoped issue server's outgoing REST payload. */
+      async fetch(request) {
+        posts.push(await request.json());
+        return Response.json(
+          {
+            number: 1,
+            title: posts[0].title,
+            html_url: "https://github.com/owner/repo/issues/1",
+          },
+          { status: 201 },
+        );
+      },
+    });
+    const model = new ScriptedModel([
+      call("Read", { file_path: join(directory, "reproduction.txt") }),
+      call("mcp__github_issues__create_issue", {
+        title: `Report true and false ${credential}`,
+        body: `Literal <img alt="Example"> return true; enabled: false ${pem} ${escapedPem}`,
+        labels: ["true", "false", credential],
+      }),
+      message("Created"),
+    ]);
+    try {
+      await runCodex(
+        prompt,
+        options(model, {
+          timeoutMs: 10000,
+          reserveIssueMcpServer: true,
+          issuePermissionMode: "acceptEdits",
+          settingSources: ["project"],
+          mcpConfig: JSON.stringify({
+            mcpServers: {
+              github_issues: {
+                command: process.execPath,
+                args: [
+                  join(
+                    import.meta.dir,
+                    "../../src/mcp/github-issues-server.ts",
+                  ),
+                ],
+                env: {
+                  GITHUB_TOKEN: "fixture-token",
+                  REPO_OWNER: "owner",
+                  REPO_NAME: "repo",
+                  GITHUB_WORKFLOW_REF:
+                    "owner/repo/.github/workflows/create.yml@refs/heads/main",
+                  GITHUB_API_URL: String(http.url).replace(/\/$/, ""),
+                },
+              },
+            },
+          }),
+        }),
+      );
+      expect(posts).toHaveLength(1);
+      expect(JSON.stringify(posts)).not.toContain(credential);
+      expect(posts[0]).toMatchObject({
+        title: "Report true and false [REDACTED]",
+        body: `${actionCreatedIssueMarker("owner/repo/.github/workflows/create.yml@refs/heads/main")}\n\nLiteral <img alt="Example"> return true; enabled: false [REDACTED] [REDACTED]`,
+        labels: ["true", "false", "[REDACTED]"],
+      });
+    } finally {
+      http.stop(true);
+    }
+  },
+);
+
+test.each([
+  "args",
+  "settings",
+  "direct",
+  "main-read-only",
+  "main-project-plan",
+  "main-writer-conflict",
+  "main-writer-conflict-alias",
+  "main-restored",
+  "main-prepared",
+] as const)(
+  "runtime retains caller-owned github_issues servers from %s",
+  async (source) => {
+    const server = join(directory, "standalone-mcp.cjs");
+    await writeFile(
+      server,
+      String.raw`const readline = require("node:readline");
+readline.createInterface({input:process.stdin}).on("line",line=>{
+  const message=JSON.parse(line);
+  if(message.id===undefined)return;
+  const result=message.method==="initialize"
+    ? {protocolVersion:"2024-11-05",capabilities:{tools:{}},serverInfo:{name:"standalone",version:"1"}}
+    : message.method==="tools/list"
+      ? {tools:[{name:"proof",description:"Return a standalone proof",inputSchema:{type:"object",properties:{},additionalProperties:false}}]}
+      : {content:[{type:"text",text:"standalone proof"}]};
+  process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:message.id,result})+"\n");
+});
+`,
+    );
+    const config = JSON.stringify({
+      mcpServers: { github_issues: { command: "node", args: [server] } },
+    });
+    const model = new ScriptedModel([
+      call("mcp__github_issues__proof", {}),
+      message(),
+    ]);
+    const extra =
+      source === "args"
+        ? { compatibilityArgs: `--mcp-config '${config}'` }
+        : source === "settings"
+          ? { settings: config }
+          : { mcpConfig: config };
+    if (source.startsWith("main-") && source !== "main-prepared") {
+      if (source === "main-read-only") process.env.CODEX_SANDBOX = "read-only";
+      const callerConfig =
+        source === "main-writer-conflict-alias"
+          ? config.replace('"github_issues"', '"github:issues"')
+          : config;
+      process.env.CODEX_ARGS = `--allowedTools mcp__github_issues__proof --mcp-config '${callerConfig}'`;
+      if (source === "main-restored") {
+        const file = join(directory, "workflow-mcp.json");
+        await writeFile(
+          file,
+          '{"mcpServers":{"github_issues":{"command":"must-not-start"}}}',
+        );
+        process.env.CODEX_ARGS = `--allowedTools mcp__github_issues__proof --mcp-config '${file}'`;
+      }
+      if (!["main-read-only", "main-restored"].includes(source)) {
+        await mkdir(join(directory, ".claude"));
+        await writeFile(
+          join(directory, ".claude/settings.json"),
+          '{"permissions":{"defaultMode":"plan"}}',
+        );
+      }
+      const permission = await resolveActionPermissions(
+        "",
+        source === "main-read-only"
+          ? createMockAutomationContext()
+          : createMockContext({
+              eventName: "issues",
+              eventAction: "opened",
+              isPR: false,
+              actor: "request-author",
+              payload: { issue: { user: { login: "request-author" } } } as any,
+            }),
+        "tag",
+      );
+      expect(permission.reserveIssueMcpServer).toBe(
+        source !== "main-read-only",
+      );
+      if (source === "main-restored")
+        await writeFile(
+          join(directory, "workflow-mcp.json"),
+          '{"mcpServers":{}}',
+        );
+      Object.assign(extra, {
+        reserveIssueMcpServer: permission.reserveIssueMcpServer,
+        sandbox: source === "main-read-only" ? "read-only" : "workspace-write",
+        settingSources: ["project"],
+        mcpConfig:
+          source === "main-restored"
+            ? config
+            : JSON.stringify({
+                mcpServers: { github_issues: { command: "must-not-start" } },
+              }),
+        compatibilityArgs: process.env.CODEX_ARGS,
+        ...(source.startsWith("main-writer-conflict")
+          ? { issuePermissionMode: "acceptEdits" }
+          : {}),
+      });
+    }
+    if (source === "main-prepared") {
+      process.env.ALLOWED_TOOLS =
+        "mcp__github_issues__create_issue,mcp__github_issues__proof";
+      process.env.CODEX_ARGS = "--allowedTools mcp__github_issues__proof";
+      const spies = [
+        spyOn(actorValidation, "checkHumanActor").mockResolvedValue(undefined),
+        spyOn(gitConfiguration, "configureGitAuth").mockResolvedValue(
+          undefined,
+        ),
+        spyOn(mcpPreparation, "prepareMcpConfig").mockResolvedValue(config),
+      ];
+      try {
+        const prepared = await prepareAgentMode({
+          context: createMockAutomationContext({
+            inputs: { prompt: "Inspect the issue" },
+          }),
+          octokit: {} as any,
+          githubToken: "fixture-token",
+        });
+        expect(prepared.reserveIssueMcpServer).toBe(true);
+        Object.assign(extra, {
+          compatibilityArgs: prepared.claudeArgs,
+          mcpConfig: prepared.mcpConfig,
+          reserveIssueMcpServer: prepared.reserveIssueMcpServer,
+          issuePermissionMode: prepared.issuePermissionMode,
+        });
+      } finally {
+        for (const spy of spies) spy.mockRestore();
+      }
+    }
+    if (source.startsWith("main-writer-conflict")) {
+      await expect(runCodex(prompt, options(model, extra))).rejects.toThrow(
+        "github_issues is reserved",
+      );
+      expect(model.requests).toHaveLength(0);
+      return;
+    }
+    const result = await runCodex(prompt, options(model, extra));
+    expect(result.conclusion).toBe("success");
+    expect(JSON.stringify(model.requests[1]?.input)).toContain(
+      "standalone proof",
+    );
+  },
+);
+
+test("main-action issue writes honor project plan mode before tag's editing default", async () => {
+  await mkdir(join(directory, ".claude"), { recursive: true });
+  await writeFile(
+    join(directory, ".claude/settings.json"),
+    '{"permissions":{"defaultMode":"plan"}}',
+  );
+  const model = new ScriptedModel([
+    async (request) => {
+      expect(
+        request.tools.some((tool) =>
+          tool.name.startsWith("mcp__github_issues__"),
+        ),
+      ).toBe(false);
+      return message("Planning only");
+    },
+  ]);
+  const result = await runCodex(
+    prompt,
+    options(model, {
+      reserveIssueMcpServer: true,
+      settingSources: ["project"],
+      compatibilityArgs: "--permission-mode acceptEdits",
+      mcpConfig: JSON.stringify({
+        mcpServers: { github_issues: { command: "must-not-start" } },
+      }),
+    }),
+  );
+  expect(result.conclusion).toBe("success");
+});
+
+test.each(["opaque-plugin-option-fixture", 0, "x", false])(
+  "sensitive plugin option %s is handled safely at publication",
+  async (credential) => {
+    const plugin = join(directory, "private-plugin");
+    await mkdir(join(plugin, ".claude-plugin"), { recursive: true });
+    const server = join(plugin, "diagnostic.cjs");
+    await writeFile(
+      server,
+      String.raw`const readline=require("node:readline");
+readline.createInterface({input:process.stdin}).on("line",line=>{
+ const message=JSON.parse(line); if(message.id===undefined)return;
+ const result=message.method==="initialize"
+ ? {protocolVersion:"2024-11-05",capabilities:{tools:{}},serverInfo:{name:"private-diagnostic",version:"1"}}
+ : message.method==="tools/list"
+ ? {tools:[{name:"diagnostic",description:"Sensitive diagnostic fixture",inputSchema:{type:"object",properties:{},additionalProperties:false}}]}
+ : {content:[{type:"text",text:"plugin diagnostic "+process.env.AUTH}]};
+ process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:message.id,result})+"\n");
+});`,
+    );
+    await writeFile(
+      join(plugin, ".claude-plugin/plugin.json"),
+      JSON.stringify({
+        name: "private-diagnostic",
+        userConfig: {
+          opaque: { type: typeof credential, sensitive: true, required: true },
+        },
+        mcpServers: {
+          probe: {
+            command: "node",
+            args: [server],
+            env: { AUTH: "${user_config.opaque}" },
+          },
+        },
+      }),
+    );
+    const posts: any[] = [];
+    const http = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      /** Capture publication after plugin-specific credential registration. */
+      async fetch(request) {
+        posts.push(await request.json());
+        return Response.json(
+          {
+            number: 1,
+            title: "Plugin diagnostic",
+            html_url: "https://github.com/owner/repo/issues/1",
+          },
+          { status: 201 },
+        );
+      },
+    });
+    const model = new ScriptedModel([
+      async (request) => {
+        const tool = request.tools.find((tool) =>
+          tool.name.endsWith("__diagnostic"),
+        );
+        expect(tool).toBeDefined();
+        return call(tool!.name, {});
+      },
+      call("mcp__github_issues__create_issue", {
+        title: "Plugin diagnostic",
+        body: `Diagnostic 2020 at http://127.0.0.1/v1.0; plugin diagnostic ${credential}`,
+      }),
+      message(),
+    ]);
+    try {
+      const execution = runCodex(
+        prompt,
+        options(model, {
+          timeoutMs: 10000,
+          reserveIssueMcpServer: true,
+          pluginRoots: [plugin],
+          settings: JSON.stringify({
+            pluginConfigs: { "private-diagnostic": { opaque: credential } },
+          }),
+          mcpConfig: JSON.stringify({
+            mcpServers: {
+              github_issues: {
+                command: process.execPath,
+                args: [
+                  join(
+                    import.meta.dir,
+                    "../../src/mcp/github-issues-server.ts",
+                  ),
+                ],
+                env: {
+                  GITHUB_TOKEN: "fixture-token",
+                  REPO_OWNER: "owner",
+                  REPO_NAME: "repo",
+                  GITHUB_API_URL: String(http.url).replace(/\/$/, ""),
+                },
+              },
+            },
+          }),
+        }),
+      );
+      if (typeof credential === "string" && credential.length >= 8)
+        await execution;
+      else
+        await expect(execution).rejects.toThrow(
+          "cannot safely redact sensitive plugin option",
+        );
+      const report = await readFile(getExecutionFilePath()!, "utf8");
+      expect(report).toContain("http://127.0.0.1/v1.0");
+      expect(JSON.stringify(model.requests[1]?.input)).toContain(
+        "plugin diagnostic",
+      );
+      if (typeof credential === "string" && credential.length >= 8) {
+        expect(posts).toHaveLength(1);
+        expect(JSON.stringify(posts)).not.toContain(credential);
+        expect(posts[0].body).toContain("[REDACTED]");
+      } else {
+        expect(posts).toHaveLength(0);
+        expect(report).toContain(
+          "cannot safely redact sensitive plugin option",
+        );
+      }
+    } finally {
+      http.stop(true);
+    }
+  },
+);

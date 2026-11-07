@@ -361,7 +361,7 @@ describe("guided GitHub Action workflow", () => {
       "${{ secrets.OPENAI_API_KEY }}",
     );
     expect(actionStep.with.codex_model).toBe(DEFAULT_MODEL);
-    expect(actionStep.with.codex_effort).toBe("max");
+    expect(actionStep.with.codex_effort).toBe("high");
     expect(actionStep.with.trigger_phrase).toBe("/codex");
     expect(Object.keys(actionStep.with)).toEqual(
       expect.arrayContaining([
@@ -385,7 +385,7 @@ describe("guided GitHub Action workflow", () => {
         (step: any) => step.uses === DEFAULT_ACTION_REF,
       );
       expect(step.with.codex_model).toBe("gpt-6.1-terra");
-      expect(step.with.codex_effort).toBe("max");
+      expect(step.with.codex_effort).toBe("high");
       expect(step.with.max_turns).toBe(name === "codex_review" ? "60" : "30");
     }
   });
@@ -477,6 +477,14 @@ describe("guided GitHub Action workflow", () => {
     const issueTitleEvent = commandEvent("issues");
     issueTitleEvent.event.issue.title = "/codex review";
     expect(evaluateWorkflowCondition(commandCondition, issueTitleEvent)).toBe(
+      true,
+    );
+
+    const quotedMarker = commandEvent("issues");
+    quotedMarker.event.issue.title = "/codex do run";
+    quotedMarker.event.issue.body =
+      "<!-- codex-action:created-issue:v1 -->\n\n/codex example";
+    expect(evaluateWorkflowCondition(commandCondition, quotedMarker)).toBe(
       true,
     );
 
@@ -751,6 +759,7 @@ describe("installation planning and application", () => {
 
   test("upgrades a managed two-job workflow to include validation and reporting", async () => {
     const previous = renderWorkflow(defaultOptions)
+      .replaceAll("codex_effort: high", "codex_effort: max")
       .replace(/^  validate_change:\n[\s\S]*?(?=^  codex_review:)/m, "")
       .replace(`${COMMAND_DELIVERY_POLICY}\n`, "");
     const { client, calls } = fakeClient({
@@ -771,6 +780,13 @@ describe("installation planning and application", () => {
       workflowSha: "legacy-workflow",
     });
     const { jobs } = parse(plan.workflow);
+    for (const name of ["codex", "codex_review"]) {
+      const runner = jobs[name].steps.find(
+        (step: any) => step.with?.codex_model,
+      );
+      expect(runner.with.codex_model).toBe("gpt-6.1-terra");
+      expect(runner.with.codex_effort).toBe("high");
+    }
     expect(jobs.validate_change.needs).toBe("codex");
     expect(jobs.report_validation.needs).toEqual(["codex", "validate_change"]);
     const result = await applyInstallation(client, plan, {

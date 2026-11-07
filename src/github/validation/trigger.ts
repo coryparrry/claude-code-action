@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import * as core from "@actions/core";
+import { actionCreatedIssueMarker } from "../issue-origin";
 import {
   isIssuesEvent,
   isIssuesAssignedEvent,
@@ -9,12 +10,30 @@ import {
   isPullRequestReviewEvent,
   isPullRequestReviewCommentEvent,
 } from "../context";
-import type { ParsedGitHubContext } from "../context";
+import type { GitHubContext, ParsedGitHubContext } from "../context";
 
+/** Prevent self-triggering openings while preserving independent workflow automation. */
+export function isActionCreatedIssueEvent(context: GitHubContext): boolean {
+  return (
+    !!process.env.GITHUB_WORKFLOW_REF &&
+    isIssuesEvent(context) &&
+    ["opened", "labeled"].includes(context.eventAction ?? "") &&
+    context.payload.issue?.user?.type === "Bot" &&
+    context.payload.issue.user.login === context.actor &&
+    context.payload.issue.user.login === context.inputs.botName &&
+    !!context.payload.issue.body?.startsWith(
+      `${actionCreatedIssueMarker()}\n\n`,
+    )
+  );
+}
+
+/** Check command, assignee and label triggers for a GitHub entity event. */
 export function checkContainsTrigger(context: ParsedGitHubContext): boolean {
   const {
     inputs: { assigneeTrigger, labelTrigger, triggerPhrase, prompt },
   } = context;
+
+  if (isActionCreatedIssueEvent(context)) return false;
 
   // If prompt is provided, always trigger
   if (prompt) {

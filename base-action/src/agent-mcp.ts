@@ -10,6 +10,7 @@ import {
 import Ajv from "ajv";
 import type { AgentToolEvent, AgentToolHookResult } from "./agent-tools";
 import { AgentPermissions } from "./agent-permissions";
+import { mcpServerNamespace } from "./mcp-names";
 import { boundMcpOutput } from "./agent-mcp-output";
 import { prepareMcpStdioCommand, scrubMcpEnvironment } from "./mcp-environment";
 
@@ -26,6 +27,8 @@ export type AgentMcpOptions = {
   permissions?: AgentPermissions;
   deadline: number;
   signal?: AbortSignal;
+  redactPublication?: (text: string) => string;
+  reserveIssueMcpServer?: boolean;
   beforeTool?: (event: AgentToolEvent) => Promise<void | AgentToolHookResult>;
   permissionRequest?: (
     event: AgentToolEvent,
@@ -543,7 +546,7 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
       const listed = await bounded(() => server.listTools(), initTimeout);
       for (const mcpTool of listed) {
         const legacyName = `mcp__${serverName}__${mcpTool.name}`;
-        const name = `mcp__${serverName.replace(/:/g, "_")}__${mcpTool.name}`;
+        const name = `mcp__${mcpServerNamespace(serverName)}__${mcpTool.name}`;
         if (!/^[A-Za-z0-9_-]+$/.test(mcpTool.name) || name.length > 64)
           throw new Error(
             "MCP tool name cannot be represented as an OpenAI function name",
@@ -597,6 +600,30 @@ export async function createAgentMcpTools(options: AgentMcpOptions): Promise<{
               decision = request?.permissionDecision;
             }
             permissions.authorize(eventName, undefined, decision);
+            if (
+              options.reserveIssueMcpServer &&
+              eventName === "mcp__github_issues__create_issue"
+            ) {
+              if (!options.redactPublication)
+                throw new Error(
+                  "Issue publication requires registered-credential redaction",
+                );
+              // Redact after hook/approval changes and before any subprocess receives input.
+              input = Object.fromEntries(
+                Object.entries(input).map(([key, value]) => [
+                  key,
+                  typeof value === "string"
+                    ? options.redactPublication!(value)
+                    : Array.isArray(value)
+                      ? value.map((item) =>
+                          typeof item === "string"
+                            ? options.redactPublication!(item)
+                            : item,
+                        )
+                      : value,
+                ]),
+              );
+            }
             if (!validate(input))
               throw new Error(
                 `Invalid MCP tool arguments: ${ajv.errorsText(validate.errors)}`,

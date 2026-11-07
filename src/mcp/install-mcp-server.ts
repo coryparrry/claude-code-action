@@ -1,3 +1,5 @@
+import { issueCreationAllowed } from "./issue-creation-policy";
+import { stringList } from "../../base-action/src/agent-markdown";
 import { resolveCompatibility } from "../../base-action/src/codex-compat";
 import { usesApiCommitSigning } from "../github/operations/commit-signing";
 import * as core from "@actions/core";
@@ -19,6 +21,8 @@ type PrepareConfigParams = {
   claudeCommentId?: string;
   commentType?: "issue" | "review";
   allowedTools: string[];
+  settings?: string;
+  resolvedPermissions?: Awaited<ReturnType<typeof resolveActionPermissions>>;
   mode: AutoDetectedMode;
   context: GitHubContext;
 };
@@ -69,6 +73,54 @@ async function checkActionsReadPermission(
   }
 }
 
+/** Resolve trusted workflow grants once for checkout preparation and MCP setup. */
+export async function resolveActionPermissions(
+  settings: string,
+  context: GitHubContext,
+  mode: AutoDetectedMode,
+  additionalTools: string[] = [],
+) {
+  const permission = await resolveCompatibility(
+    process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "",
+    settings,
+    '{"mcpServers":{}}',
+    [],
+    {
+      allowedTools: process.env.ALLOWED_TOOLS || undefined,
+      permissionMode: process.env.PERMISSION_MODE || undefined,
+    },
+    { deferRuntimeFiles: true },
+  );
+  const selected = permission.agentName
+    ? permission.agentDefinitions?.[permission.agentName]
+    : undefined;
+  const agent =
+    selected && typeof selected === "object"
+      ? (selected as Record<string, unknown>)
+      : undefined;
+  const allowedTools = [
+    ...new Set([
+      ...(permission.allowedTools ?? []),
+      ...(stringList(agent?.tools, "Agent tools") ?? []),
+      ...additionalTools,
+    ]),
+  ];
+  const planning =
+    agent?.permissionMode === "plan" ||
+    ["plan", "readonly", "read-only"].includes(permission.permissionMode || "");
+  const reserveIssueMcpServer =
+    !planning &&
+    process.env.CODEX_SANDBOX !== "read-only" &&
+    !context.inputs.allowedNonWriteUsers &&
+    issueCreationAllowed(context, mode, allowedTools);
+  return {
+    permissionMode: permission.permissionMode,
+    allowedTools,
+    planning,
+    reserveIssueMcpServer,
+  };
+}
+
 /** Configure scoped GitHub MCP servers and preserve ancestry for signed replacement work. */
 export async function prepareMcpConfig(
   params: PrepareConfigParams,
@@ -86,17 +138,20 @@ export async function prepareMcpConfig(
     mode,
   } = params;
   try {
-    const allowedToolsList = allowedTools || [];
-    const permission = await resolveCompatibility(
-      process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "",
-      "",
-      '{"mcpServers":{}}',
-      [],
-      { permissionMode: process.env.PERMISSION_MODE || undefined },
-    );
-    const planning = ["plan", "readonly", "read-only"].includes(
-      permission.permissionMode || "",
-    );
+    const {
+      allowedTools: resolved,
+      planning,
+      reserveIssueMcpServer,
+    } = params.resolvedPermissions ??
+    (await resolveActionPermissions(
+      params.settings ?? process.env.INPUT_SETTINGS ?? "",
+      context,
+      mode,
+      allowedTools,
+    ));
+    const allowedToolsList = [
+      ...new Set([...(allowedTools || []), ...resolved]),
+    ];
 
     // Detect if we're in agent mode (explicit prompt provided)
     const isAgentMode = mode === "agent";
@@ -125,6 +180,22 @@ export async function prepareMcpConfig(
     const baseMcpConfig: { mcpServers: Record<string, unknown> } = {
       mcpServers: {},
     };
+
+    if (reserveIssueMcpServer) {
+      baseMcpConfig.mcpServers.github_issues = {
+        command: process.execPath,
+        args: bunServerArgs("src/mcp/github-issues-server.ts"),
+        env: {
+          GITHUB_TOKEN: githubToken,
+          REPO_OWNER: owner,
+          REPO_NAME: repo,
+          GITHUB_WORKFLOW_REF: process.env.GITHUB_WORKFLOW_REF || "",
+          GITHUB_API_URL,
+          CODEX_CREATED_ISSUES_RECEIPT:
+            process.env.CODEX_CREATED_ISSUES_RECEIPT || "",
+        },
+      };
+    }
 
     if (params.images?.length) {
       baseMcpConfig.mcpServers.github_context = {

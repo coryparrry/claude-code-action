@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { promptCacheSettings } from "./prompt-cache";
 import * as core from "@actions/core";
 import {
@@ -10,6 +11,7 @@ import {
   type ModelSettings,
 } from "@openai/agents";
 import Ajv from "ajv";
+import { normalizeGitHubAppPrivateKey } from "./github-app-key";
 import { randomUUID } from "node:crypto";
 import { readFile, realpath, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir, homedir } from "node:os";
@@ -24,6 +26,7 @@ import {
 } from "./codex-compat";
 import { workflowToolEnvironment } from "./codex-tool-environment";
 import { nativeModelSettings } from "./agent-native-controls";
+import { assertNoIssueMcpServer, isIssueMcpServerName } from "./mcp-names";
 import { scrubMcpEnvironment } from "./mcp-environment";
 import { summarizeMcpToolOutput } from "./agent-mcp";
 import { createOpenAIAuthentication } from "./openai-auth";
@@ -69,6 +72,10 @@ export type CodexOptions = Omit<
   "model" | "fallbackModel"
 > & {
   mcpConfig: string;
+  /** Protect the main action's automatically authorized repository issue server. */
+  reserveIssueMcpServer?: boolean;
+  /** Workflow mode before tag preparation adds its default editing mode. */
+  issuePermissionMode?: string;
   compatibilityArgs?: string;
   defaultAllowedTools?: string[];
   settings?: string;
@@ -204,9 +211,13 @@ export async function runCodex(
   for (const [name, value] of Object.entries(process.env))
     if (
       value &&
+      name !== "GITHUB_TOKEN_PROVIDED" &&
       /key|token|secret|password|credential|authorization/i.test(name)
-    )
+    ) {
       secrets.add(value);
+      if (name === "GITHUB_APP_PRIVATE_KEY")
+        secrets.add(normalizeGitHubAppPrivateKey(value));
+    }
   const register = (value: string) => {
     if (value) {
       secrets.add(value);
@@ -420,6 +431,17 @@ export async function runCodex(
       deadline,
       signal: controller.signal,
     });
+    let unsafeSensitivePluginOption: string | undefined;
+    for (const plugin of configuration.plugins)
+      for (const key of plugin.sensitiveConfigKeys ?? []) {
+        const value = plugin.userConfigValues?.[key];
+        for (const item of Array.isArray(value) ? value : [value]) {
+          if (item === undefined || item === "") continue;
+          if (typeof item === "string" && item.trim().length >= 8)
+            register(item);
+          else unsafeSensitivePluginOption ??= `${plugin.name}.${key}`;
+        }
+      }
     const compatibility = await resolveCompatibility(
       options.compatibilityArgs ?? "",
       JSON.stringify(configuration.settings),
@@ -432,6 +454,52 @@ export async function runCodex(
       options.defaultAllowedTools,
       direct,
     );
+    let reserveIssueMcpServer = false;
+    if (options.reserveIssueMcpServer) {
+      const trustedIssues = JSON.parse(options.mcpConfig || '{"mcpServers":{}}')
+        .mcpServers?.github_issues;
+      const loadedPermissions = configuration.settings.permissions as
+        | Record<string, unknown>
+        | undefined;
+      const issueMode =
+        options.issuePermissionMode ?? loadedPermissions?.defaultMode;
+      reserveIssueMcpServer =
+        !!trustedIssues &&
+        !["plan", "readonly", "read-only"].includes(String(issueMode));
+      if (reserveIssueMcpServer) {
+        // Inspect current restored inputs, excluding the action-owned MCP overlay.
+        const workflow = await resolveCompatibility(
+          options.compatibilityArgs ?? "",
+          options.settings ?? "",
+          '{"mcpServers":{}}',
+          options.defaultAllowedTools,
+          direct,
+        );
+        for (const servers of [
+          JSON.parse(workflow.mcpConfig).mcpServers,
+          configuration.mcpServers,
+        ]) {
+          const customServers = { ...servers };
+          for (const [name, server] of Object.entries(customServers))
+            if (
+              isIssueMcpServerName(name) &&
+              isDeepStrictEqual(server, trustedIssues)
+            )
+              delete customServers[name];
+          assertNoIssueMcpServer(customServers);
+        }
+      }
+      const resolvedMcp = JSON.parse(compatibility.mcpConfig);
+      for (const [name, server] of Object.entries(resolvedMcp.mcpServers))
+        if (
+          isIssueMcpServerName(name) &&
+          (reserveIssueMcpServer || isDeepStrictEqual(server, trustedIssues))
+        )
+          delete resolvedMcp.mcpServers[name];
+      if (reserveIssueMcpServer)
+        resolvedMcp.mcpServers.github_issues = trustedIssues;
+      compatibility.mcpConfig = JSON.stringify(resolvedMcp);
+    }
     const selectedAgent = await selectConfiguredAgent(
       configuration,
       compatibility.agentName,
@@ -442,6 +510,7 @@ export async function runCodex(
       compatibility.mcpConfig = childMcpConfig(
         compatibility.mcpConfig,
         selectedAgent.mcpServers,
+        reserveIssueMcpServer,
       );
     let model = resolveCodexModel(
       options.model ?? compatibility.model ?? selectedAgent?.model,
@@ -650,12 +719,20 @@ export async function runCodex(
       signal: controller.signal,
       maxTurns: compatibility.maxTurns,
       mcpConfig: compatibility.mcpConfig,
+      reserveIssueMcpServer,
       mcpEnvironment,
       toolEnvironment,
       trustedEnvironmentKeys: Object.keys(githubEnvironment),
       backgroundTasks,
       register,
       redact,
+      redactPublication: (value) => {
+        if (unsafeSensitivePluginOption)
+          throw new Error(
+            `Issue publication cannot safely redact sensitive plugin option ${unsafeSensitivePluginOption}; use a string of at least eight characters after trimming`,
+          );
+        return redact(value);
+      },
       emit,
       onToolResult: (event) => {
         const evidence = readEvidence(event, workspace);

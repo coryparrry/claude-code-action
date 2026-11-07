@@ -9,6 +9,7 @@ import { join } from "node:path";
 // This catches MCP/Zod version mismatches that source-level schema tests miss.
 test.each([
   "github-comment-server.ts",
+  "github-issues-server.ts",
   "github-inline-comment-server.ts",
   "github-file-ops-server.ts",
   "github-actions-server.ts",

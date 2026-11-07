@@ -372,7 +372,13 @@ test("confirmation requires successful recorded patch and relevant source reads"
     ),
   ).toThrow("source inspection");
   const result = verdict();
-  result.decisions[0]!.source_checks = [{ path: "not-read.ts", line: 1 }];
+  result.decisions[0]!.source_checks = [
+    ...Array.from({ length: 14 }, (_, i) => ({
+      path: "src/normalize.ts",
+      line: i + 1,
+    })),
+    { path: "not-read.ts", line: 1 },
+  ];
   expect(() =>
     applyVerification(review(), result, head, [], inspected),
   ).toThrow("source inspection");

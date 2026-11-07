@@ -1,3 +1,5 @@
+import { resolveActionSettings } from "../../github/operations/action-settings";
+import { issueCreationGrants } from "../../mcp/issue-creation-policy";
 import { usesApiCommitSigning } from "../../github/operations/commit-signing";
 import { checkHumanActor } from "../../github/validation/actor";
 import { createInitialComment } from "../../github/operations/comments/create-initial";
@@ -7,7 +9,10 @@ import {
   replaceCheckoutCredentials,
   setupSshSigning,
 } from "../../github/operations/git-config";
-import { prepareMcpConfig } from "../../mcp/install-mcp-server";
+import {
+  prepareMcpConfig,
+  resolveActionPermissions,
+} from "../../mcp/install-mcp-server";
 import {
   fetchGitHubData,
   resolveTriggerTimestamp,
@@ -19,7 +24,6 @@ import { isEntityContext } from "../../github/context";
 import type { GitHubContext } from "../../github/context";
 import type { Octokits } from "../../github/api/client";
 import { GIT_READ_TOOLS, GIT_WRITE_TOOLS } from "../../create-prompt/git-tools";
-import { parseAllowedTools } from "../agent/parse-tools";
 import { fetchReviewRequest } from "../../github/data/review-request";
 import { enrichContextImages } from "../../github/data/context-images";
 
@@ -29,6 +33,7 @@ import { enrichContextImages } from "../../github/data/context-images";
  * Tag mode responds to /codex mentions, issue assignments, or labels.
  * Creates tracking comments showing progress and has full implementation capabilities.
  */
+/** Prepare trusted interactive requests with scoped GitHub context and write tools. */
 export async function prepareTagMode({
   context,
   octokit,
@@ -45,6 +50,17 @@ export async function prepareTagMode({
 
   // Check if actor is human
   await checkHumanActor(octokit.rest, context);
+  const { settings, trustedBaseSha } = await resolveActionSettings(
+    context,
+    octokit.rest,
+    "tag",
+  );
+  const resolvedPermissions = await resolveActionPermissions(
+    settings,
+    context,
+    "tag",
+  );
+  const userAllowedTools = resolvedPermissions.allowedTools;
 
   // Create initial tracking comment
   const commentData = await createInitialComment(octokit.rest, context);
@@ -128,10 +144,6 @@ export async function prepareTagMode({
 
   const userClaudeArgs =
     process.env.CODEX_ARGS || process.env.CLAUDE_ARGS || "";
-  const userAllowedTools = parseAllowedTools(
-    userClaudeArgs,
-    process.env.ALLOWED_TOOLS,
-  );
   const userAllowedMCPTools = userAllowedTools.filter(
     (tool) => tool === "mcp__github" || tool.startsWith("mcp__github_"),
   );
@@ -148,6 +160,7 @@ export async function prepareTagMode({
     ...GIT_READ_TOOLS,
     "mcp__github_context__view_image",
     "mcp__github_comment__update_codex_comment",
+    ...issueCreationGrants(context, "tag", userAllowedTools),
     "mcp__github_ci__get_ci_status",
     "mcp__github_ci__get_workflow_run_details",
     "mcp__github_ci__download_job_log",
@@ -179,6 +192,8 @@ export async function prepareTagMode({
     commentType: commentData.commentType,
     allowedTools: Array.from(new Set(tagModeTools)),
     mode: "tag",
+    settings,
+    resolvedPermissions,
     context,
   });
 
@@ -211,6 +226,10 @@ export async function prepareTagMode({
     commentId,
     branchInfo,
     mcpConfig: ourMcpConfig,
+    settings,
+    trustedBaseSha,
+    issuePermissionMode: resolvedPermissions.permissionMode,
+    reserveIssueMcpServer: resolvedPermissions.reserveIssueMcpServer,
     claudeArgs: claudeArgs.trim(),
   };
 }

@@ -5,6 +5,9 @@
 For requested PR fixes, issue implementations, validation permissions and CI
 diagnosis, see the [requested changes guide](./requested-changes.md).
 
+Trusted commands can open issues in the current repository and return their
+GitHub URLs. See the [issue creation guide](./issue-creation.md).
+
 ## What Codex Can Do
 
 - **Respond in a Single Comment**: Codex operates by updating a single initial comment with progress and results

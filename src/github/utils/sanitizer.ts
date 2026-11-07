@@ -88,6 +88,36 @@ export function sanitizeContent(content: string): string {
 export function redactSecrets(content: string): string {
   content = redactGitHubTokens(content);
 
+  // URL userinfo can carry opaque credentials without a secret-like variable name.
+  content = content.replace(
+    /(\x1b\[[0-9;]*m|\\(?:u001b|x1b)\[[0-9;]*m|\\(?:[nrtbf]|u[0-9a-fA-F]{4})|\b)([a-z][a-z0-9+.-]{0,63}:\/\/)([^\s/?#"<>`\\]+)@/gi,
+    (
+      match,
+      prefix: string,
+      scheme: string,
+      userinfo: string,
+      offset: number,
+      text: string,
+    ) => {
+      let login = userinfo;
+      let suffix = "";
+      // Apostrophes are valid password characters except when closing a quoted value.
+      const boundary =
+        text[offset - 1] === "'"
+          ? userinfo.search(/'(?=\s*(?:[,;]\s*['"`]|[}\]]))/)
+          : -1;
+      if (boundary >= 0) {
+        const authority = userinfo.slice(0, boundary);
+        const at = authority.lastIndexOf("@");
+        if (at < 0) return match;
+        login = authority.slice(0, at);
+        suffix = authority.slice(at + 1) + userinfo.slice(boundary) + "@";
+      }
+      if (scheme.toLowerCase() === "ssh://" && login === "git") return match;
+      return `${prefix}${scheme}[REDACTED]@${suffix}`;
+    },
+  );
+
   // Anthropic API keys: sk-ant-...
   content = content.replace(
     /sk-ant-[A-Za-z0-9_-]{20,}/g,
