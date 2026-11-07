@@ -1,3 +1,4 @@
+import { getExecutionFilePath } from "../src/execution-file";
 import { prepareAgentMode } from "../../src/modes/agent";
 import * as actorValidation from "../../src/github/validation/actor";
 import * as gitConfiguration from "../../src/github/operations/git-config";
@@ -16,7 +17,14 @@ import {
   type ModelRequest,
   type ModelResponse,
 } from "@openai/agents";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCodex, type CodexOptions } from "../src/run-codex";
@@ -740,14 +748,15 @@ test("main-action issue writes honor project plan mode before tag's editing defa
   expect(result.conclusion).toBe("success");
 });
 
-test("declared sensitive plugin options are masked at actual issue publication", async () => {
-  const credential = "opaque-plugin-option-fixture";
-  const plugin = join(directory, "private-plugin");
-  await mkdir(join(plugin, ".claude-plugin"), { recursive: true });
-  const server = join(plugin, "diagnostic.cjs");
-  await writeFile(
-    server,
-    String.raw`const readline=require("node:readline");
+test.each(["opaque-plugin-option-fixture", 0, "x", false])(
+  "sensitive plugin option %s is handled safely at publication",
+  async (credential) => {
+    const plugin = join(directory, "private-plugin");
+    await mkdir(join(plugin, ".claude-plugin"), { recursive: true });
+    const server = join(plugin, "diagnostic.cjs");
+    await writeFile(
+      server,
+      String.raw`const readline=require("node:readline");
 readline.createInterface({input:process.stdin}).on("line",line=>{
  const message=JSON.parse(line); if(message.id===undefined)return;
  const result=message.method==="initialize"
@@ -757,89 +766,108 @@ readline.createInterface({input:process.stdin}).on("line",line=>{
  : {content:[{type:"text",text:"plugin diagnostic "+process.env.AUTH}]};
  process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:message.id,result})+"\n");
 });`,
-  );
-  await writeFile(
-    join(plugin, ".claude-plugin/plugin.json"),
-    JSON.stringify({
-      name: "private-diagnostic",
-      userConfig: {
-        opaque: { type: "string", sensitive: true, required: true },
-      },
-      mcpServers: {
-        probe: {
-          command: "node",
-          args: [server],
-          env: { AUTH: "${user_config.opaque}" },
+    );
+    await writeFile(
+      join(plugin, ".claude-plugin/plugin.json"),
+      JSON.stringify({
+        name: "private-diagnostic",
+        userConfig: {
+          opaque: { type: typeof credential, sensitive: true, required: true },
         },
-      },
-    }),
-  );
-  const posts: any[] = [];
-  const http = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    /** Capture publication after plugin-specific credential registration. */
-    async fetch(request) {
-      posts.push(await request.json());
-      return Response.json(
-        {
-          number: 1,
-          title: "Plugin diagnostic",
-          html_url: "https://github.com/owner/repo/issues/1",
-        },
-        { status: 201 },
-      );
-    },
-  });
-  const model = new ScriptedModel([
-    async (request) => {
-      const tool = request.tools.find((tool) =>
-        tool.name.endsWith("__diagnostic"),
-      );
-      expect(tool).toBeDefined();
-      return call(tool!.name, {});
-    },
-    call("mcp__github_issues__create_issue", {
-      title: "Plugin diagnostic",
-      body: `plugin diagnostic ${credential}`,
-    }),
-    message(),
-  ]);
-  try {
-    await runCodex(
-      prompt,
-      options(model, {
-        timeoutMs: 10000,
-        reserveIssueMcpServer: true,
-        pluginRoots: [plugin],
-        settings: JSON.stringify({
-          pluginConfigs: { "private-diagnostic": { opaque: credential } },
-        }),
-        mcpConfig: JSON.stringify({
-          mcpServers: {
-            github_issues: {
-              command: process.execPath,
-              args: [
-                join(import.meta.dir, "../../src/mcp/github-issues-server.ts"),
-              ],
-              env: {
-                GITHUB_TOKEN: "fixture-token",
-                REPO_OWNER: "owner",
-                REPO_NAME: "repo",
-                GITHUB_API_URL: String(http.url).replace(/\/$/, ""),
-              },
-            },
+        mcpServers: {
+          probe: {
+            command: "node",
+            args: [server],
+            env: { AUTH: "${user_config.opaque}" },
           },
-        }),
+        },
       }),
     );
-    expect(posts).toHaveLength(1);
-    expect(JSON.stringify(model.requests[1]?.input)).toContain(
-      "plugin diagnostic",
-    );
-    expect(JSON.stringify(posts)).not.toContain(credential);
-    expect(posts[0].body).toContain("[REDACTED]");
-  } finally {
-    http.stop(true);
-  }
-});
+    const posts: any[] = [];
+    const http = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      /** Capture publication after plugin-specific credential registration. */
+      async fetch(request) {
+        posts.push(await request.json());
+        return Response.json(
+          {
+            number: 1,
+            title: "Plugin diagnostic",
+            html_url: "https://github.com/owner/repo/issues/1",
+          },
+          { status: 201 },
+        );
+      },
+    });
+    const model = new ScriptedModel([
+      async (request) => {
+        const tool = request.tools.find((tool) =>
+          tool.name.endsWith("__diagnostic"),
+        );
+        expect(tool).toBeDefined();
+        return call(tool!.name, {});
+      },
+      call("mcp__github_issues__create_issue", {
+        title: "Plugin diagnostic",
+        body: `Diagnostic 2020 at http://127.0.0.1/v1.0; plugin diagnostic ${credential}`,
+      }),
+      message(),
+    ]);
+    try {
+      const execution = runCodex(
+        prompt,
+        options(model, {
+          timeoutMs: 10000,
+          reserveIssueMcpServer: true,
+          pluginRoots: [plugin],
+          settings: JSON.stringify({
+            pluginConfigs: { "private-diagnostic": { opaque: credential } },
+          }),
+          mcpConfig: JSON.stringify({
+            mcpServers: {
+              github_issues: {
+                command: process.execPath,
+                args: [
+                  join(
+                    import.meta.dir,
+                    "../../src/mcp/github-issues-server.ts",
+                  ),
+                ],
+                env: {
+                  GITHUB_TOKEN: "fixture-token",
+                  REPO_OWNER: "owner",
+                  REPO_NAME: "repo",
+                  GITHUB_API_URL: String(http.url).replace(/\/$/, ""),
+                },
+              },
+            },
+          }),
+        }),
+      );
+      if (typeof credential === "string" && credential.length >= 8)
+        await execution;
+      else
+        await expect(execution).rejects.toThrow(
+          "cannot safely redact sensitive plugin option",
+        );
+      const report = await readFile(getExecutionFilePath()!, "utf8");
+      expect(report).toContain("http://127.0.0.1/v1.0");
+      expect(JSON.stringify(model.requests[1]?.input)).toContain(
+        "plugin diagnostic",
+      );
+      if (typeof credential === "string" && credential.length >= 8) {
+        expect(posts).toHaveLength(1);
+        expect(JSON.stringify(posts)).not.toContain(credential);
+        expect(posts[0].body).toContain("[REDACTED]");
+      } else {
+        expect(posts).toHaveLength(0);
+        expect(report).toContain(
+          "cannot safely redact sensitive plugin option",
+        );
+      }
+    } finally {
+      http.stop(true);
+    }
+  },
+);

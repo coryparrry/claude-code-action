@@ -33,6 +33,7 @@ shares the issue body’s size budget.
 
 Issue bodies retain literal Markdown, accessible image descriptions, HTML
 attributes and fenced reproductions. Secret-format redaction, URL-userinfo masking and the runtime's registered-credential redactor apply before publication, after any hook changes.
+Sensitive plugin options used with issue publication must be strings of at least eight characters after trimming. Short or non-string sensitive values cannot be distinguished safely from ordinary free text, so publication returns a clear error before posting; normal diagnostics retain their original text.
 Ordinary reviews do not turn findings into backlog issues automatically.
 
 ## Delivery and retries

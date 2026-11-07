@@ -431,12 +431,16 @@ export async function runCodex(
       deadline,
       signal: controller.signal,
     });
+    let unsafeSensitivePluginOption: string | undefined;
     for (const plugin of configuration.plugins)
       for (const key of plugin.sensitiveConfigKeys ?? []) {
         const value = plugin.userConfigValues?.[key];
-        for (const item of Array.isArray(value) ? value : [value])
-          if (typeof item === "string" || typeof item === "number")
-            register(String(item));
+        for (const item of Array.isArray(value) ? value : [value]) {
+          if (item === undefined || item === "") continue;
+          if (typeof item === "string" && item.trim().length >= 8)
+            register(item);
+          else unsafeSensitivePluginOption ??= `${plugin.name}.${key}`;
+        }
       }
     const compatibility = await resolveCompatibility(
       options.compatibilityArgs ?? "",
@@ -722,6 +726,13 @@ export async function runCodex(
       backgroundTasks,
       register,
       redact,
+      redactPublication: (value) => {
+        if (unsafeSensitivePluginOption)
+          throw new Error(
+            `Issue publication cannot safely redact sensitive plugin option ${unsafeSensitivePluginOption}; use a string of at least eight characters after trimming`,
+          );
+        return redact(value);
+      },
       emit,
       onToolResult: (event) => {
         const evidence = readEvidence(event, workspace);

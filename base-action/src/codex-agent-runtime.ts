@@ -76,6 +76,8 @@ export type AgentRuntimeOptions = {
   backgroundTasks: Map<string, BackgroundAgentTask>;
   register(secret: string): void;
   redact(text: string): string;
+  /** Publication may reject values that cannot be safely masked in free text. */
+  redactPublication?(text: string): string;
   removeSecretAliases(): void;
   emit(event: OpenAIAgentEvent): void;
   onToolResult?(event: AgentToolEvent): void;
@@ -422,7 +424,7 @@ async function buildContext(
   mcp = await createAgentMcpTools({
     mcpConfig: options.mcpConfig,
     environment: options.mcpEnvironment,
-    redactPublication: options.redact,
+    redactPublication: options.redactPublication ?? options.redact,
     reserveIssueMcpServer: options.reserveIssueMcpServer,
     permissions,
     allowedTools: permissions.options.allowedTools,
