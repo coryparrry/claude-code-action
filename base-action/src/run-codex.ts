@@ -431,6 +431,13 @@ export async function runCodex(
       deadline,
       signal: controller.signal,
     });
+    for (const plugin of configuration.plugins)
+      for (const key of plugin.sensitiveConfigKeys ?? []) {
+        const value = plugin.userConfigValues?.[key];
+        for (const item of Array.isArray(value) ? value : [value])
+          if (typeof item === "string" || typeof item === "number")
+            register(String(item));
+      }
     const compatibility = await resolveCompatibility(
       options.compatibilityArgs ?? "",
       JSON.stringify(configuration.settings),

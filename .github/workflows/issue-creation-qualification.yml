@@ -5,7 +5,10 @@ on:
     types: [opened, synchronize, reopened, labeled]
     paths:
       - src/**
-      - base-action/src/agent-permissions.ts
+      - action.yml
+      - base-action/action.yml
+      - base-action/src/**
+      - bun.lock
       - scripts/qualify-issue-creation.ts
       - .github/workflows/issue-creation-qualification.yml
 

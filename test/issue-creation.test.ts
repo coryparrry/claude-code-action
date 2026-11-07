@@ -650,3 +650,27 @@ console.log("INVENTORY_OK");
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("qualification triggers include action manifests and shared runtime changes", async () => {
+  const workflow = parseYaml(
+    await readFile(
+      join(
+        import.meta.dir,
+        "../.github/workflows/issue-creation-qualification.yml",
+      ),
+      "utf8",
+    ),
+  );
+  const patterns: string[] = workflow.on.pull_request.paths;
+  for (const file of [
+    "action.yml",
+    "base-action/action.yml",
+    "base-action/src/agent-mcp.ts",
+    "base-action/src/run-codex.ts",
+    "src/mcp/github-issues-server.ts",
+    "bun.lock",
+  ])
+    expect(patterns.some((pattern) => new Bun.Glob(pattern).match(file))).toBe(
+      true,
+    );
+});

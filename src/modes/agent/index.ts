@@ -34,9 +34,10 @@ export async function prepareAgentMode({
   // Check if actor is human (prevents bot-triggered loops)
   await checkHumanActor(octokit.rest, context);
   const nativeReview = process.env.REVIEW_MODE === "true";
-  const settings = nativeReview
-    ? "{}"
+  const resolvedSettings = nativeReview
+    ? { settings: "{}", trustedBaseSha: undefined }
     : await resolveActionSettings(context, octokit.rest, "agent");
+  const { settings } = resolvedSettings;
   const resolvedPermissions = nativeReview
     ? {
         allowedTools: [],
@@ -173,6 +174,7 @@ export async function prepareAgentMode({
     },
     mcpConfig: ourMcpConfig,
     settings,
+    trustedBaseSha: resolvedSettings.trustedBaseSha,
     issuePermissionMode: resolvedPermissions.permissionMode,
     reserveIssueMcpServer: resolvedPermissions.reserveIssueMcpServer,
     claudeArgs,

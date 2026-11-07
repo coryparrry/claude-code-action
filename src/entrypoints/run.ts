@@ -332,7 +332,10 @@ async function run() {
         validateBranchName(restoreBase);
       }
       if (restoreBase) {
-        restoredConfigPaths = restoreConfigFromBase(restoreBase);
+        restoredConfigPaths = restoreConfigFromBase(
+          restoreBase,
+          prepareResult.trustedBaseSha,
+        );
       }
     }
 

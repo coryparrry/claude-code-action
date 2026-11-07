@@ -759,6 +759,7 @@ describe("installation planning and application", () => {
 
   test("upgrades a managed two-job workflow to include validation and reporting", async () => {
     const previous = renderWorkflow(defaultOptions)
+      .replaceAll("codex_effort: high", "codex_effort: max")
       .replace(/^  validate_change:\n[\s\S]*?(?=^  codex_review:)/m, "")
       .replace(`${COMMAND_DELIVERY_POLICY}\n`, "");
     const { client, calls } = fakeClient({
@@ -779,6 +780,13 @@ describe("installation planning and application", () => {
       workflowSha: "legacy-workflow",
     });
     const { jobs } = parse(plan.workflow);
+    for (const name of ["codex", "codex_review"]) {
+      const runner = jobs[name].steps.find(
+        (step: any) => step.with?.codex_model,
+      );
+      expect(runner.with.codex_model).toBe("gpt-6.1-terra");
+      expect(runner.with.codex_effort).toBe("high");
+    }
     expect(jobs.validate_change.needs).toBe("codex");
     expect(jobs.report_validation.needs).toEqual(["codex", "validate_change"]);
     const result = await applyInstallation(client, plan, {

@@ -339,7 +339,7 @@ test.each(["generated", "modified", "ignored"])(
       "tag",
       path,
     );
-    expect(result).toBe(content + "\n");
+    expect(result.settings).toBe(content + "\n");
     expect(getContent).not.toHaveBeenCalled();
   },
 );
@@ -387,7 +387,7 @@ test.each(["", "main"])(
     );
     const permission = await resolveCompatibility(
       "",
-      result,
+      result.settings,
       '{"mcpServers":{}}',
     );
     expect(permission.permissionMode).toBe("plan");
@@ -440,7 +440,7 @@ test.each(["", "Interactive task"])(
       path: "release-settings.json",
       ref: "release",
     });
-    expect(result).toBe(content + "\n");
+    expect(result.settings).toBe(content + "\n");
   },
 );
 
@@ -543,19 +543,21 @@ test.each(["pull_request", "issue_comment"] as const)(
       JSON.stringify({ permissions: { allow: ["*"] } }),
     );
 
-    const base = "a".repeat(40);
+    const base = "b".repeat(40);
     const context = createMockContext({
       eventName,
       eventAction: eventName === "pull_request" ? "opened" : "created",
       isPR: true,
       inputs: { prompt: "Review this change", trackProgress: true },
       payload: (eventName === "pull_request"
-        ? { pull_request: { base: { sha: base } } }
+        ? { pull_request: { base: { sha: "a".repeat(40) } } }
         : interactiveContext().payload) as any,
     });
     const requested: unknown[] = [];
     const pullRequests: unknown[] = [];
-    const settings = JSON.stringify({ permissions: { allow: ["Read"] } });
+    const settings = JSON.stringify({
+      permissions: { allow: ["Read"], defaultMode: "plan" },
+    });
     const prepared = await prepareTagFixture(context, {
       rest: {
         pulls: {
@@ -588,17 +590,15 @@ test.each(["pull_request", "issue_comment"] as const)(
         ref: base,
       },
     ]);
-    expect(pullRequests).toEqual(
-      eventName === "issue_comment"
-        ? [
-            {
-              owner: context.repository.owner,
-              repo: context.repository.repo,
-              pull_number: context.entityNumber,
-            },
-          ]
-        : [],
-    );
+    expect(pullRequests).toEqual([
+      {
+        owner: context.repository.owner,
+        repo: context.repository.repo,
+        pull_number: context.entityNumber,
+      },
+    ]);
+    expect(prepared.trustedBaseSha).toBe(base);
+    expect(prepared.issuePermissionMode).toBe("plan");
     const runtime = await resolveCompatibility(
       prepared.claudeArgs,
       prepared.settings,
@@ -621,6 +621,122 @@ test.each(["pull_request", "issue_comment"] as const)(
     expect(JSON.parse(config).mcpServers.github_issues).toBeUndefined();
   },
 );
+
+test("submodule settings use the trusted gitlink blob rather than the PR checkout", async () => {
+  const workspace = await realpath(
+    await mkdtemp(join(tmpdir(), "submodule-settings-")),
+  );
+  directories.push(workspace);
+  const module = join(workspace, "config");
+  await mkdir(module);
+  const git = (...args: string[]) =>
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.test",
+        "-c",
+        "commit.gpgsign=false",
+        ...args,
+      ],
+      { cwd: module, encoding: "utf8" },
+    );
+  git("init", "-q");
+  const content = '{"permissions":{"defaultMode":"plan","allow":["Read"]}}';
+  await writeFile(join(module, "settings.json"), content);
+  git("add", ".");
+  git("commit", "-qm", "trusted settings");
+  let trusted = git("rev-parse", "HEAD").trim();
+  await writeFile(
+    join(module, "settings.json"),
+    '{"permissions":{"allow":["*"]}}',
+  );
+  git("add", ".");
+  git("commit", "-qm", "untrusted PR settings");
+  const requests: any[] = [];
+  const client = {
+    pulls: { get: async () => ({ data: { base: { sha: "b".repeat(40) } } }) },
+    repos: {
+      getContent: async (request: any) => {
+        requests.push(request);
+        if (request.path !== "config")
+          throw Object.assign(new Error("Gitlink descendant"), { status: 404 });
+        return {
+          data: {
+            type: "file",
+            submodule_git_url: "https://github.com/trusted/settings.git",
+            sha: trusted,
+          },
+        };
+      },
+    },
+  } as any;
+  process.env.GITHUB_WORKSPACE = workspace;
+  const result = await resolveActionSettings(
+    createMockContext({ eventName: "pull_request", isPR: true }),
+    client,
+    "tag",
+    join(module, "settings.json"),
+  );
+  expect(result).toEqual({
+    settings: content + "\n",
+    trustedBaseSha: "b".repeat(40),
+  });
+  expect(requests.map((request) => request.path)).toEqual([
+    "config/settings.json",
+    "config",
+  ]);
+  expect(requests.every((request) => request.ref === "b".repeat(40))).toBe(
+    true,
+  );
+  const nested = join(module, "nested");
+  await mkdir(nested);
+  const nestedGit = (...args: string[]) =>
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.test",
+        "-c",
+        "commit.gpgsign=false",
+        ...args,
+      ],
+      { cwd: nested, encoding: "utf8" },
+    );
+  nestedGit("init", "-q");
+  await writeFile(join(nested, "settings.json"), content);
+  nestedGit("add", ".");
+  nestedGit("commit", "-qm", "trusted nested settings");
+  const nestedBase = nestedGit("rev-parse", "HEAD").trim();
+  await writeFile(
+    join(nested, "settings.json"),
+    '{"permissions":{"allow":["*"]}}',
+  );
+  nestedGit("add", ".");
+  nestedGit("commit", "-qm", "untrusted nested checkout");
+  git("update-index", "--add", "--cacheinfo", `160000,${nestedBase},nested`);
+  git("commit", "-qm", "trusted nested gitlink");
+  trusted = git("rev-parse", "HEAD").trim();
+  const nestedResult = await resolveActionSettings(
+    createMockContext({ eventName: "pull_request", isPR: true }),
+    client,
+    "tag",
+    join(nested, "settings.json"),
+  );
+  expect(nestedResult.settings).toBe(content + "\n");
+  await expect(
+    resolveActionSettings(
+      createMockContext({ eventName: "pull_request", isPR: true }),
+      client,
+      "tag",
+      join(module, "missing.json"),
+    ),
+  ).rejects.toThrow("regular file at its trusted base revision");
+});
 
 test.each(["external", "workspace"])(
   "a PR symlink cannot redirect an external settings alias to another %s file",
